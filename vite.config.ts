@@ -1,7 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
-import adapter from '@sveltejs/adapter-static';
+import adapter from '@sveltejs/adapter-cloudflare';
 import { sveltekit } from '@sveltejs/kit/vite';
 
 export default defineConfig({
@@ -14,8 +14,9 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 
-			// Static SPA: prerendered pages + 200.html fallback for dynamic routes (e.g. /editor/[id]).
-			adapter: adapter({ fallback: '200.html' })
+			// Cloudflare Workers: prerendered pages are served as static assets,
+			// the rest (e.g. /editor/[id]) goes through the worker. Config: wrangler.jsonc.
+			adapter: adapter()
 		})
 	],
 	test: {

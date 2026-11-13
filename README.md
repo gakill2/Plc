@@ -33,7 +33,7 @@ The PLC engine is plain TypeScript with no UI dependencies, so it is fully unit-
 
 ## Tech stack
 
-SvelteKit · Svelte 5 (runes) · TypeScript · Tailwind CSS · Vitest · Playwright · GitHub Actions · Vercel
+SvelteKit · Svelte 5 (runes) · TypeScript · Tailwind CSS · Vitest · Playwright · GitHub Actions · Cloudflare Workers
 
 ## Getting started
 
@@ -50,6 +50,12 @@ npm run build      # static build to ./build
 
 ## Deployment
 
-The app builds to static files (`@sveltejs/adapter-static`) with a `200.html` SPA fallback for
-dynamic routes. Vercel picks up `vercel.json`; connect the GitHub repo in Vercel and every push to
-`main` is deployed.
+Deployed to **Cloudflare Workers** with `@sveltejs/adapter-cloudflare`. Prerendered pages are served
+as static assets; client-only routes (the editor) go through the worker. Configuration lives in
+`wrangler.jsonc`.
+
+```sh
+npx wrangler login   # once
+npm run preview      # build + run locally on the Workers runtime
+npm run deploy       # build + deploy
+```

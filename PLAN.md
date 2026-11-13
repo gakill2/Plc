@@ -8,19 +8,19 @@ Webowy symulator sterownika PLC do nauki: użytkownik buduje układ (sterownik +
 
 ## 1. Stack i decyzje techniczne
 
-| Obszar                  | Wybór                                                                             | Uzasadnienie                                         |
-| ----------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Framework               | SvelteKit 3 + Svelte 5 (runes), TypeScript                                        | już w projekcie (`plc/`)                             |
-| Style                   | Tailwind 4                                                                        | już w projekcie                                      |
-| Hosting                 | `adapter-static` (SPA) → Vercel                                                   | MVP bez backendu, wszystko liczone w przeglądarce    |
-| Silnik PLC              | czysty TS w `src/lib/engine`, **zero zależności od Svelte**                       | testowalny w Node, można go uruchomić w Web Workerze |
-| Wykonanie               | Web Worker + stały czas cyklu (np. 10 ms)                                         | UI nie blokuje symulacji i odwrotnie                 |
-| Edytor układu (schemat) | `@xyflow/svelte` (Svelte Flow)                                                    | węzły, porty, połączenia, zoom/pan za darmo          |
-| Edytor Ladder           | własny, SVG + siatka                                                              | to jest „serce” projektu — warto napisać samemu      |
-| Edytor ST               | CodeMirror 6 + własna gramatyka / podświetlanie                                   | lekki, dobrze działa z Svelte                        |
-| Zapis                   | IndexedDB (projekty) + eksport/import JSON + link (JSON skompresowany w URL)      | brak kont w MVP                                      |
-| Testy                   | Vitest (silnik, kompilator), vitest-browser-svelte (komponenty), Playwright (e2e) | już skonfigurowane                                   |
-| CI/CD                   | GitHub Actions: lint → check → test → build; deploy na Vercel                     |                                                      |
+| Obszar                  | Wybór                                                                                 | Uzasadnienie                                         |
+| ----------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Framework               | SvelteKit 3 + Svelte 5 (runes), TypeScript                                            | już w projekcie (`plc/`)                             |
+| Style                   | Tailwind 4                                                                            | już w projekcie                                      |
+| Hosting                 | `adapter-cloudflare` → Cloudflare Workers (statyczne assety + worker)                 | MVP bez backendu; w razie potrzeby D1/KV/R2 pod ręką |
+| Silnik PLC              | czysty TS w `src/lib/engine`, **zero zależności od Svelte**                           | testowalny w Node, można go uruchomić w Web Workerze |
+| Wykonanie               | Web Worker + stały czas cyklu (np. 10 ms)                                             | UI nie blokuje symulacji i odwrotnie                 |
+| Edytor układu (schemat) | `@xyflow/svelte` (Svelte Flow)                                                        | węzły, porty, połączenia, zoom/pan za darmo          |
+| Edytor Ladder           | własny, SVG + siatka                                                                  | to jest „serce” projektu — warto napisać samemu      |
+| Edytor ST               | CodeMirror 6 + własna gramatyka / podświetlanie                                       | lekki, dobrze działa z Svelte                        |
+| Zapis                   | IndexedDB (projekty) + eksport/import JSON + link (JSON skompresowany w URL)          | brak kont w MVP                                      |
+| Testy                   | Vitest (silnik, kompilator), vitest-browser-svelte (komponenty), Playwright (e2e)     | już skonfigurowane                                   |
+| CI/CD                   | GitHub Actions: lint → check → test → build; deploy na Cloudflare (`wrangler deploy`) |                                                      |
 
 **Konwencja adresów:** styl Siemens S7 (`I0.0`, `Q0.0`, `M0.0`, `MW10`, `T1`, `C1`) — najczęściej spotykany na polskich uczelniach i w przemyśle — plus tablica symboli (np. `Start = I0.0`), żeby w programie używać nazw.
 
@@ -176,7 +176,7 @@ Każdy etap kończy się działającą, wdrożoną wersją.
 
 **Etap 0 — fundamenty (1 tydz.)**
 
-- `adapter-static`, usunięcie przykładów Vitest, layout aplikacji, GitHub Actions + deploy na Vercel.
+- `adapter-static`, usunięcie przykładów Vitest, layout aplikacji, GitHub Actions; konfiguracja Cloudflare Workers (`wrangler.jsonc`), deploy na później.
 - README z celem projektu i zrzutami ekranu (uzupełniany na bieżąco).
 
 **Etap 1 — silnik (1–2 tyg.)** ✅ gotowe, gdy testy przechodzą bez UI
@@ -214,7 +214,7 @@ Każdy etap kończy się działającą, wdrożoną wersją.
 - Zapis projektów, linki do udostępniania, undo/redo, i18n, dostępność, responsywność (tablet).
 - Testy e2e Playwright dla głównej ścieżki: zbuduj układ → napisz program → RUN → sprawdź wyjście.
 
-**Później / opcjonalnie:** konta i chmura (Supabase), wejścia/wyjścia analogowe + PID, FBD, bloki FB użytkownika, eksport do formatu PLCopen XML, tryb „wyzwanie” z rankingiem, połączenie z Twoim fizycznym DIY PLC (WebSerial) — świetne domknięcie dwóch projektów.
+**Później / opcjonalnie:** konta i chmura (Cloudflare D1 + KV), wejścia/wyjścia analogowe + PID, FBD, bloki FB użytkownika, eksport do formatu PLCopen XML, tryb „wyzwanie” z rankingiem, połączenie z Twoim fizycznym DIY PLC (WebSerial) — świetne domknięcie dwóch projektów.
 
 ---
 
