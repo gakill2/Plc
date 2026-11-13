@@ -1,8 +1,9 @@
 <script lang="ts">
 	import type { PlcRuntime } from '#lib/runtime/runtime.svelte.js';
 
-	type Props = { runtime: PlcRuntime; bytes?: number };
-	let { runtime, bytes = 2 }: Props = $props();
+	/** `labels`: device names per terminal; wired inputs are driven by their device. */
+	type Props = { runtime: PlcRuntime; bytes?: number; labels?: ReadonlyMap<string, string> };
+	let { runtime, bytes = 2, labels = new Map() }: Props = $props();
 
 	const terminals = (area: 'I' | 'Q') =>
 		Array.from({ length: bytes * 8 }, (_, i) => ({
@@ -38,6 +39,10 @@
 							? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-200'
 							: 'border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-600'}"
 						aria-pressed={on}
+						disabled={labels.has(t.address)}
+						title={labels.has(t.address)
+							? `Driven by ${labels.get(t.address)} (circuit)`
+							: undefined}
 						onclick={() => runtime.setInput(t.address, !on)}
 					>
 						<span
@@ -52,11 +57,15 @@
 							></span>
 						</span>
 						{t.address}
+						<span class="truncate font-sans text-[10px] text-sky-300"
+							>{labels.get(t.address) ?? ''}</span
+						>
 					</button>
 					<button
 						class="grid size-6 place-items-center rounded-full border border-slate-700 bg-slate-800 text-[10px] text-slate-300 select-none hover:border-slate-500 active:bg-emerald-500 active:text-slate-950"
 						title="Push button {t.address} (momentary)"
 						aria-label="Push {t.address}"
+						disabled={labels.has(t.address)}
 						onpointerdown={() => runtime.setInput(t.address, true)}
 						onpointerup={() => runtime.setInput(t.address, false)}
 						onpointerleave={(e) => {
@@ -83,6 +92,9 @@
 							: 'bg-slate-700'}"
 					></span>
 					<span class="font-mono text-[10px] text-slate-400">{t.address}</span>
+					<span class="w-full truncate px-1 text-center text-[9px] text-amber-200/80"
+						>{labels.get(t.address) ?? ''}</span
+					>
 				</div>
 			{/each}
 		</div>

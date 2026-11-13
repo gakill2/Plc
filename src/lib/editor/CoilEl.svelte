@@ -8,6 +8,7 @@
 	let { coil, powered }: Props = $props();
 
 	const view = getLadderView();
+	const alias = $derived(view.doc.alias(coil.operand));
 	const online = $derived(view.monitor !== null);
 	const energized = $derived(view.monitor?.bit(coil.operand) === true);
 	const symbol = $derived(online ? (energized ? '#34d399' : '#64748b') : '#e2e8f0');
@@ -45,4 +46,10 @@
 			>
 		{/if}
 	</svg>
+	{#if alias}
+		<span
+			class="pointer-events-none absolute inset-x-0 bottom-0.5 truncate text-center font-mono text-[10px] text-sky-300/80"
+			>{alias}</span
+		>
+	{/if}
 </Selectable>

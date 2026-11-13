@@ -9,6 +9,7 @@ import {
 	type MemoryConfig,
 	type Operand
 } from '#lib/engine/index.js';
+import { resolveSymbol, type SymbolMap } from '#lib/symbols/symbols.js';
 import type { Element, LadderProgram, Rung, Series } from './model.js';
 
 export interface Diagnostic {
@@ -41,10 +42,15 @@ export const inputTap = (parallelId: string) => `${parallelId}:in`;
  *             +-| I0.2 |-[TON]-+               LDT p:in · AND I0.1 · TAP b · TAP br1
  *                                              LDT p:in · AND I0.2 · TON … · TAP br2 · OR …
  */
-export function compileLadder(
-	ladder: LadderProgram,
-	config: MemoryConfig = DEFAULT_MEMORY_CONFIG
-): CompiledLadder {
+export interface CompileOptions {
+	config?: MemoryConfig;
+	/** Symbol name (upper case) → address. Operands may use these names instead of addresses. */
+	symbols?: SymbolMap;
+}
+
+export function compileLadder(ladder: LadderProgram, options: CompileOptions = {}): CompiledLadder {
+	const config = options.config ?? DEFAULT_MEMORY_CONFIG;
+	const symbols = options.symbols ?? new Map<string, string>();
 	const program: Instr[] = [];
 	const sourceMap: (string | null)[] = [];
 	const taps = new Map<string, number>();
@@ -72,7 +78,7 @@ export function compileLadder(
 			return null;
 		}
 		try {
-			return parseAddress(text);
+			return parseAddress(resolveSymbol(symbols, text));
 		} catch (e) {
 			report(id, `${what}: ${(e as Error).message}`);
 			return null;
@@ -84,7 +90,7 @@ export function compileLadder(
 			return { kind: 'const', value: 0 };
 		}
 		try {
-			return parseOperand(text.trim());
+			return parseOperand(resolveSymbol(symbols, text).trim());
 		} catch (e) {
 			report(id, `${what}: ${(e as Error).message}`);
 			return { kind: 'const', value: 0 };

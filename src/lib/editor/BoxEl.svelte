@@ -14,6 +14,9 @@
 	const outPower = $derived(view.monitor?.power(el.id) ?? false);
 	const CMP_OPS: CmpOp[] = ['==', '<>', '<', '>', '<=', '>='];
 
+	const instanceAlias = $derived(
+		view.doc.alias(el.kind === 'timer' ? el.timer : el.kind === 'counter' ? el.counter : '')
+	);
 	const title = $derived(el.kind === 'compare' ? 'CMP' : el.type);
 	const timerState = $derived(el.kind === 'timer' ? view.monitor?.timer(el.timer) : null);
 	const counterState = $derived(el.kind === 'counter' ? view.monitor?.counter(el.counter) : null);
@@ -65,6 +68,9 @@
 			{/if}
 		</div>
 
+		{#if instanceAlias}
+			<div class="-mt-1 text-right font-mono text-[10px] text-sky-300/80">{instanceAlias}</div>
+		{/if}
 		{#if el.kind === 'timer'}
 			<label class={field}>
 				<span class={label}>PT</span>

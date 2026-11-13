@@ -12,7 +12,11 @@ export interface Monitor {
 	number(operand: string): number | null;
 }
 
-export function createMonitor(snapshot: RuntimeSnapshot, taps: Map<string, number>): Monitor {
+export function createMonitor(
+	snapshot: RuntimeSnapshot,
+	taps: Map<string, number>,
+	resolve: (operand: string) => string = (o) => o
+): Monitor {
 	const tryParse = (text: string) => {
 		try {
 			return parseAddress(text);
@@ -28,7 +32,7 @@ export function createMonitor(snapshot: RuntimeSnapshot, taps: Map<string, numbe
 			return slot !== undefined && snapshot.taps[slot] === 1;
 		},
 		bit(operand) {
-			const a = tryParse(operand);
+			const a = tryParse(resolve(operand));
 			if (!a) return null;
 			if (a.area === 'T') return snapshot.timers[a.index]?.q ?? null;
 			if (a.area === 'C') return snapshot.counters[a.index]?.q ?? null;
@@ -37,15 +41,15 @@ export function createMonitor(snapshot: RuntimeSnapshot, taps: Map<string, numbe
 			return byte === undefined ? null : ((byte >> a.bit) & 1) === 1;
 		},
 		timer(operand) {
-			const a = tryParse(operand);
+			const a = tryParse(resolve(operand));
 			return a?.area === 'T' ? (snapshot.timers[a.index] ?? null) : null;
 		},
 		counter(operand) {
-			const a = tryParse(operand);
+			const a = tryParse(resolve(operand));
 			return a?.area === 'C' ? (snapshot.counters[a.index] ?? null) : null;
 		},
 		number(operand) {
-			const a = tryParse(operand);
+			const a = tryParse(resolve(operand));
 			if (!a) return null;
 			if (a.area === 'T') return snapshot.timers[a.index]?.et ?? null;
 			if (a.area === 'C') return snapshot.counters[a.index]?.cv ?? null;

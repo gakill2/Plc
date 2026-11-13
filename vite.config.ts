@@ -24,7 +24,14 @@ export default defineConfig({
 		passWithNoTests: true,
 		coverage: {
 			provider: 'v8',
-			include: ['src/lib/engine/**/*.ts', 'src/lib/ladder/**/*.ts', 'src/lib/runtime/core.ts'],
+			include: [
+				'src/lib/engine/**/*.ts',
+				'src/lib/ladder/**/*.ts',
+				'src/lib/runtime/core.ts',
+				'src/lib/circuit/model.ts',
+				'src/lib/symbols/**/*.ts',
+				'src/lib/project/project.ts'
+			],
 			exclude: [
 				'**/*.spec.ts',
 				'src/lib/engine/index.ts',

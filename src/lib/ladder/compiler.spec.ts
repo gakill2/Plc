@@ -151,4 +151,24 @@ describe('compileLadder', () => {
 		expect(check(['I0.1'])).toBe(true);
 		expect(check(['I0.2', 'I0.3'])).toBe(false);
 	});
+
+	it('resolves symbol names in operands', () => {
+		const symbols = new Map([
+			['START', 'I0.0'],
+			['MOTOR', 'Q0.0'],
+			['DELAY', 'T3']
+		]);
+		const ladder = program(
+			rung([contact('NO', 'start'), timer('TON', 'Delay', 'T#1s')], [coil('COIL', 'Motor')])
+		);
+		const { program: code, diagnostics } = compileLadder(ladder, { symbols });
+		expect(diagnostics).toEqual([]);
+		expect(disassemble(code).filter((l) => !l.startsWith('TAP'))).toEqual([
+			'LD I0.0',
+			'TON T3, 1000',
+			'ST Q0.0',
+			'POP'
+		]);
+		expect(compileLadder(ladder).diagnostics).toHaveLength(3); // unknown without the table
+	});
 });

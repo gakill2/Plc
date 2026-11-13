@@ -1,3 +1,4 @@
+import { aliasOf, type SymbolMap } from '#lib/symbols/symbols.js';
 import { compileLadder, type CompiledLadder, type Diagnostic } from './compiler.js';
 import {
 	coil,
@@ -11,12 +12,22 @@ import {
 } from './model.js';
 import { addBranch, findNode, findRung, insertAfter, moveRung, removeNode } from './ops.js';
 
+type SymbolsGetter = () => { map: SymbolMap; reverse: SymbolMap };
+const NO_SYMBOLS: { map: SymbolMap; reverse: SymbolMap } = Object.freeze({
+	map: new Map<string, string>() as SymbolMap,
+	reverse: new Map<string, string>() as SymbolMap
+});
+
 /** Reactive editing state of one ladder program. */
 export class LadderDocument {
 	program: LadderProgram = $state({ version: 1, rungs: [] });
 	selectedId: string | null = $state(null);
 
-	readonly compiled: CompiledLadder = $derived(compileLadder(this.program));
+	#symbols: SymbolsGetter = () => NO_SYMBOLS;
+
+	readonly compiled: CompiledLadder = $derived(
+		compileLadder(this.program, { symbols: this.#symbols().map })
+	);
 	readonly diagnostics: Map<string, Diagnostic[]> = $derived.by(() => {
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local, rebuilt on every change
 		const map = new Map<string, Diagnostic[]>();
@@ -30,8 +41,15 @@ export class LadderDocument {
 		this.selectedId ? findNode(this.program, this.selectedId) : null
 	);
 
-	constructor(program: LadderProgram) {
+	constructor(program: LadderProgram, symbols?: SymbolsGetter) {
 		this.program = program;
+		if (symbols) this.#symbols = symbols;
+	}
+
+	/** Address of a symbol name, or symbol name of an address — shown under operands. */
+	alias(operand: string): string | null {
+		const { map, reverse } = this.#symbols();
+		return aliasOf(map, reverse, operand);
 	}
 
 	select(id: string | null) {

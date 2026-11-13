@@ -8,6 +8,7 @@
 	let { el, inId }: Props = $props();
 
 	const view = getLadderView();
+	const alias = $derived(view.doc.alias(el.operand));
 	const online = $derived(view.monitor !== null);
 	const inPower = $derived(view.monitor?.power(inId) ?? false);
 	const outPower = $derived(view.monitor?.power(el.id) ?? false);
@@ -53,4 +54,10 @@
 			{/if}
 		</g>
 	</svg>
+	{#if alias}
+		<span
+			class="pointer-events-none absolute inset-x-0 bottom-0.5 truncate text-center font-mono text-[10px] text-sky-300/80"
+			>{alias}</span
+		>
+	{/if}
 </Selectable>

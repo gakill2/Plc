@@ -10,5 +10,5 @@
 </svelte:head>
 
 {#key data.projectId}
-	<Workspace storageKey="plcsim:ladder:{data.projectId}" />
+	<Workspace projectId={data.projectId} />
 {/key}
