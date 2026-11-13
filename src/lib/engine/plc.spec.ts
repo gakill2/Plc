@@ -160,4 +160,42 @@ describe('Plc scan cycle', () => {
 		expect(snapshot).toMatchObject({ mode: 'STOP', scanCount: 0, fault: null });
 		expect(plc.getInput('I0.1')).toBe(true);
 	});
+
+	it('forces override inputs, the program and survive reset', () => {
+		const plc = loaded(START_STOP);
+		plc.run();
+		plc.force('I0.0', true); // start held by force
+		plc.force('I0.1', true); // stop not pressed
+		plc.scan(10);
+		expect(plc.getOutput('Q0.0')).toBe(true);
+
+		plc.force('Q0.0', false); // program wants it on, force says off
+		plc.force('I0.0', null);
+		plc.scan(10);
+		expect(plc.getOutput('Q0.0')).toBe(false);
+		expect(plc.forces).toEqual([
+			{ address: 'I0.1', value: true },
+			{ address: 'Q0.0', value: false }
+		]);
+
+		plc.reset();
+		expect(plc.snapshot().forces).toHaveLength(2);
+		plc.clearForces();
+		expect(plc.forces).toEqual([]);
+		expect(() => plc.force('MW0', true)).toThrow(/only bits/);
+		expect(() => plc.force('T1', true)).toThrow(/only bits/);
+	});
+
+	it('modify writes Q / M once', () => {
+		const plc = loaded('LD M0.0\nST Q0.1\nPOP');
+		plc.run();
+		plc.modify('M0.0', 1);
+		plc.modify('MW2', -5);
+		plc.scan(10);
+		expect(plc.getOutput('Q0.1')).toBe(true);
+		expect(plc.memory.readNumber({ area: 'M', size: 'W', byte: 2, bit: 0 })).toBe(-5);
+		plc.modify('Q0.7', 1);
+		expect(plc.getOutput('Q0.7')).toBe(true);
+		expect(() => plc.modify('I0.0', 1)).toThrow(/cannot be modified/);
+	});
 });

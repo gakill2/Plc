@@ -9,6 +9,7 @@
 
 	const view = getLadderView();
 	const alias = $derived(view.doc.alias(coil.operand));
+	const forced = $derived(view.monitor?.forced(coil.operand) ?? null);
 	const online = $derived(view.monitor !== null);
 	const energized = $derived(view.monitor?.bit(coil.operand) === true);
 	const symbol = $derived(online ? (energized ? '#34d399' : '#64748b') : '#e2e8f0');
@@ -46,6 +47,12 @@
 			>
 		{/if}
 	</svg>
+	{#if forced !== null}
+		<span
+			class="pointer-events-none absolute top-5 left-1 rounded bg-red-600 px-1 text-[9px] font-bold text-white"
+			title="Forced to {forced ? 1 : 0}">F{forced ? 1 : 0}</span
+		>
+	{/if}
 	{#if alias}
 		<span
 			class="pointer-events-none absolute inset-x-0 bottom-0.5 truncate text-center font-mono text-[10px] text-sky-300/80"

@@ -60,6 +60,12 @@
 						<span class="truncate font-sans text-[10px] text-sky-300"
 							>{labels.get(t.address) ?? ''}</span
 						>
+						{#if runtime.forces.has(t.address)}
+							<span
+								class="ml-auto rounded bg-red-600 px-1 font-sans text-[9px] font-bold text-white"
+								>F</span
+							>
+						{/if}
 					</button>
 					<button
 						class="grid size-6 place-items-center rounded-full border border-slate-700 bg-slate-800 text-[10px] text-slate-300 select-none hover:border-slate-500 active:bg-emerald-500 active:text-slate-950"
@@ -91,7 +97,11 @@
 							? 'bg-amber-300 shadow-[0_0_10px] shadow-amber-300/80'
 							: 'bg-slate-700'}"
 					></span>
-					<span class="font-mono text-[10px] text-slate-400">{t.address}</span>
+					<span class="font-mono text-[10px] text-slate-400"
+						>{t.address}{#if runtime.forces.has(t.address)}<span
+								class="ml-1 rounded bg-red-600 px-0.5 text-[8px] font-bold text-white">F</span
+							>{/if}</span
+					>
 					<span class="w-full truncate px-1 text-center text-[9px] text-amber-200/80"
 						>{labels.get(t.address) ?? ''}</span
 					>

@@ -10,7 +10,7 @@ import {
 } from './memory.js';
 import { validateProgram, type ProgramIssue } from './validate.js';
 import { DEFAULT_MAX_STEPS, execute, PlcFault, VmState } from './vm.js';
-import type { Address, MemAddress } from './types.js';
+import type { Address, MemAddress, NumType } from './types.js';
 
 export type PlcMode = 'STOP' | 'RUN' | 'FAULT';
 
@@ -42,6 +42,8 @@ export interface PlcSnapshot {
 	counters: CounterState[];
 	/** Power-flow probe values (see TAP in ir.ts). */
 	taps: Uint8Array;
+	/** Active forces, e.g. `{ address: 'I0.0', value: true }`. */
+	forces: { address: string; value: boolean }[];
 }
 
 /**
@@ -68,6 +70,7 @@ export class Plc {
 	#timeMs = 0;
 	#lastScanSteps = 0;
 	#fault: PlcFault | null = null;
+	#forces = new Map<string, { addr: MemAddress; value: boolean }>();
 
 	constructor(config: Partial<MemoryConfig> = {}) {
 		this.config = { ...DEFAULT_MEMORY_CONFIG, ...config };
@@ -154,6 +157,7 @@ export class Plc {
 		if (this.#mode !== 'RUN') return false;
 
 		this.memory.I.set(this.#inputs);
+		this.#applyForces(true);
 		try {
 			this.#lastScanSteps = execute(
 				this.#program,
@@ -169,6 +173,7 @@ export class Plc {
 			this.#outputs.fill(0);
 			return false;
 		}
+		this.#applyForces(false);
 		this.#outputs.set(this.memory.Q);
 
 		this.#scanCount++;
@@ -190,8 +195,50 @@ export class Plc {
 			M: this.memory.M.slice(),
 			timers: this.memory.timers.map((t) => ({ ...t })),
 			counters: this.memory.counters.map((c) => ({ ...c })),
-			taps: this.#vm.taps.slice()
+			taps: this.#vm.taps.slice(),
+			forces: this.forces
 		};
+	}
+
+	/**
+	 * Forces a bit of I, Q or M to a fixed value (null removes the force). Forced inputs override
+	 * the terminals, forced outputs and markers override whatever the program writes. Forces
+	 * survive STOP and reset, like on a real CPU — clear them explicitly.
+	 */
+	force(address: string | Address, value: boolean | null): void {
+		const addr = typeof address === 'string' ? parseAddress(address) : address;
+		if (addr.area === 'T' || addr.area === 'C' || addr.size !== 'X') {
+			throw new RangeError(`${formatAddress(addr)} cannot be forced — only bits of I, Q and M`);
+		}
+		checkAddress(addr, this.config);
+		const key = formatAddress(addr);
+		if (value === null) this.#forces.delete(key);
+		else this.#forces.set(key, { addr, value });
+	}
+
+	clearForces(): void {
+		this.#forces.clear();
+	}
+
+	get forces(): { address: string; value: boolean }[] {
+		return [...this.#forces].map(([address, f]) => ({ address, value: f.value }));
+	}
+
+	/** Writes a value into Q or M once ("modify" in an online watch table). */
+	modify(address: string | Address, value: number, type?: NumType): void {
+		const addr = typeof address === 'string' ? parseAddress(address) : address;
+		if (addr.area !== 'Q' && addr.area !== 'M') {
+			throw new RangeError(`${formatAddress(addr)} cannot be modified — use a Q or M address`);
+		}
+		this.memory.writeNumber(addr, value, type);
+		if (this.#mode === 'RUN' && addr.area === 'Q') this.#outputs.set(this.memory.Q);
+	}
+
+	/** Before the program: I, Q and M. After it: Q and M (the program may have overwritten them). */
+	#applyForces(beforeProgram: boolean): void {
+		for (const { addr, value } of this.#forces.values()) {
+			if (beforeProgram || addr.area !== 'I') this.memory.writeBit(addr, value);
+		}
 	}
 
 	#terminal(address: string | Address, area: 'I' | 'Q'): MemAddress {

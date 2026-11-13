@@ -1,5 +1,11 @@
-import { parseAddress, type CounterState, type TimerState } from '#lib/engine/index.js';
+import {
+	formatAddress,
+	parseAddress,
+	type CounterState,
+	type TimerState
+} from '#lib/engine/index.js';
 import type { RuntimeSnapshot } from '#lib/runtime/protocol.js';
+import { readBit, readNumber } from '#lib/runtime/read.js';
 
 /** Live values for the editor while the PLC is online. */
 export interface Monitor {
@@ -10,6 +16,8 @@ export interface Monitor {
 	timer(operand: string): TimerState | null;
 	counter(operand: string): CounterState | null;
 	number(operand: string): number | null;
+	/** The forced value of a bit operand, or null if it is not forced. */
+	forced(operand: string): boolean | null;
 }
 
 export function createMonitor(
@@ -17,13 +25,14 @@ export function createMonitor(
 	taps: Map<string, number>,
 	resolve: (operand: string) => string = (o) => o
 ): Monitor {
-	const tryParse = (text: string) => {
+	const parse = (text: string) => {
 		try {
-			return parseAddress(text);
+			return parseAddress(resolve(text));
 		} catch {
 			return null;
 		}
 	};
+	const forces = new Map(snapshot.forces.map((f) => [f.address, f.value]));
 
 	return {
 		power(id) {
@@ -32,37 +41,25 @@ export function createMonitor(
 			return slot !== undefined && snapshot.taps[slot] === 1;
 		},
 		bit(operand) {
-			const a = tryParse(resolve(operand));
-			if (!a) return null;
-			if (a.area === 'T') return snapshot.timers[a.index]?.q ?? null;
-			if (a.area === 'C') return snapshot.counters[a.index]?.q ?? null;
-			if (a.size !== 'X') return null;
-			const byte = snapshot[a.area][a.byte];
-			return byte === undefined ? null : ((byte >> a.bit) & 1) === 1;
+			const a = parse(operand);
+			return a ? readBit(snapshot, a) : null;
 		},
 		timer(operand) {
-			const a = tryParse(resolve(operand));
+			const a = parse(operand);
 			return a?.area === 'T' ? (snapshot.timers[a.index] ?? null) : null;
 		},
 		counter(operand) {
-			const a = tryParse(resolve(operand));
+			const a = parse(operand);
 			return a?.area === 'C' ? (snapshot.counters[a.index] ?? null) : null;
 		},
 		number(operand) {
-			const a = tryParse(resolve(operand));
-			if (!a) return null;
-			if (a.area === 'T') return snapshot.timers[a.index]?.et ?? null;
-			if (a.area === 'C') return snapshot.counters[a.index]?.cv ?? null;
-			const bytes = snapshot[a.area];
-			const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-			try {
-				if (a.size === 'X') return (bytes[a.byte] >> a.bit) & 1;
-				if (a.size === 'B') return view.getUint8(a.byte);
-				if (a.size === 'W') return view.getInt16(a.byte);
-				return view.getInt32(a.byte);
-			} catch {
-				return null;
-			}
+			const a = parse(operand);
+			return a ? readNumber(snapshot, a) : null;
+		},
+		forced(operand) {
+			if (forces.size === 0) return null;
+			const a = parse(operand);
+			return a ? (forces.get(formatAddress(a)) ?? null) : null;
 		}
 	};
 }

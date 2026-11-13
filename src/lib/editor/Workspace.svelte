@@ -15,16 +15,23 @@
 	import Palette from './Palette.svelte';
 	import RuntimeToolbar from './RuntimeToolbar.svelte';
 	import SymbolTable from './SymbolTable.svelte';
+	import TrendChart from '#lib/monitor/TrendChart.svelte';
+	import WatchTable from '#lib/monitor/WatchTable.svelte';
+	import { traceSignal, tryParse, type TrendLane } from '#lib/monitor/watch.js';
+	import type { TraceSignal } from '#lib/runtime/protocol.js';
 
 	type Props = { projectId: string };
 	let { projectId }: Props = $props();
 
-	type View = 'program' | 'circuit' | 'symbols';
+	type View = 'program' | 'circuit' | 'symbols' | 'watch';
 	const VIEWS: { id: View; label: string }[] = [
 		{ id: 'program', label: 'Program' },
 		{ id: 'circuit', label: 'Circuit' },
-		{ id: 'symbols', label: 'Symbols' }
+		{ id: 'symbols', label: 'Symbols' },
+		{ id: 'watch', label: 'Watch' }
 	];
+
+	let showTrend = $state(true);
 
 	// The workspace is re-created ({#key}) when the project changes, so reading the id once is fine.
 	const key = projectKey(untrack(() => projectId));
@@ -78,6 +85,28 @@
 	let flashTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const problems = $derived(project.problems);
+
+	/** Watch rows ticked for the trend → signals recorded by the worker on every scan. */
+	const trend = $derived.by(() => {
+		const signals: TraceSignal[] = [];
+		const lanes: TrendLane[] = [];
+		for (const entry of project.watch) {
+			if (!entry.trend) continue;
+			const addr = tryParse(resolveSymbol(project.symbols.map, entry.operand));
+			if (!addr) continue;
+			signals.push(traceSignal(entry, resolveSymbol(project.symbols.map, entry.operand)));
+			lanes.push({ label: entry.operand, format: entry.format });
+		}
+		return { signals, lanes, key: JSON.stringify(signals) };
+	});
+	let tracedKey = '';
+	$effect(() => {
+		const { signals, key } = trend;
+		if (key !== tracedKey) {
+			tracedKey = key;
+			runtime.setTrace(signals);
+		}
+	});
 	const monitor = $derived(
 		runtime.online && runtime.snapshot && loaded
 			? createMonitor(runtime.snapshot, loaded.taps, (t) => resolveSymbol(project.symbols.map, t))
@@ -152,34 +181,68 @@
 					{#if problems.some((p) => p.source === v.id)}<span class="ml-1 text-red-400">●</span>{/if}
 				</button>
 			{/each}
+			<span class="mx-1 w-px bg-slate-700"></span>
+			<button
+				class="rounded px-3 py-1 text-xs font-medium {showTrend
+					? 'bg-slate-700 text-white'
+					: 'text-slate-400 hover:text-white'}"
+				aria-pressed={showTrend}
+				onclick={() => (showTrend = !showTrend)}
+			>
+				Trend
+			</button>
+			{#if runtime.forces.size}
+				<button
+					class="ml-1 rounded bg-red-600 px-2 py-1 text-[11px] font-bold text-white"
+					title="Forces active — open the watch table"
+					onclick={() => (view = 'watch')}
+				>
+					F × {runtime.forces.size}
+				</button>
+			{/if}
 		</nav>
 		<RuntimeToolbar {runtime} onRun={run} onStep={step} />
 	</div>
 
 	<div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_20rem]">
-		<div class="min-h-0">
-			{#if view === 'program'}
-				<div class="flex h-full flex-col">
-					<div class="border-b border-slate-800 px-4 py-2">
-						<Palette {doc} disabled={runtime.online} />
+		<div class="flex min-h-0 flex-col">
+			<div class="min-h-0 flex-1">
+				{#if view === 'program'}
+					<div class="flex h-full flex-col">
+						<div class="border-b border-slate-800 px-4 py-2">
+							<Palette {doc} disabled={runtime.online} />
+						</div>
+						<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+						<div class="min-h-0 flex-1 overflow-auto p-4" onclick={() => doc.select(null)}>
+							{#if runtime.online}
+								<p
+									class="mb-3 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-200"
+								>
+									Online — live values from the PLC. Stop it to edit the program.
+								</p>
+							{/if}
+							<LadderEditor {doc} {monitor} locked={runtime.online} />
+						</div>
 					</div>
-					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-					<div class="min-h-0 flex-1 overflow-auto p-4" onclick={() => doc.select(null)}>
-						{#if runtime.online}
-							<p
-								class="mb-3 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-200"
-							>
-								Online — live values from the PLC. Stop it to edit the program.
-							</p>
-						{/if}
-						<LadderEditor {doc} {monitor} locked={runtime.online} />
+				{:else if view === 'circuit'}
+					<CircuitEditor {project} {sim} snapshot={runtime.snapshot} locked={runtime.online} />
+				{:else if view === 'symbols'}
+					<div class="h-full overflow-auto">
+						<SymbolTable {project} locked={runtime.online} />
 					</div>
-				</div>
-			{:else if view === 'circuit'}
-				<CircuitEditor {project} {sim} snapshot={runtime.snapshot} locked={runtime.online} />
-			{:else}
-				<div class="h-full overflow-auto">
-					<SymbolTable {project} locked={runtime.online} />
+				{:else}
+					<div class="h-full overflow-auto">
+						<WatchTable {project} {runtime} />
+					</div>
+				{/if}
+			</div>
+			{#if showTrend}
+				<div class="h-64 shrink-0 border-t border-slate-800 bg-slate-950">
+					<TrendChart
+						{runtime}
+						lanes={trend.lanes}
+						onRestart={() => runtime.setTrace(trend.signals)}
+					/>
 				</div>
 			{/if}
 		</div>

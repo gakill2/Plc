@@ -30,7 +30,9 @@ export default defineConfig({
 				'src/lib/runtime/core.ts',
 				'src/lib/circuit/model.ts',
 				'src/lib/symbols/**/*.ts',
-				'src/lib/project/project.ts'
+				'src/lib/project/project.ts',
+				'src/lib/monitor/watch.ts',
+				'src/lib/runtime/trace.ts'
 			],
 			exclude: [
 				'**/*.spec.ts',

@@ -9,6 +9,7 @@
 
 	const view = getLadderView();
 	const alias = $derived(view.doc.alias(el.operand));
+	const forced = $derived(view.monitor?.forced(el.operand) ?? null);
 	const online = $derived(view.monitor !== null);
 	const inPower = $derived(view.monitor?.power(inId) ?? false);
 	const outPower = $derived(view.monitor?.power(el.id) ?? false);
@@ -54,6 +55,12 @@
 			{/if}
 		</g>
 	</svg>
+	{#if forced !== null}
+		<span
+			class="pointer-events-none absolute top-5 left-1 rounded bg-red-600 px-1 text-[9px] font-bold text-white"
+			title="Forced to {forced ? 1 : 0}">F{forced ? 1 : 0}</span
+		>
+	{/if}
 	{#if alias}
 		<span
 			class="pointer-events-none absolute inset-x-0 bottom-0.5 truncate text-center font-mono text-[10px] text-sky-300/80"

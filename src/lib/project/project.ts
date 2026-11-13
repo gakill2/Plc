@@ -1,6 +1,7 @@
 import { demoCircuit, type Circuit } from '#lib/circuit/model.js';
 import { demoProgram } from '#lib/ladder/defaults.js';
 import type { LadderProgram } from '#lib/ladder/model.js';
+import { demoWatch, type WatchEntry } from '#lib/monitor/watch.js';
 import type { SymbolEntry } from '#lib/symbols/symbols.js';
 
 /** Everything that is saved: the program, the wiring and the user's symbols. */
@@ -9,12 +10,15 @@ export interface Project {
 	ladder: LadderProgram;
 	circuit: Circuit;
 	symbols: SymbolEntry[];
+	/** Rows of the watch table (also: which signals are trended). */
+	watch: WatchEntry[];
 }
 
 export const demoProject = (): Project => ({
 	version: 2,
 	ladder: demoProgram(),
 	circuit: demoCircuit(),
+	watch: demoWatch(),
 	symbols: [
 		{
 			id: 'sym-motor-starts',
@@ -39,11 +43,14 @@ export function parseProject(raw: unknown): Project | null {
 			version: 2,
 			ladder: raw.ladder,
 			circuit: raw.circuit,
-			symbols: Array.isArray(raw.symbols) ? (raw.symbols as SymbolEntry[]) : []
+			symbols: Array.isArray(raw.symbols) ? (raw.symbols as SymbolEntry[]) : [],
+			watch: Array.isArray(raw.watch) ? (raw.watch as WatchEntry[]) : demoWatch()
 		};
 	}
 	// stage 2 saved the bare ladder program
-	if (isLadder(raw)) return { version: 2, ladder: raw, circuit: demoCircuit(), symbols: [] };
+	if (isLadder(raw)) {
+		return { version: 2, ladder: raw, circuit: demoCircuit(), symbols: [], watch: demoWatch() };
+	}
 	return null;
 }
 
