@@ -1,0 +1,149 @@
+<script lang="ts">
+	import type { CmpOp } from '#lib/engine/index.js';
+	import { getLadderView } from '#lib/ladder/context.js';
+	import type { Compare, CounterBox, TimerBox } from '#lib/ladder/model.js';
+	import { operandInput, wireColor } from './colors.js';
+	import Selectable from './Selectable.svelte';
+
+	type Props = { el: TimerBox | CounterBox | Compare; inId: string | null };
+	let { el, inId }: Props = $props();
+
+	const view = getLadderView();
+	const online = $derived(view.monitor !== null);
+	const inPower = $derived(view.monitor?.power(inId) ?? false);
+	const outPower = $derived(view.monitor?.power(el.id) ?? false);
+	const CMP_OPS: CmpOp[] = ['==', '<>', '<', '>', '<=', '>='];
+
+	const title = $derived(el.kind === 'compare' ? 'CMP' : el.type);
+	const timerState = $derived(el.kind === 'timer' ? view.monitor?.timer(el.timer) : null);
+	const counterState = $derived(el.kind === 'counter' ? view.monitor?.counter(el.counter) : null);
+
+	function formatMs(ms: number): string {
+		return ms >= 1000 ? `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 2)} s` : `${ms} ms`;
+	}
+
+	const stop = (e: Event) => e.stopPropagation();
+	const field = 'grid grid-cols-[2rem_1fr] items-center gap-1';
+	const label = 'text-[10px] font-semibold text-slate-500';
+</script>
+
+<Selectable id={el.id} label="{title} box" class="w-40 pb-2">
+	<!-- wire stubs at y = 32 -->
+	<div
+		class="absolute top-[31px] left-0 h-0.5 w-3"
+		style:background-color={wireColor(online, inPower)}
+	></div>
+	<div
+		class="absolute top-[31px] right-0 h-0.5 w-3"
+		style:background-color={wireColor(online, outPower)}
+	></div>
+
+	<div
+		class="mx-3 mt-3 space-y-1 rounded border-2 bg-slate-950 px-1.5 py-1 transition-colors"
+		style:border-color={online ? (outPower ? '#34d399' : '#475569') : '#64748b'}
+	>
+		<div class="flex items-center justify-between gap-1">
+			<span class="font-mono text-xs font-bold text-slate-200">{title}</span>
+			{#if el.kind === 'timer'}
+				<input
+					class="{operandInput} w-14"
+					value={el.timer}
+					disabled={view.locked}
+					aria-label="Timer"
+					oninput={(e) => view.doc.update(el, { timer: e.currentTarget.value })}
+					onclick={stop}
+				/>
+			{:else if el.kind === 'counter'}
+				<input
+					class="{operandInput} w-14"
+					value={el.counter}
+					disabled={view.locked}
+					aria-label="Counter"
+					oninput={(e) => view.doc.update(el, { counter: e.currentTarget.value })}
+					onclick={stop}
+				/>
+			{/if}
+		</div>
+
+		{#if el.kind === 'timer'}
+			<label class={field}>
+				<span class={label}>PT</span>
+				<input
+					class="{operandInput} text-left"
+					value={el.pt}
+					disabled={view.locked}
+					oninput={(e) => view.doc.update(el, { pt: e.currentTarget.value })}
+					onclick={stop}
+				/>
+			</label>
+			<div class={field}>
+				<span class={label}>ET</span>
+				<span class="px-1 font-mono text-xs text-amber-300">
+					{timerState ? formatMs(timerState.et) : '–'}
+				</span>
+			</div>
+		{:else if el.kind === 'counter'}
+			<label class={field}>
+				<span class={label}>PV</span>
+				<input
+					class="{operandInput} text-left"
+					value={el.pv}
+					disabled={view.locked}
+					oninput={(e) => view.doc.update(el, { pv: e.currentTarget.value })}
+					onclick={stop}
+				/>
+			</label>
+			<label class={field}>
+				<span class={label}>{el.type === 'CTU' ? 'R' : 'LD'}</span>
+				<input
+					class="{operandInput} text-left"
+					value={el.reset}
+					placeholder="—"
+					disabled={view.locked}
+					oninput={(e) => view.doc.update(el, { reset: e.currentTarget.value })}
+					onclick={stop}
+				/>
+			</label>
+			<div class={field}>
+				<span class={label}>CV</span>
+				<span class="px-1 font-mono text-xs text-amber-300">{counterState?.cv ?? '–'}</span>
+			</div>
+		{:else}
+			<div class="flex items-center gap-1">
+				<input
+					class="{operandInput} min-w-0"
+					value={el.a}
+					disabled={view.locked}
+					aria-label="Left operand"
+					oninput={(e) => view.doc.update(el, { a: e.currentTarget.value })}
+					onclick={stop}
+				/>
+				<select
+					class="rounded bg-slate-800 px-0.5 font-mono text-xs text-slate-100 disabled:opacity-70"
+					value={el.cmp}
+					disabled={view.locked}
+					aria-label="Comparison"
+					onchange={(e) => view.doc.update(el, { cmp: e.currentTarget.value as CmpOp })}
+					onclick={stop}
+				>
+					{#each CMP_OPS as op (op)}<option value={op}>{op}</option>{/each}
+				</select>
+				<input
+					class="{operandInput} min-w-0"
+					value={el.b}
+					disabled={view.locked}
+					aria-label="Right operand"
+					oninput={(e) => view.doc.update(el, { b: e.currentTarget.value })}
+					onclick={stop}
+				/>
+			</div>
+			{#if view.monitor}
+				<div class="text-center font-mono text-[10px] text-amber-300">
+					{view.monitor.number(el.a) ?? el.a}
+					{el.cmp}
+					{view.monitor.number(el.b) ?? el.b}
+				</div>
+			{/if}
+		{/if}
+	</div>
+</Selectable>

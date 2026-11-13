@@ -34,5 +34,8 @@ jobs:
       - name: Unit & component tests
         run: npm test
 
+      - name: Core coverage (thresholds enforced)
+        run: npm run test:coverage
+
       - name: Build
         run: npm run build

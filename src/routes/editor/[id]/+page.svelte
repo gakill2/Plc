@@ -1,12 +1,14 @@
 <script lang="ts">
-	import PagePlaceholder from '#lib/components/PagePlaceholder.svelte';
+	import Workspace from '#lib/editor/Workspace.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 </script>
 
-<PagePlaceholder
-	title="Editor"
-	description={`Project “${data.projectId}”: circuit, program and monitor views will live here.`}
-	stage="stage 2"
-/>
+<svelte:head>
+	<title>Editor · PLC Sim</title>
+</svelte:head>
+
+{#key data.projectId}
+	<Workspace storageKey="plcsim:ladder:{data.projectId}" />
+{/key}

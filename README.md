@@ -6,7 +6,7 @@ A browser-based PLC simulator for learning industrial automation. Build a circui
 controller, push buttons, sensors, lamps and motors, program it in **Ladder Logic** or
 **Structured Text**, then run it and watch the controller execute your program scan by scan.
 
-**Live demo:** _coming soon_ · **Status:** stage 0 — project foundations
+**Live demo:** _coming soon_ · **Status:** stage 2 — Ladder editor with live power flow, running in a Web Worker
 
 ## Planned features
 
@@ -29,7 +29,8 @@ Ladder / ST  ──compile──▶  shared IR (instruction list)  ──▶  VM
 UI (Svelte 5) ◀──── memory snapshots every frame ────────────┘
 ```
 
-The PLC engine is plain TypeScript with no UI dependencies, so it is fully unit-tested in Node.
+The PLC engine is plain TypeScript with no UI dependencies, so it is fully unit-tested in Node —
+see [`src/lib/engine`](./src/lib/engine/README.md).
 
 ## Tech stack
 
@@ -43,6 +44,7 @@ Requires Node 22 (see `.nvmrc`).
 npm install
 npm run dev        # dev server
 npm test           # unit + component tests
+npm run test:coverage  # engine coverage report
 npm run check      # type check
 npm run lint       # prettier + eslint
 npm run build      # static build to ./build

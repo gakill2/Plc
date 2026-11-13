@@ -22,6 +22,20 @@ export default defineConfig({
 	test: {
 		expect: { requireAssertions: true },
 		passWithNoTests: true,
+		coverage: {
+			provider: 'v8',
+			include: ['src/lib/engine/**/*.ts', 'src/lib/ladder/**/*.ts', 'src/lib/runtime/core.ts'],
+			exclude: [
+				'**/*.spec.ts',
+				'src/lib/engine/index.ts',
+				'src/lib/engine/types.ts',
+				'src/lib/engine/ir.ts',
+				'**/*.svelte.ts',
+				'src/lib/ladder/context.ts',
+				'src/lib/ladder/monitor.ts'
+			],
+			thresholds: { lines: 90, functions: 90, branches: 85, statements: 90 }
+		},
 		projects: [
 			{
 				extends: './vite.config.ts',
