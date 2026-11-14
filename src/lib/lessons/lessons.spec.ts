@@ -18,13 +18,16 @@ describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, les
 	it('the reference solution passes every test', () => {
 		const { program, diagnostics } = compile(lesson, lesson.solution());
 		expect(diagnostics).toEqual([]);
-		const results = runLessonTests(lesson, program);
+		const circuit = lesson.solutionCircuit?.() ?? lesson.starter().circuit;
+		const results = runLessonTests(lesson, program, circuit);
 		expect(results.filter((r) => !r.passed)).toEqual([]);
 	});
 
 	it('the starter project does not pass', () => {
 		const { program } = compile(lesson, lesson.starter().ladder);
-		expect(runLessonTests(lesson, program).some((r) => !r.passed)).toBe(true);
+		expect(runLessonTests(lesson, program, lesson.starter().circuit).some((r) => !r.passed)).toBe(
+			true
+		);
 	});
 });
 

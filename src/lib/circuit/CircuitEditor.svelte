@@ -103,7 +103,7 @@
 							source: 'plc',
 							sourceHandle: w.terminal,
 							target: d.id,
-							targetHandle: 'in',
+							targetHandle: port.id === MAIN ? 'in' : port.id,
 							data
 						}
 					];
@@ -136,7 +136,8 @@
 		circuit.devices.push(
 			device(type, nextLabel(circuit, type), x, y, {
 				...(type === 'lamp' ? { color: 'green' as const } : {}),
-				...(DEVICES[type].defaultNc ? { nc: true } : {})
+				...(DEVICES[type].defaultNc ? { nc: true } : {}),
+				...(type === 'vfd' ? { aiWord: 'QW4', aoWord: 'IW4' } : {})
 			})
 		);
 	}

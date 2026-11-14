@@ -72,6 +72,10 @@ export class PlcRuntime {
 		this.#send({ type: 'step' });
 	}
 
+	setInputNumber(address: string, value: number) {
+		this.#send({ type: 'setInputNumber', address, value });
+	}
+
 	setInput(address: string, value: boolean) {
 		this.#send({ type: 'setInput', address, value });
 	}

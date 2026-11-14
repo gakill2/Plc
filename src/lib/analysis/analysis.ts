@@ -114,9 +114,11 @@ export interface AnalysisInput {
 	names: ReadonlyMap<string, string>;
 	/** Terminals that have a device wired in the circuit. */
 	wired: readonly string[];
+	/** Addresses written from outside the program, e.g. by the operator panel. */
+	external?: readonly string[];
 }
 
-export function analyze({ xref, language, names, wired }: AnalysisInput): Warning[] {
+export function analyze({ xref, language, names, wired, external = [] }: AnalysisInput): Warning[] {
 	const warnings: Warning[] = [];
 	const label = (address: string) =>
 		names.has(address) ? `${names.get(address)} (${address})` : address;
@@ -156,7 +158,8 @@ export function analyze({ xref, language, names, wired }: AnalysisInput): Warnin
 		if (
 			(area === 'M' || (area === 'Q' && !wired.includes(e.address))) &&
 			e.reads.length > 0 &&
-			e.writes.length === 0
+			e.writes.length === 0 &&
+			!external.includes(e.address)
 		) {
 			warnings.push({
 				id: e.reads[0],

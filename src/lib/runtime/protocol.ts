@@ -23,6 +23,7 @@ export type RuntimeCommand =
 	| { type: 'stop' }
 	| { type: 'reset' }
 	| { type: 'setInput'; address: string; value: boolean }
+	| { type: 'setInputNumber'; address: string; value: number }
 	| { type: 'setSpeed'; speed: number }
 	| { type: 'force'; address: string; value: boolean | null }
 	| { type: 'clearForces' }

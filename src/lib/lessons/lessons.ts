@@ -4,6 +4,7 @@ import {
 	compare,
 	contact,
 	counterBox,
+	moveBox,
 	newId,
 	parallel,
 	rung,
@@ -82,6 +83,230 @@ const lineSafety = ({ process }: { process: { state(): unknown } | null }): stri
 	if (s.badDelivered) return 'wadliwy detal dojechał do końca linii';
 	return null;
 };
+
+/* ---------- commissioning lessons: machines with wiring faults ---------- */
+
+interface FieldDevice {
+	type: DeviceType;
+	label: string;
+	x: number;
+	y: number;
+	extra?: Partial<Device>;
+	/** port → terminal; `main` is the device's main port */
+	wires: Record<string, string>;
+}
+
+function field(list: FieldDevice[]): Circuit {
+	const circuit: Circuit = { plc: { x: 300, y: 0 }, devices: [], wires: [] };
+	for (const f of list) {
+		const d = device(f.type, f.label, f.x, f.y, f.extra);
+		circuit.devices.push(d);
+		for (const [port, terminal] of Object.entries(f.wires)) {
+			circuit.wires.push({
+				id: newId('w'),
+				device: d.id,
+				terminal,
+				...(port === 'main' ? {} : { port })
+			});
+		}
+	}
+	return circuit;
+}
+
+const conveyorProgram = () =>
+	program(
+		rung(
+			[
+				parallel([[contact('NO', 'Start')], [contact('NO', 'Run')]]),
+				contact('NO', 'Stop'),
+				contact('NC', 'Fault')
+			],
+			[coil('COIL', 'Run')],
+			'Praca: Start / Stop (NC) z podtrzymaniem, awaria zatrzymuje'
+		),
+		rung(
+			[contact('NO', 'Run'), contact('NC', 'PartAtEnd')],
+			[coil('COIL', 'Belt')],
+			'Taśma stoi, gdy detal jest na końcu'
+		),
+		rung([contact('NO', 'Run')], [coil('COIL', 'LampRun')], 'Lampka praca'),
+		rung([contact('NC', 'Stop')], [coil('RESET', 'Fault')], 'Stop kasuje awarię'),
+		rung(
+			[contact('NO', 'Belt'), contact('NC', 'BeltFeedback'), timer('TON', 'T0', 'T#2s')],
+			[coil('SET', 'Fault')],
+			'Stycznik wysterowany, a brak potwierdzenia przez 2 s = awaria'
+		),
+		rung([contact('NO', 'Fault')], [coil('COIL', 'LampFault')], 'Lampka awaria')
+	);
+
+function commissioningConveyor(faulty: boolean): Project {
+	const f = faulty;
+	return {
+		version: 2,
+		ladder: conveyorProgram(),
+		circuit: field([
+			{
+				type: 'pushbutton',
+				label: 'S1',
+				x: 0,
+				y: 30,
+				extra: { color: 'green' },
+				wires: { main: f ? 'I0.1' : 'I0.0' }
+			},
+			{
+				type: 'pushbutton',
+				label: 'S2',
+				x: 0,
+				y: 200,
+				extra: { color: 'red', nc: true },
+				wires: { main: f ? 'I0.0' : 'I0.1' }
+			},
+			{ type: 'sensor', label: 'B1', x: 0, y: 370, extra: { nc: f }, wires: { main: 'I0.2' } },
+			{
+				type: 'contactor',
+				label: 'K1',
+				x: 720,
+				y: 20,
+				wires: { main: 'Q0.0', aux: f ? 'I0.4' : 'I0.3' }
+			},
+			{
+				type: 'lamp',
+				label: 'H1',
+				x: 720,
+				y: 230,
+				extra: { color: 'green' },
+				wires: { main: f ? 'Q0.2' : 'Q0.1' }
+			},
+			{
+				type: 'lamp',
+				label: 'H2',
+				x: 720,
+				y: 390,
+				extra: { color: 'red' },
+				wires: { main: f ? 'Q0.1' : 'Q0.2' }
+			}
+		]),
+		symbols: [
+			symbol('Start', 'I0.0', 'S1 — przycisk Start (NO)'),
+			symbol('Stop', 'I0.1', 'S2 — przycisk Stop (NC: puszczony = 1)'),
+			symbol('PartAtEnd', 'I0.2', 'B1 — czujnik końca taśmy (NO: 1 = detal)'),
+			symbol('BeltFeedback', 'I0.3', 'K1 — styk pomocniczy (1 = stycznik załączony)'),
+			symbol('Belt', 'Q0.0', 'K1 — cewka stycznika taśmy'),
+			symbol('LampRun', 'Q0.1', 'H1 — lampka „praca” (zielona)'),
+			symbol('LampFault', 'Q0.2', 'H2 — lampka „awaria” (czerwona)'),
+			symbol('Run', 'M0.0', 'Linia w pracy'),
+			symbol('Fault', 'M0.1', 'Awaria: brak potwierdzenia K1')
+		],
+		watch: ['Start', 'Stop', 'PartAtEnd', 'BeltFeedback', 'Run', 'Fault'].map((w) =>
+			watchEntry(w, undefined, true)
+		),
+		lesson: 'commissioning-conveyor'
+	};
+}
+
+const vfdProgram = () =>
+	program(
+		rung(
+			[
+				parallel([[contact('NO', 'Start')], [contact('NO', 'Run')]]),
+				contact('NO', 'Stop'),
+				contact('NC', 'VfdFault')
+			],
+			[coil('COIL', 'Run')],
+			'Praca pompy: Start / Stop (NC), awaria falownika zatrzymuje'
+		),
+		rung(
+			[contact('NO', 'Run'), moveBox('19354', 'SpeedSetpoint')],
+			[coil('COIL', 'PumpRun')],
+			'RUN falownika i prędkość zadana 70 % = 35 Hz (27648 = 50 Hz)'
+		),
+		rung([contact('NO', 'Ack')], [coil('COIL', 'VfdReset')], 'Kwitowanie awarii falownika'),
+		rung([contact('NO', 'VfdAtSpeed')], [coil('COIL', 'LampAtSpeed')], 'Lampka: pompa na obrotach'),
+		rung([contact('NO', 'VfdFault')], [coil('COIL', 'LampFault')], 'Lampka: awaria falownika')
+	);
+
+function commissioningVfd(faulty: boolean): Project {
+	const f = faulty;
+	return {
+		version: 2,
+		ladder: vfdProgram(),
+		circuit: field([
+			{
+				type: 'pushbutton',
+				label: 'S1',
+				x: 0,
+				y: 30,
+				extra: { color: 'green' },
+				wires: { main: 'I0.0' }
+			},
+			{
+				type: 'pushbutton',
+				label: 'S2',
+				x: 0,
+				y: 200,
+				extra: { color: 'red', nc: true },
+				wires: { main: 'I0.1' }
+			},
+			{
+				type: 'pushbutton',
+				label: 'S3',
+				x: 0,
+				y: 370,
+				extra: { color: 'blue' },
+				wires: { main: 'I0.2' }
+			},
+			{
+				type: 'vfd',
+				label: 'U1',
+				x: 720,
+				y: 0,
+				extra: { aiWord: f ? 'QW6' : 'QW4', aoWord: 'IW4' },
+				wires: {
+					main: f ? 'Q0.4' : 'Q0.0',
+					reset: 'Q0.1',
+					ready: 'I0.3',
+					fault: f ? 'I0.6' : 'I0.4',
+					atSpeed: 'I0.5'
+				}
+			},
+			{
+				type: 'lamp',
+				label: 'H1',
+				x: 720,
+				y: 290,
+				extra: { color: 'green' },
+				wires: { main: 'Q0.2' }
+			},
+			{
+				type: 'lamp',
+				label: 'H2',
+				x: 720,
+				y: 440,
+				extra: { color: 'red' },
+				wires: { main: 'Q0.3' }
+			}
+		]),
+		symbols: [
+			symbol('Start', 'I0.0', 'S1 — przycisk Start (NO)'),
+			symbol('Stop', 'I0.1', 'S2 — przycisk Stop (NC)'),
+			symbol('Ack', 'I0.2', 'S3 — kwitowanie awarii'),
+			symbol('VfdReady', 'I0.3', 'U1 — przekaźnik READY'),
+			symbol('VfdFault', 'I0.4', 'U1 — przekaźnik FAULT (1 = awaria)'),
+			symbol('VfdAtSpeed', 'I0.5', 'U1 — przekaźnik AT SPEED'),
+			symbol('PumpRun', 'Q0.0', 'U1 — wejście RUN falownika'),
+			symbol('VfdReset', 'Q0.1', 'U1 — wejście RESET falownika'),
+			symbol('LampAtSpeed', 'Q0.2', 'H1 — lampka „pompa na obrotach”'),
+			symbol('LampFault', 'Q0.3', 'H2 — lampka „awaria falownika”'),
+			symbol('SpeedSetpoint', 'QW4', 'U1 AI1 — prędkość zadana (27648 = 50 Hz)'),
+			symbol('ActualSpeed', 'IW4', 'U1 AO1 — prędkość rzeczywista (27648 = 50 Hz)'),
+			symbol('Run', 'M0.0', 'Pompa w pracy')
+		],
+		watch: ['Run', 'PumpRun', 'SpeedSetpoint', 'ActualSpeed', 'VfdFault'].map((w) =>
+			watchEntry(w, undefined, true)
+		),
+		lesson: 'commissioning-vfd'
+	};
+}
 
 /* ---------- lessons ---------- */
 
@@ -856,6 +1081,153 @@ export const LESSONS: Lesson[] = [
 					settle('uruchom', { 'I0.1': true, 'I0.0': true }, { 'Q0.0': true }),
 					settle('puść Start', { 'I0.0': false }, { 'Q0.0': true }),
 					settle('przewód Stop przerwany', { 'I0.1': false }, { 'Q0.0': false })
+				]
+			}
+		]
+	},
+	/* ---------- commissioning: the program is right, the wiring is not ---------- */
+	{
+		slug: 'commissioning-conveyor',
+		kind: 'commissioning',
+		title: 'Uruchomienie: przenośnik z czujnikiem',
+		level: 'process',
+		summary: 'Program jest sprawdzony — ale elektryk się pomylił. Znajdź usterki okablowania.',
+		instructions: [
+			'Jesteś na uruchomieniu maszyny. **Program jest poprawny** (nie zmieniaj go), a dokumentacja to **tablica symboli** (widok Symbols): który element ma być na którym zacisku.',
+			'Maszyna: `S1` Start, `S2` Stop (podłączony NC), `B1` czujnik końca taśmy (1 = detal na końcu, taśma staje), `K1` stycznik taśmy ze stykiem pomocniczym, lampki `H1` praca (zielona) i `H2` awaria (czerwona). Brak potwierdzenia z `K1` przez 2 s = awaria, kasowana przyciskiem Stop.',
+			'**Objaw:** nic nie działa. Zrób test sygnałów (zakładka **Test I/O**): uruchom PLC, naciskaj urządzenia po kolei i porównuj z dokumentacją. Popraw okablowanie w widoku Circuit (przeciągnij przewód na właściwy zacisk, zmień NC).'
+		],
+		hints: [
+			'Na uruchomieniu zawsze zaczyna się od **testu sygnałów** (loop check): każde wejście i wyjście po kolei, zanim uruchomisz program w automacie.',
+			'Usterek jest cztery: przyciski, czujnik, styk pomocniczy, lampki. Zwróć uwagę, co pokazuje dioda wejścia, gdy NIC nie jest wciśnięte.'
+		],
+		starter: () => ({
+			...commissioningConveyor(true),
+			lesson: 'commissioning-conveyor'
+		}),
+		solution: conveyorProgram,
+		solutionCircuit: () => commissioningConveyor(false).circuit,
+		tests: [
+			{
+				name: 'Start i Stop sterują taśmą',
+				steps: [
+					{
+						label: 'nic nie wciśnięte',
+						wait: 100,
+						expectDevices: { K1: false, H1: false, H2: false }
+					},
+					{
+						label: 'wciśnij S1',
+						actuate: { S1: true },
+						wait: 100,
+						expectDevices: { K1: true, H1: true }
+					},
+					{
+						label: 'puść S1',
+						actuate: { S1: false },
+						wait: 100,
+						expectDevices: { K1: true, H2: false }
+					},
+					{
+						label: 'wciśnij S2',
+						actuate: { S2: true },
+						wait: 100,
+						expectDevices: { K1: false, H1: false }
+					},
+					{ label: 'puść S2', actuate: { S2: false }, wait: 100, expectDevices: { K1: false } }
+				]
+			},
+			{
+				name: 'Czujnik B1 zatrzymuje taśmę',
+				steps: [
+					{ label: 'start', actuate: { S1: true }, wait: 100 },
+					{ label: 'puść S1', actuate: { S1: false }, wait: 100, expectDevices: { K1: true } },
+					{
+						label: 'detal przed B1',
+						actuate: { B1: true },
+						wait: 100,
+						expectDevices: { K1: false, H1: true }
+					},
+					{ label: 'detal zabrany', actuate: { B1: false }, wait: 100, expectDevices: { K1: true } }
+				]
+			},
+			{
+				name: 'Brak potwierdzenia K1 to awaria',
+				steps: [
+					{ label: 'start', actuate: { S1: true }, wait: 100 },
+					{ label: 'puść S1', actuate: { S1: false }, wait: 1000, expectDevices: { H2: false } },
+					{
+						label: 'zadziałał termik K1',
+						actuate: { K1: true },
+						wait: 2500,
+						expectDevices: { H2: true, K1: false, H1: false }
+					},
+					{
+						label: 'naprawa i Stop (kasowanie)',
+						actuate: { K1: false, S2: true },
+						wait: 100,
+						expectDevices: { H2: false }
+					}
+				]
+			}
+		]
+	},
+	{
+		slug: 'commissioning-vfd',
+		kind: 'commissioning',
+		title: 'Uruchomienie: pompa z falownikiem',
+		level: 'process',
+		summary: 'Pompa ma ruszyć na 35 Hz, a stoi. Szukasz błędów w podłączeniu falownika.',
+		instructions: [
+			'Pompa jest napędzana przez **falownik** `U1`. Sterownik daje mu sygnał RUN (`Q0.0`), kasowanie błędu RESET (`Q0.1`) i prędkość zadaną w słowie analogowym `QW4` (70 % = 19354 = 35 Hz). Falownik odsyła READY (`I0.3`), FAULT (`I0.4`), AT SPEED (`I0.5`) i prędkość rzeczywistą w `IW4`.',
+			'`S1` Start, `S2` Stop (NC), `S3` kwitowanie awarii, `H1` lampka „pompa na obrotach”, `H2` lampka „awaria falownika”. **Program jest poprawny.**',
+			'**Objaw:** po Start pompa nie rusza, a awaria falownika nie jest sygnalizowana. Znajdź usterki: sprawdź przewody falownika i adresy słów analogowych (pola AI1/AO1 na falowniku w widoku Circuit). Awarię wywołasz przyciskiem **Trip**.'
+		],
+		hints: [
+			'W zakładce Test I/O i w Watch zobaczysz `SpeedSetpoint` (QW4): program wpisuje tam 19354. Czy falownik czyta to samo słowo?',
+			'Trzy usterki: przewód RUN, słowo prędkości zadanej, wyjście FAULT falownika.'
+		],
+		starter: () => ({ ...commissioningVfd(true), lesson: 'commissioning-vfd' }),
+		solution: vfdProgram,
+		solutionCircuit: () => commissioningVfd(false).circuit,
+		tests: [
+			{
+				name: 'Pompa rusza i osiąga 35 Hz',
+				steps: [
+					{ label: 'wciśnij S1', actuate: { S1: true }, wait: 100 },
+					{
+						label: 'puść S1',
+						actuate: { S1: false },
+						wait: 4000,
+						expectDevices: { U1: true, H1: true },
+						check: ({ device }) => {
+							const hz = device('U1')?.hz ?? 0;
+							return Math.abs(hz - 35) < 0.6
+								? null
+								: `falownik pracuje z ${hz.toFixed(1)} Hz, a powinien 35 Hz`;
+						}
+					},
+					{
+						label: 'wciśnij S2',
+						actuate: { S2: true },
+						wait: 4000,
+						expectDevices: { U1: false, H1: false }
+					}
+				]
+			},
+			{
+				name: 'Awaria falownika: lampka i kwitowanie',
+				steps: [
+					{ label: 'start', actuate: { S1: true }, wait: 100 },
+					{ label: 'puść S1', actuate: { S1: false }, wait: 2000 },
+					{
+						label: 'awaria U1 (Trip)',
+						actuate: { U1: true },
+						wait: 300,
+						expectDevices: { H2: true }
+					},
+					{ label: 'S3 — kwitowanie', actuate: { S3: true }, wait: 100 },
+					{ label: 'puść S3', actuate: { S3: false }, wait: 100, expectDevices: { H2: false } }
 				]
 			}
 		]

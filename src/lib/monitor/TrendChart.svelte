@@ -5,8 +5,14 @@
 
 	/** Anything with a current time and a trace — the PLC runtime or a tutorial mini-simulator. */
 	type TrendSource = { readonly snapshot: { timeMs: number } | null; readonly trace: TraceBuffer };
-	type Props = { runtime: TrendSource; lanes: TrendLane[]; onRestart: () => void };
-	let { runtime, lanes, onRestart }: Props = $props();
+	type Props = {
+		runtime: TrendSource;
+		lanes: TrendLane[];
+		onRestart: () => void;
+		/** Fills the chart with signals when it is empty (offered as a button). */
+		onAddSignals?: () => void;
+	};
+	let { runtime, lanes, onRestart, onAddSignals }: Props = $props();
 
 	const WINDOWS = [1000, 2000, 5000, 10_000, 30_000, 60_000];
 	const COLORS = [
@@ -125,9 +131,15 @@
 
 	<div class="min-h-0 flex-1 overflow-auto" bind:clientWidth={width}>
 		{#if lanes.length === 0}
-			<p class="p-4 text-xs text-slate-500">
-				No signals — tick “Trend” next to a row in the Watch view to plot it here.
-			</p>
+			<div class="flex flex-wrap items-center gap-3 p-4 text-xs text-slate-500">
+				<span>No signals — tick “Trend” next to a row in the Watch view to plot it here.</span>
+				{#if onAddSignals}
+					<button
+						class="rounded border border-sky-500/50 px-2.5 py-1 text-sky-300 hover:bg-sky-500/10"
+						onclick={onAddSignals}>Plot the main signals</button
+					>
+				{/if}
+			</div>
 		{:else}
 			<svg
 				{width}

@@ -1,3 +1,4 @@
+import { demoHmi, isHmi, type Hmi } from '#lib/hmi/model.js';
 import { demoCircuit, type Circuit } from '#lib/circuit/model.js';
 import { demoProgram } from '#lib/ladder/defaults.js';
 import type { LadderProgram } from '#lib/ladder/model.js';
@@ -26,6 +27,8 @@ export interface Project {
 	language?: ProgramLanguage;
 	/** Structured Text source (kept even while the ladder program is active). */
 	st?: string;
+	/** Operator panel and alarms. */
+	hmi?: Hmi;
 }
 
 export type ProgramLanguage = 'ladder' | 'st';
@@ -38,6 +41,7 @@ export const demoProject = (): Project => ({
 	watch: demoWatch(),
 	language: 'ladder',
 	st: DEMO_ST,
+	hmi: demoHmi(),
 	symbols: [
 		{
 			id: 'sym-motor-starts',
@@ -69,7 +73,8 @@ export function parseProject(raw: unknown): Project | null {
 			scenario: isProcessKind(raw.scenario) ? raw.scenario : undefined,
 			lesson: typeof raw.lesson === 'string' ? raw.lesson : undefined,
 			language: raw.language === 'st' ? 'st' : 'ladder',
-			st: typeof raw.st === 'string' ? raw.st : ''
+			st: typeof raw.st === 'string' ? raw.st : '',
+			hmi: isHmi(raw.hmi) ? raw.hmi : undefined
 		};
 	}
 	// stage 2 saved the bare ladder program

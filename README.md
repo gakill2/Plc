@@ -35,6 +35,13 @@ it and watch the controller execute your program scan by scan — or let it driv
   proves passes (in LAD, and for several lessons also in ST).
 - **Projects** — saved in the browser, undo / redo, export / import as JSON, and **share links**
   that carry the whole project in the URL fragment (nothing is uploaded).
+- **Operator panel (HMI)** — drag-and-drop screen editor (buttons, switches, lamps, values,
+  numeric inputs, bars, alarm list) bound to PLC tags, with alarm handling: come / go /
+  acknowledge, history and an ACK bit for the program.
+- **Frequency inverter** — a VFD device with RUN / REV / RESET, READY / FAULT / AT SPEED,
+  analog speed setpoint and feedback words (0 … 27648), ramps and trips.
+- **Commissioning exercises** — the program is right, the wiring is not: an I/O check sheet and
+  tests that run the machine through the circuit, so they pass only once the wiring is fixed.
 - **Reports** — a printable page (PDF via the browser) with the ladder diagram or ST code, symbol
   table and I/O list; each section also exports as PNG for lab reports.
 - **Works offline** — installable PWA; a service worker caches the whole app after the first

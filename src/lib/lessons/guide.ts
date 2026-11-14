@@ -9,6 +9,7 @@ import type {
 	Series,
 	TimerType
 } from '#lib/ladder/model.js';
+import { normalizeTerminal, type Circuit } from '#lib/circuit/model.js';
 
 /*
  * Guided steps for the lessons ("krok po kroku"). Each step is checked live against the ladder
@@ -19,6 +20,8 @@ import type {
 
 export interface GuideContext {
 	ladder: LadderProgram;
+	/** the project's circuit (commissioning lessons check the wiring) */
+	circuit?: Circuit;
 	/** Resolves a symbol or address to a normalized address (null if invalid). */
 	addr: (operand: string) => string | null;
 	online: boolean;
@@ -140,6 +143,33 @@ const checkIt: GuideStep = {
 	done: (c) => c.passed,
 	manual: true
 };
+
+const testIo: GuideStep = {
+	text: 'Test sygnałów (zakładka **Test I/O**): uruchom PLC i po kolei uruchamiaj urządzenia — porównuj, która dioda się zapala, z dokumentacją.',
+	done: (c) => c.online || c.passed,
+	manual: true
+};
+
+/** Is the port of a device (by label) wired to this terminal? */
+const wired = (c: GuideContext, label: string, port: string, terminal: string) => {
+	const d = c.circuit?.devices.find((x) => x.label === label);
+	return (
+		!!d &&
+		!!c.circuit?.wires.some(
+			(w) =>
+				w.device === d.id &&
+				(w.port ?? 'main') === port &&
+				normalizeTerminal(w.terminal) === terminal
+		)
+	);
+};
+const nc = (c: GuideContext, label: string) =>
+	c.circuit?.devices.find((x) => x.label === label)?.nc ?? false;
+const vfdWord = (c: GuideContext, label: string, key: 'aiWord' | 'aoWord') =>
+	c.circuit?.devices
+		.find((x) => x.label === label)
+		?.[key]?.trim()
+		.toUpperCase();
 
 /** How many coils of a type write this operand in the whole program. */
 const coils = (c: GuideContext, type: CoilType, op: string) =>
@@ -394,6 +424,44 @@ export const GUIDES: Record<string, GuideStep[]> = {
 			})
 		},
 		runIt('wciśnij Start, w widoku Process włącz Auto feed i dorzuć pęknięty detal.'),
+		checkIt
+	],
+
+	/* ---------- commissioning ---------- */
+	'commissioning-conveyor': [
+		testIo,
+		{
+			text: 'Przyciski: dioda `I0.0` ma się zapalać od `S1` (Start), a `I0.1` gaśnie po wciśnięciu `S2` (Stop, NC). Czy przewody trafiają na zaciski z dokumentacji?',
+			done: (c) => wired(c, 'S1', 'main', 'I0.0') && wired(c, 'S2', 'main', 'I0.1')
+		},
+		{
+			text: 'Czujnik `B1`: bez detalu wejście `I0.2` ma być 0. Co pokazuje dioda, gdy przed czujnikiem nic nie ma? (sprawdź ustawienie NC)',
+			done: (c) => wired(c, 'B1', 'main', 'I0.2') && nc(c, 'B1') === false
+		},
+		{
+			text: 'Styk pomocniczy `K1` — gdzie wraca potwierdzenie załączenia stycznika? Dokumentacja: `BeltFeedback` = `I0.3`.',
+			done: (c) => wired(c, 'K1', 'aux', 'I0.3')
+		},
+		{
+			text: 'Lampki: zielona `H1` = praca (`Q0.1`), czerwona `H2` = awaria (`Q0.2`). Zgadza się kolor ze znaczeniem?',
+			done: (c) => wired(c, 'H1', 'main', 'Q0.1') && wired(c, 'H2', 'main', 'Q0.2')
+		},
+		checkIt
+	],
+	'commissioning-vfd': [
+		testIo,
+		{
+			text: 'Sygnał RUN: program włącza `PumpRun` (`Q0.0`). Czy ten zacisk trafia na wejście RUN falownika `U1`?',
+			done: (c) => wired(c, 'U1', 'main', 'Q0.0')
+		},
+		{
+			text: 'Prędkość zadana: program pisze ją do `QW4`. Które słowo czyta falownik (pole AI1 na `U1`)?',
+			done: (c) => vfdWord(c, 'U1', 'aiWord') === 'QW4' && vfdWord(c, 'U1', 'aoWord') === 'IW4'
+		},
+		{
+			text: 'Awaria: przekaźnik FAULT falownika ma wracać na `I0.4` (`VfdFault`). Wywołaj awarię przyciskiem Trip i sprawdź diodę.',
+			done: (c) => wired(c, 'U1', 'fault', 'I0.4')
+		},
 		checkIt
 	],
 

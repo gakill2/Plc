@@ -201,6 +201,61 @@
 						>
 					</div>
 				</div>
+			{:else if dev.type === 'vfd'}
+				{@const v = view.sim.vfd[dev.id]}
+				{@const hz = v?.hz ?? 0}
+				<div class="flex w-full items-center gap-2">
+					<div
+						class="flex-1 rounded border border-slate-600 bg-slate-950 px-1.5 py-1 font-mono"
+						role="img"
+						aria-label="{dev.label} {Math.abs(hz).toFixed(1)} Hz{v?.code ? ` ${v.code}` : ''}"
+					>
+						<div
+							class="text-right text-base leading-none {v?.code
+								? 'text-red-400'
+								: 'text-emerald-300'}"
+						>
+							{v?.code
+								? v.code.slice(0, 4)
+								: `${hz < 0 ? '◀' : hz > 0 ? '▶' : ''} ${Math.abs(hz).toFixed(1)}`}
+						</div>
+						<div class="mt-0.5 flex justify-between text-[8px] text-slate-500">
+							<span class={(v?.ready ?? true) ? 'text-emerald-400' : ''}>RDY</span>
+							<span class={hz !== 0 ? 'text-emerald-400' : ''}>RUN</span>
+							<span class={v?.fault ? 'text-red-400' : ''}>FLT</span>
+							<span>Hz</span>
+						</div>
+					</div>
+					<div class="flex flex-col items-center gap-1">
+						<svg viewBox="0 0 24 24" class="size-6" aria-hidden="true">
+							<circle
+								cx="12"
+								cy="12"
+								r="10"
+								fill="#1e293b"
+								stroke={hz ? '#34d399' : '#475569'}
+								stroke-width="2"
+							/>
+							<g
+								class={hz ? 'origin-center animate-spin' : ''}
+								style:animation-duration="{hz ? Math.max(0.15, 30 / Math.abs(hz)) : 0}s"
+								style:animation-direction={hz < 0 ? 'reverse' : 'normal'}
+							>
+								<path d="M12 12 L12 4 A3 3 0 0 1 15 7 Z" fill={hz ? '#34d399' : '#64748b'} />
+								<path
+									d="M12 12 L12 4 A3 3 0 0 1 15 7 Z"
+									fill={hz ? '#34d399' : '#64748b'}
+									transform="rotate(180 12 12)"
+								/>
+							</g>
+						</svg>
+						<button
+							class="nodrag rounded border border-slate-700 px-1 text-[9px] text-slate-400 hover:bg-slate-800"
+							title="Simulate a drive fault (overcurrent). The PLC has to reset it."
+							onclick={() => view.sim.tripVfd(dev)}>Trip</button
+						>
+					</div>
+				</div>
 			{:else if dev.type === 'limit' || dev.type === 'sensor'}
 				<button
 					class="nodrag flex items-center gap-2 rounded border px-2 py-1 text-[11px] {actuated
@@ -292,6 +347,22 @@
 			{/if}
 		</div>
 
+		{#if dev.type === 'vfd'}
+			<div class="mb-1 grid grid-cols-2 gap-1 text-[10px]">
+				{#each [['aiWord', 'AI1 ← ', 'QW4'], ['aoWord', 'AO1 → ', 'IW4']] as const as [key, label, placeholder] (key)}
+					<label class="flex items-center gap-0.5 text-slate-400">
+						{label}<input
+							class="nodrag w-12 rounded bg-slate-800 px-1 font-mono text-slate-200 disabled:opacity-70"
+							value={dev[key] ?? ''}
+							{placeholder}
+							disabled={view.locked}
+							aria-label="{dev.label} {key === 'aiWord' ? 'setpoint word' : 'speed word'}"
+							oninput={(e) => (dev[key] = e.currentTarget.value.toUpperCase().trim())}
+						/>
+					</label>
+				{/each}
+			</div>
+		{/if}
 		<div class="flex items-center justify-between gap-1 text-[10px]">
 			<div class="flex flex-col">
 				{#each ports as port (port.id)}
@@ -335,21 +406,34 @@
 		</div>
 
 		{#each ports as port, i (port.id)}
+			{@const outs = ports.filter((p) => p.io === 'output')}
+			{@const ins = ports.filter((p) => p.io === 'input')}
 			{#if port.io === 'input'}
+				{@const k = ins.indexOf(port)}
 				<Handle
 					type="source"
 					position={spec.io === 'input' ? Position.Right : Position.Bottom}
 					id={port.id === MAIN ? 'out' : port.id}
 					isConnectable={!view.locked}
-					style={spec.io === 'input' && ports.length > 1 ? `top: ${35 + i * 30}%` : undefined}
+					style={spec.io === 'input'
+						? ports.length > 1
+							? `top: ${35 + i * 30}%`
+							: undefined
+						: ins.length > 1
+							? `left: ${25 + k * 25}%`
+							: undefined}
+					title={port.label}
 					class="!size-3 !border-slate-900 !bg-sky-400"
 				/>
 			{:else}
+				{@const k = outs.indexOf(port)}
 				<Handle
 					type="target"
 					position={Position.Left}
-					id="in"
+					id={port.id === MAIN ? 'in' : port.id}
 					isConnectable={!view.locked}
+					style={outs.length > 1 ? `top: ${30 + k * 20}%` : undefined}
+					title={port.label}
 					class="!size-3 !border-slate-900 !bg-amber-400"
 				/>
 			{/if}

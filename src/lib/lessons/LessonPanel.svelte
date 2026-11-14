@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
 	import type { LadderProgram } from '#lib/ladder/model.js';
+	import type { Circuit } from '#lib/circuit/model.js';
 	import type { SymbolMap } from '#lib/symbols/symbols.js';
 	import { addressResolver, GUIDES } from './guide.js';
 	import { onMount } from 'svelte';
@@ -20,6 +21,7 @@
 		symbols: SymbolMap;
 		online: boolean;
 		language: 'ladder' | 'st';
+		circuit: Circuit;
 	};
 	let {
 		lesson,
@@ -30,7 +32,8 @@
 		ladder,
 		symbols,
 		online,
-		language
+		language,
+		circuit
 	}: Props = $props();
 
 	let results = $state.raw<TestResult[] | null>(null);
@@ -52,6 +55,7 @@
 	const ticks = $derived.by(() => {
 		const ctx = {
 			ladder,
+			circuit,
 			addr: addressResolver(symbols),
 			online,
 			passed: passed || completedBefore
@@ -70,7 +74,7 @@
 		checking = true;
 		// let the button show its busy state, then run the (synchronous) simulation
 		setTimeout(() => {
-			results = runLessonTests(lesson, compiled.program);
+			results = runLessonTests(lesson, compiled.program, $state.snapshot(circuit) as Circuit);
 			checking = false;
 			if (results.every((r) => r.passed)) markCompleted(lesson.slug);
 		}, 20);
@@ -84,7 +88,11 @@
 >
 	<div>
 		<p class="text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
-			{lesson.kind === 'debug' ? '🐞 Znajdź błąd' : 'Ćwiczenie'} · {LEVELS[lesson.level]}
+			{lesson.kind === 'debug'
+				? '🐞 Znajdź błąd'
+				: lesson.kind === 'commissioning'
+					? '🔧 Uruchomienie'
+					: 'Ćwiczenie'} · {LEVELS[lesson.level]}
 		</p>
 		<h2 id="lesson-title" class="text-sm font-semibold text-white">{lesson.title}</h2>
 	</div>
@@ -93,7 +101,7 @@
 		{#each lesson.instructions as p, i (i)}<p><RichText text={p} /></p>{/each}
 	</div>
 
-	{#if guide.length && language === 'ladder'}
+	{#if guide.length && (language === 'ladder' || lesson.kind === 'commissioning')}
 		<div lang="pl">
 			<p class="mb-1 text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
 				Krok po kroku · {ticks.filter(Boolean).length}/{guide.length}

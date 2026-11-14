@@ -4,11 +4,17 @@ import { deviceSymbols } from '#lib/circuit/model.js';
 import { addressResolver, GUIDES, type GuideContext } from './guide.js';
 import { LESSONS } from './lessons.js';
 
-function context(slug: string, ladder: GuideContext['ladder']): GuideContext {
+function context(
+	slug: string,
+	ladder: GuideContext['ladder'],
+	which: 'solution' | 'starter' = 'solution'
+): GuideContext {
 	const lesson = LESSONS.find((l) => l.slug === slug)!;
 	const project = lesson.starter();
 	const { map } = checkSymbols([...deviceSymbols(project.circuit), ...project.symbols]);
-	return { ladder, addr: addressResolver(map), online: false, passed: false };
+	const circuit =
+		which === 'solution' ? (lesson.solutionCircuit?.() ?? project.circuit) : project.circuit;
+	return { ladder, circuit, addr: addressResolver(map), online: false, passed: false };
 }
 
 describe('lesson guides', () => {
@@ -32,9 +38,9 @@ describe('lesson guides', () => {
 			}
 			expect(steps.at(-1)!.done({ ...c, passed: true })).toBe(true);
 			// neither an empty program nor the starter ticks the building steps
-			const empty = context(slug, { version: 1, rungs: [] });
+			const empty = { ...context(slug, { version: 1, rungs: [] }, 'starter'), circuit: undefined };
 			expect(steps.some((s) => s.done(empty))).toBe(false);
-			const start = context(slug, lesson.starter().ladder);
+			const start = context(slug, lesson.starter().ladder, 'starter');
 			expect(building.every((s) => s.done(start))).toBe(false);
 		}
 	);

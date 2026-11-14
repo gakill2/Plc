@@ -140,6 +140,24 @@ export class Plc {
 		else this.#inputs[addr.byte] &= ~bit;
 	}
 
+	/**
+	 * Sets an input word / byte / double word from the field (e.g. an analog value, IW4).
+	 * The program sees it on the next scan.
+	 */
+	setInputNumber(address: string | Address, value: number, type?: NumType): void {
+		const addr = typeof address === 'string' ? parseAddress(address) : address;
+		if (addr.area !== 'I' || addr.size === 'X') {
+			throw new RangeError(`${formatAddress(addr)} is not an input byte or word (e.g. IW4)`);
+		}
+		checkAddress(addr, this.config);
+		const view = new DataView(this.#inputs.buffer, this.#inputs.byteOffset);
+		const int = Math.trunc(value);
+		if (addr.size === 'B') view.setUint8(addr.byte, int);
+		else if (addr.size === 'W') view.setInt16(addr.byte, int);
+		else if (type === 'REAL') view.setFloat32(addr.byte, value);
+		else view.setInt32(addr.byte, int);
+	}
+
 	getInput(address: string | Address): boolean {
 		const addr = this.#terminal(address, 'I');
 		return ((this.#inputs[addr.byte] >> addr.bit) & 1) === 1;

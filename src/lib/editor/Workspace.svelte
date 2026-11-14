@@ -3,6 +3,8 @@
 	import CircuitEditor from '#lib/circuit/CircuitEditor.svelte';
 	import { inputDrive, portOf } from '#lib/circuit/model.js';
 	import { terminalBit } from '#lib/circuit/context.js';
+	import { readNumber } from '#lib/runtime/read.js';
+	import { parseAddress } from '#lib/engine/index.js';
 	import { CircuitSim } from '#lib/circuit/sim.svelte.js';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
 	import { createMonitor } from '#lib/ladder/monitor.js';
@@ -29,6 +31,11 @@
 	import XrefPanel from './XrefPanel.svelte';
 	import ExplainPanel from './ExplainPanel.svelte';
 	import DebugView from './DebugView.svelte';
+	import { watchEntry } from '#lib/monitor/watch.js';
+	import IoCheck from './IoCheck.svelte';
+	import HmiView from '#lib/hmi/HmiView.svelte';
+	import { ackAlarms, newAlarmLog, unacked, updateAlarms } from '#lib/hmi/alarms.js';
+	import { readBit } from '#lib/runtime/read.js';
 	import { findRung } from '#lib/ladder/ops.js';
 	import Palette from './Palette.svelte';
 	import RuntimeToolbar from './RuntimeToolbar.svelte';
@@ -41,7 +48,7 @@
 	type Props = { projectId: string };
 	let { projectId }: Props = $props();
 
-	type View = 'program' | 'process' | 'circuit' | 'symbols' | 'watch' | 'debug';
+	type View = 'program' | 'process' | 'circuit' | 'symbols' | 'watch' | 'debug' | 'hmi' | 'iocheck';
 
 	let showTrend = $state(true);
 
@@ -66,6 +73,8 @@
 		{ id: 'program', label: 'Program' },
 		...(project.scenario ? [{ id: 'process' as const, label: 'Process' }] : []),
 		{ id: 'circuit', label: 'Circuit' },
+		...(lesson?.kind === 'commissioning' ? [{ id: 'iocheck' as const, label: 'Test I/O' }] : []),
+		{ id: 'hmi', label: 'HMI' },
 		{ id: 'symbols', label: 'Symbols' },
 		{ id: 'watch', label: 'Watch' },
 		{ id: 'debug', label: 'Debug' }
@@ -147,7 +156,8 @@
 		const outputs = runtime.snapshot?.outputs;
 		const drive = inputDrive(project.circuit, sim.actuated, {
 			positions: sim.positions,
-			output: (t) => terminalBit(outputs, t)
+			output: (t) => terminalBit(outputs, t),
+			vfd: (id) => sim.vfd[id]
 		});
 		untrack(() => {
 			for (const [terminal, value] of drive)
@@ -157,6 +167,68 @@
 			sent = drive;
 		});
 	});
+
+	// Frequency inverters run on the PLC's simulated time and drive analog input words.
+	let deviceTime = 0;
+	let sentWords = new Map<string, number>();
+	$effect(() => {
+		const snap = runtime.snapshot;
+		if (!snap) return;
+		untrack(() => {
+			const dt = snap.timeMs - deviceTime;
+			deviceTime = snap.timeMs;
+			if (!project.circuit.devices.some((d) => d.type === 'vfd')) return;
+			const words = sim.stepDevices(project.circuit, Math.min(500, Math.max(0, dt)), {
+				bit: (t) => terminalBit(snap.outputs, t),
+				word: (a) => readNumber(snap, parseAddress(a)) ?? 0
+			});
+			for (const [address, value] of words)
+				if (sentWords.get(address) !== value) runtime.setInputNumber(address, value);
+			sentWords = words;
+		});
+	});
+
+	/* ---------- operator panel: alarms ---------- */
+
+	let alarmLog = $state.raw(newAlarmLog());
+	let ackPending = false;
+	$effect(() => {
+		const snap = runtime.snapshot;
+		if (!snap) return;
+		untrack(() => {
+			if (ackPending && project.hmi.ackTag.trim()) {
+				ackPending = false;
+				hmiWrite(project.hmi.ackTag, 0);
+			}
+			alarmLog = updateAlarms(
+				alarmLog,
+				project.hmi.alarms,
+				(tag) => {
+					try {
+						return readBit(snap, parseAddress(resolveSymbol(project.symbols.map, tag.trim())));
+					} catch {
+						return null;
+					}
+				},
+				snap.timeMs
+			);
+		});
+	});
+	function hmiWrite(tag: string, value: number) {
+		try {
+			runtime.modify(resolveSymbol(project.symbols.map, tag.trim()), value);
+		} catch {
+			// an invalid tag is reported in the panel editor
+		}
+	}
+	function ackAlarm(seqs?: number[]) {
+		alarmLog = ackAlarms(alarmLog, runtime.snapshot?.timeMs ?? 0, seqs);
+		if (project.hmi.ackTag.trim()) {
+			hmiWrite(project.hmi.ackTag, 1);
+			ackPending = true;
+		}
+	}
+	const pendingAlarms = $derived(unacked(alarmLog));
 
 	/** Device labels per terminal, for the I/O panel. */
 	const terminalLabels = $derived.by(() => {
@@ -192,6 +264,17 @@
 		}
 		return { signals, lanes, key: JSON.stringify(signals) };
 	});
+	/** Empty trend: plot the watch rows, or — with no watch rows — the I/O symbols. */
+	function plotMainSignals() {
+		if (project.watch.length === 0) {
+			const io = [...project.userSymbols, ...project.deviceSymbols].filter((s) =>
+				/^[IQM]\d+\.\d$/i.test(s.address.trim())
+			);
+			project.watch = io.slice(0, 8).map((s) => watchEntry(s.name, 'BOOL', true));
+			return;
+		}
+		project.watch.slice(0, 8).forEach((e) => (e.trend = true));
+	}
 	let tracedKey = '';
 	$effect(() => {
 		const { signals, key } = trend;
@@ -288,6 +371,7 @@
 	function showSolution() {
 		if (lesson && confirm('Zastąpić Twój program rozwiązaniem wzorcowym?')) {
 			project.ladder.program = lesson.solution();
+			if (lesson.solutionCircuit) project.circuit = lesson.solutionCircuit();
 			project.ladder.select(null);
 			view = 'program';
 		}
@@ -396,6 +480,10 @@
 				>
 					{v.label}
 					{#if problems.some((p) => p.source === v.id)}<span class="ml-1 text-red-400">●</span>{/if}
+					{#if v.id === 'hmi' && pendingAlarms}<span
+							class="ml-1 rounded-full bg-red-500 px-1.5 text-[10px] text-white"
+							aria-label="{pendingAlarms} unacknowledged alarms">{pendingAlarms}</span
+						>{/if}
 				</button>
 			{/each}
 			<span class="mx-1 w-px bg-slate-700"></span>
@@ -482,6 +570,25 @@
 					<div class="h-full overflow-auto">
 						<SymbolTable {project} locked={runtime.online} />
 					</div>
+				{:else if view === 'iocheck'}
+					<IoCheck
+						symbols={project.userSymbols}
+						circuit={project.circuit}
+						snapshot={runtime.snapshot}
+					/>
+				{:else if view === 'hmi'}
+					<HmiView
+						hmi={project.hmi}
+						symbols={project.symbols.map}
+						names={[...project.deviceSymbols, ...project.userSymbols]
+							.map((s) => s.name)
+							.filter(Boolean)}
+						snapshot={runtime.snapshot}
+						online={runtime.online}
+						log={alarmLog}
+						onWrite={hmiWrite}
+						onAck={ackAlarm}
+					/>
 				{:else if view === 'debug'}
 					<DebugView
 						compiled={loaded && runtime.online ? loaded : project.compiled}
@@ -503,6 +610,7 @@
 						{runtime}
 						lanes={trend.lanes}
 						onRestart={() => runtime.setTrace(trend.signals)}
+						onAddSignals={plotMainSignals}
 					/>
 				</div>
 			{/if}
@@ -520,6 +628,7 @@
 					symbols={project.symbols.map}
 					online={runtime.online}
 					language={project.language}
+					circuit={project.circuit}
 				/>
 			{/if}
 			<IoPanel {runtime} labels={terminalLabels} />

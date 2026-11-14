@@ -331,5 +331,41 @@ export const GLOSSARY: GlossaryEntry[] = [
 		en: 'data block',
 		text: 'Obszar pamięci na dane: instancji FB albo wspólne parametry.',
 		chapter: 'organizacja'
+	},
+	{
+		pl: 'panel operatorski (HMI)',
+		en: 'human–machine interface',
+		text: 'Ekran obok maszyny: operator steruje nią i widzi stan oraz alarmy. Czyta i zapisuje tagi sterownika.',
+		chapter: 'panel-hmi'
+	},
+	{
+		pl: 'kwitowanie alarmu',
+		en: 'alarm acknowledgement',
+		text: 'Potwierdzenie przez operatora, że zauważył alarm (ACK). Alarm znika, gdy ustąpił i jest pokwitowany.',
+		chapter: 'panel-hmi'
+	},
+	{
+		pl: 'uruchomienie maszyny',
+		en: 'commissioning',
+		text: 'Pierwsze uruchomienie programu na prawdziwej maszynie: test sygnałów, testy funkcji, odbiory FAT/SAT.',
+		chapter: 'uruchomienie'
+	},
+	{
+		pl: 'test sygnałów',
+		en: 'loop check / I/O check',
+		text: 'Sprawdzenie każdego wejścia i wyjścia po kolei z dokumentacją, zanim maszyna ruszy w automacie.',
+		chapter: 'uruchomienie'
+	},
+	{
+		pl: 'falownik (przemiennik częstotliwości)',
+		en: 'variable frequency drive (VFD)',
+		text: 'Zasila silnik napięciem o regulowanej częstotliwości — reguluje prędkość, daje rampy i diagnostykę.',
+		chapter: 'falownik'
+	},
+	{
+		pl: 'rampa',
+		en: 'ramp',
+		text: 'Czas, w jakim falownik rozpędza lub hamuje silnik, np. 0 → 50 Hz w 3 s.',
+		chapter: 'falownik'
 	}
 ];

@@ -92,6 +92,9 @@ export class RuntimeCore {
 				this.#restartProcess();
 				this.#restartTrace();
 				return null;
+			case 'setInputNumber':
+				this.plc.setInputNumber(cmd.address, cmd.value);
+				return null;
 			case 'setInput':
 				this.plc.setInput(cmd.address, cmd.value);
 				return null;

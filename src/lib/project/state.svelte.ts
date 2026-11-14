@@ -1,3 +1,5 @@
+import { emptyHmi, WRITES, type Hmi } from '#lib/hmi/model.js';
+import { formatAddress, parseAddress } from '#lib/engine/index.js';
 import { DEFAULT_MEMORY_CONFIG } from '#lib/engine/index.js';
 import {
 	checkCircuit,
@@ -39,6 +41,8 @@ export class ProjectState {
 	readonly symbols = $derived(checkSymbols([...this.deviceSymbols, ...this.userSymbols]));
 	name: string = $state('');
 	language: ProgramLanguage = $state('ladder');
+	/** Operator panel and alarm definitions. */
+	hmi: Hmi = $state(emptyHmi());
 	st: string = $state('');
 
 	/** Structured Text compile result, while ST is the active language. */
@@ -64,6 +68,7 @@ export class ProjectState {
 		this.name = project.name ?? '';
 		this.language = project.language ?? 'ladder';
 		this.st = project.st ?? '';
+		this.hmi = project.hmi ?? emptyHmi();
 		this.compiled = $derived(this.stResult ? fromSt(this.stResult, this.st) : this.ladder.compiled);
 		this.problems = $derived([
 			...this.compiled.diagnostics.map((d) => ({ ...d, source: 'program' as const })),
@@ -82,7 +87,8 @@ export class ProjectState {
 						xref: this.xref,
 						language: this.language,
 						names: this.symbols.reverse,
-						wired: this.wiredTerminals
+						wired: this.wiredTerminals,
+						external: this.hmiWrites
 					}))
 		]);
 	}
@@ -96,6 +102,23 @@ export class ProjectState {
 				id: null,
 				message: `${io.address} is a plant sensor (${io.name}) but ${u.name} is wired to it too — move ${u.name} to a free input`
 			}));
+		});
+	}
+
+	/** Addresses the operator panel writes (buttons, switches, inputs, the ACK bit). */
+	get hmiWrites(): string[] {
+		const tags = [
+			...this.hmi.widgets.filter((w) => WRITES.has(w.kind)).map((w) => w.tag),
+			this.hmi.ackTag
+		];
+		return tags.flatMap((t) => {
+			const text = t.trim();
+			if (!text) return [];
+			try {
+				return [formatAddress(parseAddress(this.symbols.map.get(text.toUpperCase()) ?? text))];
+			} catch {
+				return [];
+			}
 		});
 	}
 
@@ -138,6 +161,7 @@ export class ProjectState {
 		this.watch = p.watch;
 		this.language = p.language ?? 'ladder';
 		this.st = p.st ?? '';
+		this.hmi = p.hmi ?? emptyHmi();
 	}
 
 	toJSON(): Project {
@@ -151,7 +175,8 @@ export class ProjectState {
 			scenario: this.scenario,
 			lesson: this.lesson,
 			language: this.language,
-			st: this.st
+			st: this.st,
+			hmi: $state.snapshot(this.hmi)
 		};
 	}
 }

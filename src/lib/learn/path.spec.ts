@@ -14,7 +14,7 @@ describe('learning path', () => {
 		const lessons = steps.filter((s) => s.kind === 'lesson').map((s) => s.slug);
 		expect([...lessons].sort()).toEqual(LESSONS.map((l) => l.slug).sort());
 		expect(new Set(lessons).size).toBe(lessons.length);
-		expect(stages.map((s) => s.title)).toHaveLength(5);
+		expect(stages.map((s) => s.title)).toHaveLength(6);
 	});
 
 	it('puts each lesson right after the chapter that introduces it', () => {

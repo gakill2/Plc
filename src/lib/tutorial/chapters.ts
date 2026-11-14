@@ -1372,6 +1372,247 @@ Dzięki temu w każdej chwili aktywny jest dokładnie jeden krok, a każdą akcj
 				text: 'Zaprogramuj stację wiercenia na linii produkcyjnej — prawdziwą sekwencję z czujnikami krańcowymi.'
 			}
 		]
+	},
+	/* ------------------------------------------------------------------ panel HMI */
+	{
+		slug: 'panel-hmi',
+		title: 'Panel operatorski (HMI) i alarmy',
+		summary: 'Jak operator steruje maszyną z panelu i jak sterownik zgłasza awarie.',
+		minutes: 8,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Operator rzadko patrzy na sterownik — patrzy na **panel HMI** (*Human–Machine Interface*): ekran dotykowy obok maszyny. Panel nie ma własnej logiki: czyta i zapisuje **tagi** sterownika.
+
+- **lampki, wartości, paski** — tylko czytają (np. \`Motor\`, temperatura z karty analogowej),
+- **przyciski, przełączniki, pola liczbowe** — zapisują do sterownika, zawsze do **markerów M** (np. \`M10.0\`), nigdy do wejść I — te nadpisuje cykl PLC.
+
+W programie przycisk z panelu łączysz LUB z przyciskiem na obiekcie: \`(Start OR HMI_Start)\`. W PLC Sim panel znajdziesz w zakładce **HMI** — projekt demo ma gotowy ekran.`
+			},
+			{
+				kind: 'callout',
+				tone: 'warn',
+				title: 'Bezpieczeństwo',
+				text: 'Wyłącznik awaryjny **nigdy** nie jest przyciskiem na panelu — panel może się zawiesić, a komunikacja zerwać. E-stop to fizyczny przycisk w obwodzie bezpieczeństwa. Panel może najwyżej pokazać, że został wciśnięty.'
+			},
+			{
+				kind: 'text',
+				text: `**Alarmy** to najważniejsza część panelu. Alarm to bit w sterowniku (np. \`Fault\`) z przypisanym tekstem. Każdy wpis ma stany:
+
+- **C** (*came*) — przyszedł: bit = 1,
+- **G** (*gone*) — ustąpił: bit wrócił do 0,
+- **A** (*acknowledged*) — operator go **pokwitował** (ACK).
+
+Alarm znika z listy dopiero, gdy ustąpił **i** został pokwitowany — dzięki temu krótkiej awarii w nocy nikt nie przeoczy. Przy kwitowaniu panel może dać impuls na bit \`ACK\`, którym program kasuje zapamiętane (SET) awarie.`
+			},
+			{
+				kind: 'table',
+				head: ['Klasa', 'Kolor', 'Przykład', 'Reakcja'],
+				rows: [
+					[
+						'Alarm (awaria)',
+						'czerwony',
+						'zadziałał termik silnika',
+						'maszyna staje, potrzebne kwitowanie'
+					],
+					[
+						'Ostrzeżenie',
+						'żółty',
+						'zbliża się przegląd, niski poziom oleju',
+						'praca dalej, informacja'
+					],
+					['Komunikat', 'szary / niebieski', 'tryb ręczny włączony', 'tylko informacja']
+				]
+			},
+			{
+				kind: 'callout',
+				tone: 'tip',
+				title: 'Dobry ekran (ISA-101)',
+				text: 'Nowoczesne panele są **szare i spokojne**, a kolor oznacza tylko nieprawidłowość: czerwony = awaria, żółty = ostrzeżenie. Jeśli wszystko świeci na zielono i czerwono, operator nie zauważy tego jednego ważnego alarmu.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Przycisk „Start” na panelu HMI powinien zapisywać…',
+				options: [
+					'bezpośrednio wejście I0.0, tak jak przycisk na szafie',
+					'marker, np. M10.0, który program łączy LUB z przyciskiem na obiekcie',
+					'wyjście Q0.0 silnika'
+				],
+				correct: 1,
+				explanation:
+					'Wejścia I są nadpisywane w każdym cyklu z zacisków, a pisanie prosto w wyjścia omija logikę i blokady programu. Panel pisze marker, a program decyduje.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Awaria trwała 2 sekundy w nocy i ustąpiła. Co rano zobaczy operator?',
+				options: [
+					'Nic — alarm już nieaktywny',
+					'Alarm w stanie „ustąpił, niepokwitowany”, który musi pokwitować',
+					'Panel się zatrzyma'
+				],
+				correct: 1,
+				explanation:
+					'Alarm zostaje na liście do pokwitowania, nawet gdy ustąpił. Do tego służy kwitowanie — żeby nic nie umknęło.'
+			}
+		]
+	},
+
+	/* ------------------------------------------------------------------ uruchomienie */
+	{
+		slug: 'uruchomienie',
+		title: 'Uruchomienie maszyny',
+		summary: 'Test sygnałów, typowe usterki okablowania i jak je znaleźć, zanim maszyna ruszy.',
+		minutes: 8,
+		blocks: [
+			{
+				kind: 'text',
+				text: `**Uruchomienie** (*commissioning*) to moment, gdy program spotyka prawdziwą maszynę. Zwykle są dwa etapy:
+
+- **FAT** (*Factory Acceptance Test*) — test u producenta maszyny, przed wysyłką,
+- **SAT** (*Site Acceptance Test*) — test u klienta, po montażu i podłączeniu.
+
+Zanim maszyna ruszy w automacie, robi się **test sygnałów** (*loop check*): każde wejście i wyjście po kolei, z dokumentacją w ręku — schematem elektrycznym i **listą I/O** (to Twoja tablica symboli).`
+			},
+			{
+				kind: 'table',
+				head: ['Co sprawdzasz', 'Jak', 'Typowa usterka'],
+				rows: [
+					[
+						'Wejście cyfrowe',
+						'wciśnij przycisk / zasłoń czujnik, patrz na diodę i adres',
+						'zamienione przewody, NC zamiast NO, PNP na wejściu sink'
+					],
+					[
+						'Wyjście cyfrowe',
+						'wymuś wyjście (force) i patrz, co się załącza',
+						'zamienione lampki, brak zasilania cewki'
+					],
+					[
+						'Potwierdzenia',
+						'załącz stycznik, sprawdź styk pomocniczy',
+						'styk na złym wejściu, brak mostka'
+					],
+					[
+						'Analog',
+						'podaj znaną wartość (np. 12 mA), porównaj ze skalą',
+						'zły zakres, zła polaryzacja, złe słowo'
+					],
+					['Napęd', 'ruch krokowo, kierunek obrotów, krańcówki', 'odwrócony kierunek, zła rampa']
+				]
+			},
+			{
+				kind: 'callout',
+				tone: 'warn',
+				title: 'Wymuszenia (force) z głową',
+				text: 'Forsowanie wyjścia omija program — i jego blokady. Na prawdziwej maszynie przed wymuszeniem upewnij się, że nikogo nie ma w strefie i ruch nie spowoduje kolizji. Po teście **usuń wszystkie wymuszenia** — zapomniany force to klasyczna przyczyna „duchów” w działaniu maszyny.'
+			},
+			{
+				kind: 'text',
+				text: `Ćwiczenia „Uruchomienie” w PLC Sim działają jak prawdziwe: **program jest dobry**, a okablowanie ma ukryte błędy. Masz zakładkę **Test I/O** z listą sygnałów z dokumentacji, ich stanem na żywo i tym, co faktycznie jest podłączone. Testy na końcu sprawdzają maszynę przez obwód — więc przejdą dopiero, gdy poprawisz przewody.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Na teście sygnałów: nic nie wciskasz, a dioda wejścia czujnika B1 świeci. Najbardziej prawdopodobna przyczyna?',
+				options: [
+					'Błąd w programie',
+					'Czujnik ustawiony / podłączony jako NC zamiast NO (albo coś stoi przed czujnikiem)',
+					'Zbyt długi cykl PLC'
+				],
+				correct: 1,
+				explanation:
+					'Dioda wejścia pokazuje stan zacisku, niezależnie od programu. Świeci bez obiektu = czujnik daje sygnał w spoczynku: zły typ styku albo coś go zasłania.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Dlaczego test sygnałów robi się przed uruchomieniem programu w automacie?',
+				options: [
+					'Bo tak każe norma, ale nic nie zmienia',
+					'Żeby błąd okablowania nie spowodował niespodziewanego ruchu i żeby szybko odróżnić usterki elektryczne od błędów programu',
+					'Żeby rozgrzać sterownik'
+				],
+				correct: 1,
+				explanation:
+					'Gdy wiesz, że każdy sygnał jest poprawny, problemy w automacie są już tylko w logice. A zamienione przewody w automacie mogą uruchomić nie ten napęd.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'commissioning-conveyor',
+				text: 'Uruchom przenośnik: program jest dobry, w okablowaniu kryją się cztery usterki.'
+			}
+		]
+	},
+
+	/* ------------------------------------------------------------------ falownik */
+	{
+		slug: 'falownik',
+		title: 'Falownik: sterowanie prędkością silnika',
+		summary:
+			'Częstotliwość, rampy, sterowanie z PLC przez wejścia cyfrowe i analogowe, błędy napędu.',
+		minutes: 8,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Silnik asynchroniczny podłączony prosto do sieci kręci się zawsze z jedną prędkością (przy 50 Hz np. ok. 1450 obr/min). **Falownik** (*przemiennik częstotliwości, VFD*) zasila go napięciem o regulowanej częstotliwości — a prędkość silnika jest do niej proporcjonalna. 25 Hz ≈ połowa prędkości.
+
+Do tego falownik daje: **łagodny rozruch i hamowanie** (rampy, np. 0 → 50 Hz w 3 s), zmianę kierunku, oszczędność energii (pompy, wentylatory) i własną diagnostykę — zabezpiecza silnik przed przeciążeniem.`
+			},
+			{
+				kind: 'table',
+				head: ['Sygnał', 'Kierunek', 'Typ', 'Znaczenie'],
+				rows: [
+					['RUN (DI1)', 'PLC → falownik', 'cyfrowy', 'praca w prawo'],
+					['REV (DI2)', 'PLC → falownik', 'cyfrowy', 'praca w lewo'],
+					['RESET (DI3)', 'PLC → falownik', 'cyfrowy (zbocze)', 'kasowanie błędu'],
+					['Prędkość zadana (AI1)', 'PLC → falownik', 'analog, QW', '0 … 27648 = 0 … 50 Hz'],
+					[
+						'READY / FAULT / AT SPEED',
+						'falownik → PLC',
+						'cyfrowe (przekaźniki)',
+						'gotowy / błąd / osiągnął prędkość'
+					],
+					['Prędkość rzeczywista (AO1)', 'falownik → PLC', 'analog, IW', '0 … 27648 = 0 … 50 Hz']
+				]
+			},
+			{
+				kind: 'text',
+				text: `W większych maszynach te same informacje idą **siecią** (Profinet, EtherCAT, Modbus): sterownik wysyła *słowo sterujące* i prędkość, a dostaje *słowo statusowe* i prędkość rzeczywistą. Zasada się nie zmienia — tylko zamiast przewodów są bity w słowach.
+
+W PLC Sim falownik dodasz w widoku Circuit (*Frequency inverter*). Ma przycisk **Trip** do symulowania awarii.`
+			},
+			{
+				kind: 'callout',
+				tone: 'warn',
+				title: 'Typowe pułapki',
+				text: '**RUN i REV naraz** w czasie pracy to błąd (falownik zgłosi awarię). **Reset** działa zwykle tylko przy wyłączonym RUN — więc program musi najpierw zdjąć RUN. Po awarii falownik **wybiega** (silnik zwalnia swobodnie), a nie hamuje rampą.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Prędkość zadana to słowo QW4, pełny zakres 27648 = 50 Hz. Co wpisać, żeby silnik pracował z 30 Hz?',
+				options: ['30', '16589', '27648'],
+				correct: 1,
+				explanation: '30 / 50 · 27648 = **16589** (60 % zakresu).'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Falownik zgłosił FAULT. Program wysyła RESET, ale błąd nie znika. Co sprawdzisz?',
+				options: [
+					'Czy w tym czasie RUN jest wyłączony — wiele falowników kasuje błąd tylko bez polecenia pracy',
+					'Czy prędkość zadana jest większa od zera',
+					'Nic, trzeba wymienić falownik'
+				],
+				correct: 0,
+				explanation:
+					'Kasowanie zwykle wymaga zbocza RESET przy zdjętym RUN (i usuniętej przyczynie błędu). Dlatego w programie awaria najpierw zrzuca RUN.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'commissioning-vfd',
+				text: 'Uruchom pompę z falownikiem: trzy usterki w podłączeniu napędu.'
+			}
+		]
 	}
 ];
 

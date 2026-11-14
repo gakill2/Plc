@@ -17,6 +17,7 @@ export type DeviceType =
 	| 'lamp'
 	| 'motor'
 	| 'contactor'
+	| 'vfd'
 	| 'buzzer';
 
 /**
@@ -115,6 +116,20 @@ export const DEVICES: Record<DeviceType, DeviceSpec> = {
 		defaultLabel: 'K',
 		extraPorts: [{ id: 'aux', io: 'input', suffix: '_FB', label: 'FB' }]
 	},
+	vfd: {
+		type: 'vfd',
+		name: 'Frequency inverter (VFD)',
+		io: 'output',
+		momentary: false,
+		defaultLabel: 'U',
+		extraPorts: [
+			{ id: 'rev', io: 'output', suffix: '_Rev', label: 'REV' },
+			{ id: 'reset', io: 'output', suffix: '_Reset', label: 'RESET' },
+			{ id: 'ready', io: 'input', suffix: '_Ready', label: 'READY' },
+			{ id: 'fault', io: 'input', suffix: '_Fault', label: 'FAULT' },
+			{ id: 'atSpeed', io: 'input', suffix: '_AtSpeed', label: 'AT SPEED' }
+		]
+	},
 	buzzer: { type: 'buzzer', name: 'Buzzer', io: 'output', momentary: false, defaultLabel: 'Horn' }
 };
 
@@ -127,6 +142,10 @@ export interface Device {
 	/** Input devices: wired through the normally-closed contact (signal is on when NOT actuated). */
 	nc?: boolean;
 	color?: LampColor;
+	/** VFD: output word with the speed setpoint (AI1 of the drive), e.g. QW4 */
+	aiWord?: string;
+	/** VFD: input word with the actual speed (AO1 of the drive), e.g. IW4 */
+	aoWord?: string;
 }
 
 export interface Wire {
@@ -169,9 +188,9 @@ export const emptyCircuit = (): Circuit => ({ plc: { x: 320, y: 0 }, devices: []
 /** The main port: a 3-position selector's main contact is its HAND position. */
 export function mainPort(type: DeviceType): PortSpec {
 	const spec = DEVICES[type];
-	return type === 'selector'
-		? { id: MAIN, io: 'input', suffix: '_Hand', label: 'HAND' }
-		: { id: MAIN, io: spec.io, suffix: '', label: spec.io === 'input' ? 'OUT' : 'IN' };
+	if (type === 'selector') return { id: MAIN, io: 'input', suffix: '_Hand', label: 'HAND' };
+	if (type === 'vfd') return { id: MAIN, io: 'output', suffix: '_Run', label: 'RUN' };
+	return { id: MAIN, io: spec.io, suffix: '', label: spec.io === 'input' ? 'OUT' : 'IN' };
 }
 
 export const MAIN = 'main';
@@ -190,6 +209,8 @@ export interface DeviceState {
 	positions?: Readonly<Record<string, number>>;
 	/** PLC output terminals — drive coils whose feedback contacts are read back. */
 	output?: (terminal: string) => boolean;
+	/** Relay outputs of frequency inverters (by device id). */
+	vfd?: (deviceId: string) => { ready: boolean; fault: boolean; atSpeed: boolean } | undefined;
 }
 
 /** Electrical signal an input device puts on its terminal. */
@@ -210,6 +231,12 @@ export function portSignal(
 		case 'selector': {
 			const pos = state.positions?.[d.id] ?? 0;
 			return (port ?? MAIN) === MAIN ? pos === -1 : pos === 1;
+		}
+		case 'vfd': {
+			const o = state.vfd?.(d.id);
+			if (port === 'ready') return o?.ready ?? true;
+			if (port === 'fault') return o?.fault ?? false;
+			return o?.atSpeed ?? false;
 		}
 		case 'contactor': {
 			// auxiliary NO contact: closed when the coil is energised and the overload has not tripped
@@ -312,6 +339,27 @@ export function checkCircuit(
 		}
 	}
 	for (const d of circuit.devices) {
+		if (d.type === 'vfd') {
+			for (const [text, area, what] of [
+				[d.aiWord, 'Q', 'setpoint (AI1)'],
+				[d.aoWord, 'I', 'actual speed (AO1)']
+			] as const) {
+				if (!text?.trim()) continue;
+				let ok: boolean;
+				try {
+					const a = parseAddress(text) as MemAddress;
+					const bytes = area === 'I' ? terminals.inputBytes : terminals.outputBytes;
+					ok = a.area === area && a.size === 'W' && a.byte + 1 < bytes;
+				} catch {
+					ok = false;
+				}
+				if (!ok)
+					issues.push({
+						id: d.id,
+						message: `${d.label}: ${what} must be a word ${area}W… (e.g. ${area}W4)`
+					});
+			}
+		}
 		if (!SYMBOL_NAME_RE.test(d.label)) {
 			issues.push({
 				id: d.id,
@@ -324,6 +372,33 @@ export function checkCircuit(
 
 /** Wired devices become symbols automatically: `Start → I0.0`. */
 export function deviceSymbols(circuit: Circuit): SymbolEntry[] {
+	return [...wireSymbols(circuit), ...wordSymbols(circuit)];
+}
+
+/** Analog words of frequency inverters: `U1_Setpoint → QW4`, `U1_Speed → IW4`. */
+function wordSymbols(circuit: Circuit): SymbolEntry[] {
+	return circuit.devices.flatMap((d) => {
+		if (d.type !== 'vfd' || !SYMBOL_NAME_RE.test(d.label)) return [];
+		const out: SymbolEntry[] = [];
+		if (d.aiWord?.trim())
+			out.push({
+				id: `${d.id}:ai`,
+				name: `${d.label}_Setpoint`,
+				address: d.aiWord,
+				comment: 'VFD speed setpoint AI1 (0 … 27648 = 0 … 50 Hz)'
+			});
+		if (d.aoWord?.trim())
+			out.push({
+				id: `${d.id}:ao`,
+				name: `${d.label}_Speed`,
+				address: d.aoWord,
+				comment: 'VFD actual speed AO1 (0 … 27648 = 0 … 50 Hz)'
+			});
+		return out;
+	});
+}
+
+function wireSymbols(circuit: Circuit): SymbolEntry[] {
 	return circuit.wires.flatMap((w) => {
 		const d = circuit.devices.find((x) => x.id === w.device);
 		const port = d && portOf(d.type, w.port);
