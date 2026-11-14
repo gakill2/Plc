@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Handle, Position } from '@xyflow/svelte';
 	import { getCircuitView, terminalBit } from './context.js';
+	import { portOf } from './model.js';
 
 	const view = getCircuitView();
 
@@ -13,7 +14,9 @@
 		const map: Record<string, string> = {};
 		for (const w of view.project.circuit.wires) {
 			const d = view.project.circuit.devices.find((x) => x.id === w.device);
-			if (d) map[w.terminal] = map[w.terminal] ? `${map[w.terminal]}, ${d.label}` : d.label;
+			if (!d) continue;
+			const label = d.label + (portOf(d.type, w.port)?.suffix ?? '');
+			map[w.terminal] = map[w.terminal] ? `${map[w.terminal]}, ${label}` : label;
 		}
 		return map;
 	});

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import CircuitEditor from '#lib/circuit/CircuitEditor.svelte';
-	import { inputDrive } from '#lib/circuit/model.js';
+	import { inputDrive, portOf } from '#lib/circuit/model.js';
+	import { terminalBit } from '#lib/circuit/context.js';
 	import { CircuitSim } from '#lib/circuit/sim.svelte.js';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
 	import { createMonitor } from '#lib/ladder/monitor.js';
@@ -77,6 +78,10 @@
 	onDestroy(() => runtime.dispose());
 
 	let view = $state<View>('program');
+	// the Process tab disappears when the plant is disconnected (or undone)
+	$effect(() => {
+		if (!project.scenario && untrack(() => view) === 'process') view = 'program';
+	});
 
 	/* ---------- saving and undo / redo ---------- */
 
@@ -136,7 +141,11 @@
 	// Devices drive the input terminals they are wired to.
 	let sent = new Map<string, boolean>();
 	$effect(() => {
-		const drive = inputDrive(project.circuit, sim.actuated);
+		const outputs = runtime.snapshot?.outputs;
+		const drive = inputDrive(project.circuit, sim.actuated, {
+			positions: sim.positions,
+			output: (t) => terminalBit(outputs, t)
+		});
 		untrack(() => {
 			for (const [terminal, value] of drive)
 				if (sent.get(terminal) !== value) runtime.setInput(terminal, value);
@@ -152,8 +161,9 @@
 		const map = new Map<string, string>();
 		for (const w of project.circuit.wires) {
 			const d = project.circuit.devices.find((x) => x.id === w.device);
-			if (d)
-				map.set(w.terminal, map.has(w.terminal) ? `${map.get(w.terminal)}, ${d.label}` : d.label);
+			if (!d) continue;
+			const label = d.label + (portOf(d.type, w.port)?.suffix ?? '');
+			map.set(w.terminal, map.has(w.terminal) ? `${map.get(w.terminal)}, ${label}` : label);
 		}
 		for (const t of processSensors) map.set(t, map.has(t) ? `${map.get(t)} · plant` : 'plant');
 		return map;
@@ -287,14 +297,14 @@
 		) {
 			runtime.stop();
 			project = new ProjectState(lesson.starter());
-			sim.actuated = {};
+			sim.reset();
 		}
 	}
 
 	function resetToDemo() {
 		if (confirm('Replace the whole project (program, circuit, symbols) with the demo?')) {
 			project = new ProjectState(demoProject());
-			sim.actuated = {};
+			sim.reset();
 		}
 	}
 </script>

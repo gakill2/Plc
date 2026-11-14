@@ -7,7 +7,30 @@ import { SYMBOL_NAME_RE, type SymbolEntry } from '#lib/symbols/symbols.js';
  * Input devices drive input terminals; output terminals drive output devices.
  */
 
-export type DeviceType = 'pushbutton' | 'switch' | 'limit' | 'sensor' | 'lamp' | 'motor' | 'buzzer';
+export type DeviceType =
+	| 'pushbutton'
+	| 'switch'
+	| 'selector'
+	| 'estop'
+	| 'limit'
+	| 'sensor'
+	| 'lamp'
+	| 'motor'
+	| 'contactor'
+	| 'buzzer';
+
+/**
+ * A connection point of a device. Most devices have one (`main`); a 3-position selector has two
+ * contacts and a contactor has a coil (output) plus an auxiliary feedback contact (input).
+ */
+export interface PortSpec {
+	id: string;
+	io: 'input' | 'output';
+	/** Appended to the device name for the automatic symbol, e.g. Mode_Hand. */
+	suffix: string;
+	/** Short label shown at the port. */
+	label: string;
+}
 export type LampColor = 'green' | 'red' | 'amber' | 'blue';
 
 export interface DeviceSpec {
@@ -17,6 +40,12 @@ export interface DeviceSpec {
 	/** Momentary devices are active only while held. */
 	momentary: boolean;
 	defaultLabel: string;
+	/** Extra ports besides the main one. */
+	extraPorts?: PortSpec[];
+	/** Input devices: offer the "wired NC" option. */
+	ncOption?: boolean;
+	/** Created wired through the NC contact (e-stops are, for fail-safety). */
+	defaultNc?: boolean;
 }
 
 export const DEVICES: Record<DeviceType, DeviceSpec> = {
@@ -33,6 +62,22 @@ export const DEVICES: Record<DeviceType, DeviceSpec> = {
 		io: 'input',
 		momentary: false,
 		defaultLabel: 'Switch'
+	},
+	selector: {
+		type: 'selector',
+		name: '3-position selector',
+		io: 'input',
+		momentary: false,
+		defaultLabel: 'Mode',
+		extraPorts: [{ id: 'auto', io: 'input', suffix: '_Auto', label: 'AUTO' }]
+	},
+	estop: {
+		type: 'estop',
+		name: 'Emergency stop',
+		io: 'input',
+		momentary: false,
+		defaultLabel: 'EStop',
+		defaultNc: true
 	},
 	limit: {
 		type: 'limit',
@@ -62,6 +107,14 @@ export const DEVICES: Record<DeviceType, DeviceSpec> = {
 		momentary: false,
 		defaultLabel: 'Motor'
 	},
+	contactor: {
+		type: 'contactor',
+		name: 'Contactor + feedback',
+		io: 'output',
+		momentary: false,
+		defaultLabel: 'K',
+		extraPorts: [{ id: 'aux', io: 'input', suffix: '_FB', label: 'FB' }]
+	},
 	buzzer: { type: 'buzzer', name: 'Buzzer', io: 'output', momentary: false, defaultLabel: 'Horn' }
 };
 
@@ -79,6 +132,8 @@ export interface Device {
 export interface Wire {
 	id: string;
 	device: string;
+	/** Port of the device; missing = the main port. */
+	port?: string;
 	/** PLC terminal, e.g. I0.0 or Q0.1 */
 	terminal: string;
 }
@@ -111,13 +166,64 @@ export const device = (
 
 export const emptyCircuit = (): Circuit => ({ plc: { x: 320, y: 0 }, devices: [], wires: [] });
 
+/** The main port: a 3-position selector's main contact is its HAND position. */
+export function mainPort(type: DeviceType): PortSpec {
+	const spec = DEVICES[type];
+	return type === 'selector'
+		? { id: MAIN, io: 'input', suffix: '_Hand', label: 'HAND' }
+		: { id: MAIN, io: spec.io, suffix: '', label: spec.io === 'input' ? 'OUT' : 'IN' };
+}
+
+export const MAIN = 'main';
+
+export function portsOf(type: DeviceType): PortSpec[] {
+	return [mainPort(type), ...(DEVICES[type].extraPorts ?? [])];
+}
+
+export function portOf(type: DeviceType, id: string | undefined): PortSpec | undefined {
+	return portsOf(type).find((p) => p.id === (id ?? MAIN));
+}
+
+/** Physical state of the devices that is not a plain on/off "actuated" flag. */
+export interface DeviceState {
+	/** 3-position selectors: -1 = HAND, 0 = OFF, 1 = AUTO */
+	positions?: Readonly<Record<string, number>>;
+	/** PLC output terminals — drive coils whose feedback contacts are read back. */
+	output?: (terminal: string) => boolean;
+}
+
 /** Electrical signal an input device puts on its terminal. */
 export function deviceSignal(d: Device, actuated: boolean): boolean {
 	return d.nc ? !actuated : actuated;
 }
 
-export function wireOf(circuit: Circuit, deviceId: string): Wire | undefined {
-	return circuit.wires.find((w) => w.device === deviceId);
+/** Signal on one input port of a device. */
+export function portSignal(
+	circuit: Circuit,
+	d: Device,
+	port: string | undefined,
+	actuated: Readonly<Record<string, boolean>>,
+	state: DeviceState = {}
+): boolean {
+	const on = actuated[d.id] ?? false;
+	switch (d.type) {
+		case 'selector': {
+			const pos = state.positions?.[d.id] ?? 0;
+			return (port ?? MAIN) === MAIN ? pos === -1 : pos === 1;
+		}
+		case 'contactor': {
+			// auxiliary NO contact: closed when the coil is energised and the overload has not tripped
+			const coil = wireOf(circuit, d.id);
+			const t = coil ? normalizeTerminal(coil.terminal) : null;
+			return !on && t !== null && (state.output?.(t) ?? false);
+		}
+		default:
+			return deviceSignal(d, on);
+	}
+}
+
+export function wireOf(circuit: Circuit, deviceId: string, port: string = MAIN): Wire | undefined {
+	return circuit.wires.find((w) => w.device === deviceId && (w.port ?? MAIN) === port);
 }
 
 /**
@@ -126,15 +232,17 @@ export function wireOf(circuit: Circuit, deviceId: string): Wire | undefined {
  */
 export function inputDrive(
 	circuit: Circuit,
-	actuated: Readonly<Record<string, boolean>>
+	actuated: Readonly<Record<string, boolean>>,
+	state: DeviceState = {}
 ): Map<string, boolean> {
 	const drive = new Map<string, boolean>();
 	for (const w of circuit.wires) {
 		const d = circuit.devices.find((x) => x.id === w.device);
-		if (!d || DEVICES[d.type].io !== 'input') continue;
+		if (!d || portOf(d.type, w.port)?.io !== 'input') continue;
 		const terminal = normalizeTerminal(w.terminal);
 		if (!terminal) continue;
-		drive.set(terminal, (drive.get(terminal) ?? false) || deviceSignal(d, actuated[d.id] ?? false));
+		const signal = portSignal(circuit, d, w.port, actuated, state);
+		drive.set(terminal, (drive.get(terminal) ?? false) || signal);
 	}
 	return drive;
 }
@@ -148,10 +256,18 @@ export function normalizeTerminal(text: string): string | null {
 	}
 }
 
-/** Connects a device to a terminal, replacing its previous wire (one wire per device). */
-export function connect(circuit: Circuit, deviceId: string, terminal: string): Wire {
-	circuit.wires = circuit.wires.filter((w) => w.device !== deviceId);
-	const wire = { id: newId('w'), device: deviceId, terminal };
+/** Connects a device port to a terminal, replacing its previous wire (one wire per port). */
+export function connect(
+	circuit: Circuit,
+	deviceId: string,
+	terminal: string,
+	port: string = MAIN
+): Wire {
+	circuit.wires = circuit.wires.filter(
+		(w) => !(w.device === deviceId && (w.port ?? MAIN) === port)
+	);
+	const wire: Wire = { id: newId('w'), device: deviceId, terminal };
+	if (port !== MAIN) wire.port = port;
 	circuit.wires.push(wire);
 	return wire;
 }
@@ -181,14 +297,17 @@ export function checkCircuit(
 		const d = circuit.devices.find((x) => x.id === w.device);
 		if (!d) continue;
 		const spec = DEVICES[d.type];
+		const port = portOf(d.type, w.port);
+		if (!port) continue;
 		const t = normalizeTerminal(w.terminal);
-		const area = spec.io === 'input' ? 'I' : 'Q';
-		const bytes = spec.io === 'input' ? terminals.inputBytes : terminals.outputBytes;
+		const area = port.io === 'input' ? 'I' : 'Q';
+		const bytes = port.io === 'input' ? terminals.inputBytes : terminals.outputBytes;
 		const a = t ? (parseAddress(t) as MemAddress) : null;
 		if (!a || a.area !== area || a.byte >= bytes) {
+			const what = port.id === MAIN ? spec.name.toLowerCase() : `${port.label} contact`;
 			issues.push({
 				id: d.id,
-				message: `${d.label}: ${spec.name.toLowerCase()} must be wired to an ${spec.io} terminal (${area}…)`
+				message: `${d.label}: ${what} must be wired to an ${port.io} terminal (${area}…)`
 			});
 		}
 	}
@@ -207,13 +326,15 @@ export function checkCircuit(
 export function deviceSymbols(circuit: Circuit): SymbolEntry[] {
 	return circuit.wires.flatMap((w) => {
 		const d = circuit.devices.find((x) => x.id === w.device);
-		if (!d || !SYMBOL_NAME_RE.test(d.label)) return [];
+		const port = d && portOf(d.type, w.port);
+		if (!d || !port || !SYMBOL_NAME_RE.test(d.label)) return [];
+		const extra = port.id === MAIN && d.type !== 'selector' ? '' : ` — ${port.label}`;
 		return [
 			{
-				id: d.id,
-				name: d.label,
+				id: port.id === MAIN ? d.id : `${d.id}:${port.id}`,
+				name: d.label + port.suffix,
 				address: w.terminal,
-				comment: DEVICES[d.type].name + (d.nc ? ' (NC)' : '')
+				comment: DEVICES[d.type].name + extra + (d.nc ? ' (NC)' : '')
 			}
 		];
 	});

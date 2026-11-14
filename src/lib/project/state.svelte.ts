@@ -10,6 +10,8 @@ import { LadderDocument } from '#lib/ladder/document.svelte.js';
 import { checkSymbols, type SymbolEntry } from '#lib/symbols/symbols.js';
 import type { WatchEntry } from '#lib/monitor/watch.js';
 import type { ProcessKind } from '#lib/processes/types.js';
+import { plantInfo } from '#lib/processes/plants.js';
+import { newId } from '#lib/ladder/model.js';
 import type { CompiledLadder } from '#lib/ladder/compiler.js';
 import { compileSt, type StCompileResult } from '#lib/st/compiler.js';
 import type { Project, ProgramLanguage } from './project.js';
@@ -27,7 +29,8 @@ export class ProjectState {
 	circuit: Circuit = $state({ plc: { x: 0, y: 0 }, devices: [], wires: [] });
 	userSymbols: SymbolEntry[] = $state([]);
 	watch: WatchEntry[] = $state([]);
-	readonly scenario: ProcessKind | undefined;
+	/** Simulated plant connected to the PLC (fixed in lessons, free choice in own projects). */
+	scenario: ProcessKind | undefined = $state(undefined);
 	readonly lesson: string | undefined;
 	readonly ladder: LadderDocument;
 
@@ -71,16 +74,29 @@ export class ProjectState {
 			}))
 		]);
 		this.xref = $derived(crossReference(this.compiled.program, this.compiled.sourceMap));
-		this.warnings = $derived(
-			this.compiled.diagnostics.length
+		this.warnings = $derived([
+			...this.plantConflicts(),
+			...(this.compiled.diagnostics.length
 				? []
 				: analyze({
 						xref: this.xref,
 						language: this.language,
 						names: this.symbols.reverse,
 						wired: this.wiredTerminals
-					})
-		);
+					}))
+		]);
+	}
+
+	/** Plant sensors also driven by a circuit device: the plant wins, the device is ignored. */
+	plantConflicts(): Warning[] {
+		const sensors = plantInfo(this.scenario)?.io.filter((io) => io.address.startsWith('I')) ?? [];
+		return sensors.flatMap((io) => {
+			const users = this.deviceSymbols.filter((s) => s.address.toUpperCase() === io.address);
+			return users.map((u) => ({
+				id: null,
+				message: `${io.address} is a plant sensor (${io.name}) but ${u.name} is wired to it too — move ${u.name} to a free input`
+			}));
+		});
 	}
 
 	/** Terminals that have a device connected in the circuit. */
@@ -94,8 +110,27 @@ export class ProjectState {
 		return out;
 	}
 
-	/** Puts the editable parts of a snapshot back (undo / redo). Scenario and lesson never change. */
+	/**
+	 * Connects a plant (or none). Its I/O gets symbols, unless the address or the name is taken
+	 * already — so a fresh project can use `Pump`, `High` … straight away.
+	 */
+	setScenario(kind: ProcessKind | undefined) {
+		if (this.lesson) return;
+		this.scenario = kind;
+		for (const io of plantInfo(kind)?.io ?? []) {
+			const all = [...this.deviceSymbols, ...this.userSymbols];
+			const taken = all.some(
+				(s) =>
+					s.address.trim().toUpperCase() === io.address ||
+					s.name.trim().toUpperCase() === io.name.toUpperCase()
+			);
+			if (!taken) this.userSymbols.push({ id: newId('y'), ...io });
+		}
+	}
+
+	/** Puts the editable parts of a snapshot back (undo / redo). The lesson never changes. */
 	restore(p: Project) {
+		if (!this.lesson) this.scenario = p.scenario;
 		this.name = p.name ?? '';
 		this.ladder.program = p.ladder;
 		this.circuit = p.circuit;

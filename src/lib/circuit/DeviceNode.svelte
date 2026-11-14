@@ -1,21 +1,44 @@
 <script lang="ts">
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
 	import { getCircuitView, terminalBit } from './context.js';
-	import { DEVICES, deviceSignal, removeDevice, wireOf, type LampColor } from './model.js';
+	import {
+		DEVICES,
+		MAIN,
+		portSignal,
+		portsOf,
+		removeDevice,
+		wireOf,
+		type LampColor
+	} from './model.js';
 
 	let { data, selected }: NodeProps = $props();
 
 	const view = getCircuitView();
 	const dev = $derived(view.project.circuit.devices.find((d) => d.id === data.deviceId));
 	const spec = $derived(dev ? DEVICES[dev.type] : null);
-	const wire = $derived(dev ? wireOf(view.project.circuit, dev.id) : undefined);
 	const actuated = $derived(dev ? view.sim.isActuated(dev.id) : false);
-	/** Input: the signal sent to the PLC. Output: whether the PLC drives this device. */
-	const on = $derived.by(() => {
-		if (!dev || !spec) return false;
-		if (spec.io === 'input') return deviceSignal(dev, actuated);
-		return wire ? terminalBit(view.snapshot?.outputs, wire.terminal) : false;
+	const position = $derived(dev ? view.sim.position(dev.id) : 0);
+	const ports = $derived(dev ? portsOf(dev.type) : []);
+	const deviceState = $derived({
+		positions: view.sim.positions,
+		output: (t: string) => terminalBit(view.snapshot?.outputs, t)
 	});
+	/** Signal on a port: input ports → sent to the PLC, output ports → driven by the PLC. */
+	const portOn = (port: string, io: 'input' | 'output') => {
+		if (!dev) return false;
+		if (io === 'input')
+			return portSignal(view.project.circuit, dev, port, view.sim.actuated, deviceState);
+		const w = wireOf(view.project.circuit, dev.id, port);
+		return w ? terminalBit(view.snapshot?.outputs, w.terminal) : false;
+	};
+	const on = $derived(spec ? portOn(MAIN, spec.io) : false);
+	/** Contactor: the coil is energised, but the motor only runs if the overload has not tripped. */
+	const running = $derived(dev?.type === 'contactor' ? on && !actuated : on);
+	const POSITIONS = [
+		{ value: -1, label: 'HAND' },
+		{ value: 0, label: '0' },
+		{ value: 1, label: 'AUTO' }
+	];
 
 	const COLORS: Record<LampColor, { fill: string; glow: string }> = {
 		green: { fill: 'bg-emerald-400', glow: 'shadow-emerald-400/80' },
@@ -81,6 +104,103 @@
 					<span class="absolute -bottom-4 left-0 font-mono text-[9px] text-slate-500">0</span>
 					<span class="absolute -right-0 -bottom-4 font-mono text-[9px] text-slate-500">1</span>
 				</button>
+			{:else if dev.type === 'selector'}
+				<div
+					class="flex flex-col items-center gap-1"
+					role="group"
+					aria-label="{dev.label} position"
+				>
+					<svg viewBox="0 0 48 48" class="size-9" aria-hidden="true">
+						<circle cx="24" cy="24" r="20" fill="#1e293b" stroke="#475569" stroke-width="3" />
+						<rect
+							x="21"
+							y="6"
+							width="6"
+							height="36"
+							rx="3"
+							fill="#e2e8f0"
+							class="origin-center transition-transform"
+							transform="rotate({position * 45} 24 24)"
+						/>
+					</svg>
+					<div class="flex gap-0.5">
+						{#each POSITIONS as p (p.value)}
+							<button
+								class="nodrag rounded px-1 font-mono text-[9px] {position === p.value
+									? 'bg-emerald-500/25 text-emerald-200'
+									: 'text-slate-400 hover:bg-slate-800'}"
+								aria-label="{dev.label} {p.label}"
+								aria-pressed={position === p.value}
+								onclick={() => view.sim.setPosition(dev, p.value)}>{p.label}</button
+							>
+						{/each}
+					</div>
+				</div>
+			{:else if dev.type === 'estop'}
+				<button
+					class="nodrag grid size-14 place-items-center rounded-md bg-amber-300"
+					aria-label="Emergency stop {dev.label}"
+					aria-pressed={actuated}
+					title={actuated ? 'Locked — click to twist and release' : 'Click to press (it locks)'}
+					onclick={() => view.sim.toggle(dev)}
+				>
+					<span
+						class="block size-10 rounded-full border-2 border-red-900 bg-red-600 transition-transform {actuated
+							? 'scale-90 shadow-inner brightness-90'
+							: 'shadow-[0_3px_0_#7f1d1d]'}"
+					></span>
+				</button>
+				<span class="ml-2 font-mono text-[9px] {actuated ? 'text-red-300' : 'text-slate-500'}"
+					>{actuated ? 'LOCKED' : 'ready'}</span
+				>
+			{:else if dev.type === 'contactor'}
+				<div class="flex items-center gap-2">
+					<svg
+						viewBox="0 0 40 48"
+						class="h-12 w-10"
+						role="img"
+						aria-label="{dev.label} {actuated ? 'tripped' : on ? 'pulled in' : 'released'}"
+					>
+						<rect
+							x="2"
+							y="2"
+							width="36"
+							height="44"
+							rx="3"
+							fill="#1e293b"
+							stroke="#475569"
+							stroke-width="2"
+						/>
+						<rect
+							x="8"
+							y={on && !actuated ? 18 : 10}
+							width="24"
+							height="8"
+							rx="1"
+							fill={on && !actuated ? '#34d399' : '#64748b'}
+							class="transition-all"
+						/>
+						<text x="20" y="40" text-anchor="middle" font-size="9" font-weight="bold" fill="#e2e8f0"
+							>{dev.label.slice(0, 4)}</text
+						>
+					</svg>
+					<div class="flex flex-col items-start gap-1">
+						<span
+							class="font-mono text-[9px] {running ? 'text-emerald-300' : 'text-slate-500'}"
+							role="img"
+							aria-label="{dev.label} {running ? 'running' : 'stopped'}"
+							>M {running ? '⟳' : '■'}</span
+						>
+						<button
+							class="nodrag rounded border px-1 text-[9px] {actuated
+								? 'border-red-500/60 bg-red-500/20 text-red-200'
+								: 'border-slate-700 text-slate-400 hover:bg-slate-800'}"
+							title="Simulate the overload relay tripping (the motor stops, feedback drops)"
+							aria-pressed={actuated}
+							onclick={() => view.sim.toggle(dev)}>{actuated ? 'Reset trip' : 'Trip'}</button
+						>
+					</div>
+				</div>
 			{:else if dev.type === 'limit' || dev.type === 'sensor'}
 				<button
 					class="nodrag flex items-center gap-2 rounded border px-2 py-1 text-[11px] {actuated
@@ -173,12 +293,22 @@
 		</div>
 
 		<div class="flex items-center justify-between gap-1 text-[10px]">
-			<span
-				class="font-mono {wire ? (on ? 'text-emerald-300' : 'text-slate-400') : 'text-amber-400'}"
-			>
-				{wire ? `${spec.io === 'input' ? '→' : '←'} ${wire.terminal}` : 'not wired'}
-			</span>
-			{#if spec.io === 'input'}
+			<div class="flex flex-col">
+				{#each ports as port (port.id)}
+					{@const w = wireOf(view.project.circuit, dev.id, port.id)}
+					<span
+						class="font-mono {w
+							? portOn(port.id, port.io)
+								? 'text-emerald-300'
+								: 'text-slate-400'
+							: 'text-amber-400'}"
+					>
+						{#if ports.length > 1}<span class="text-slate-500">{port.label}</span>{/if}
+						{w ? `${port.io === 'input' ? '→' : '←'} ${w.terminal}` : 'not wired'}
+					</span>
+				{/each}
+			</div>
+			{#if spec.io === 'input' && dev.type !== 'selector'}
 				<label
 					class="nodrag flex items-center gap-1 text-slate-400"
 					title="Wire through the normally-closed contact"
@@ -204,22 +334,25 @@
 			{/if}
 		</div>
 
-		{#if spec.io === 'input'}
-			<Handle
-				type="source"
-				position={Position.Right}
-				id="out"
-				isConnectable={!view.locked}
-				class="!size-3 !border-slate-900 !bg-sky-400"
-			/>
-		{:else}
-			<Handle
-				type="target"
-				position={Position.Left}
-				id="in"
-				isConnectable={!view.locked}
-				class="!size-3 !border-slate-900 !bg-amber-400"
-			/>
-		{/if}
+		{#each ports as port, i (port.id)}
+			{#if port.io === 'input'}
+				<Handle
+					type="source"
+					position={spec.io === 'input' ? Position.Right : Position.Bottom}
+					id={port.id === MAIN ? 'out' : port.id}
+					isConnectable={!view.locked}
+					style={spec.io === 'input' && ports.length > 1 ? `top: ${35 + i * 30}%` : undefined}
+					class="!size-3 !border-slate-900 !bg-sky-400"
+				/>
+			{:else}
+				<Handle
+					type="target"
+					position={Position.Left}
+					id="in"
+					isConnectable={!view.locked}
+					class="!size-3 !border-slate-900 !bg-amber-400"
+				/>
+			{/if}
+		{/each}
 	</div>
 {/if}
