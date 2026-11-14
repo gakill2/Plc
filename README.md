@@ -3,7 +3,7 @@
 > Learn how a PLC thinks — one scan cycle at a time.
 
 A browser-based PLC simulator for learning industrial automation. Wire push buttons, sensors, lamps
-and motors to a virtual controller, program it in **Ladder Logic** or **Structured Text**, then run
+and motors to a virtual controller, program it in **Ladder**, **FBD**, **Structured Text** or **SFC**, then run
 it and watch the controller execute your program scan by scan — or let it drive a simulated plant.
 
 ![Ladder editor with live power flow](docs/screenshots/ladder.png)
@@ -30,11 +30,22 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
   pusher, each with simple physics; connect one to any project.
-- **23 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
+- **27 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
   to a crane with an encoder, a PID-tuned oven, a remote I/O station and two-hand control. Your
   program runs against test cases in a headless PLC (or through the wired circuit); every lesson
   ships a reference solution that the test suite proves passes, plus a live step-by-step guide.
-- **SFC / GRAFCET** — a third language: steps with N / S / R actions, transitions with ST
+- **Program organisation like in TIA Portal / CODESYS** — own `FUNCTION_BLOCK`s with
+  multi-instances, `FUNCTION`s and `STRUCT` types in a project library (usable from every
+  language, also as boxes in ladder), standard `SCALE` and `PID` blocks, one-dimensional `ARRAY`s
+  (of numbers, structs or FB instances, with computed indexes), `VAR RETAIN` that survives Stop →
+  Run, and a `CYCLIC_INTERRUPT` (like OB30) running at a fixed interval next to the main scan.
+- **FBD** — function block diagram: AND / OR / XOR, comparators, arithmetic, MOVE, timers,
+  counters, SR / RS, edges and every library block, negated inputs, `=` / `S` / `R` outputs and
+  live signal flow. Translated to ST like SFC.
+- **Export to real tools** — any project (ladder, FBD, SFC or ST) as a **TIA Portal SCL** external
+  source with a tag table (CSV), as **PLCopen XML** for CODESYS, or as plain ST. A test translates
+  every ladder lesson solution to ST and proves it still passes the lesson.
+- **SFC / GRAFCET** — another language: steps with N / S / R actions, transitions with ST
   conditions (`Step.T`, `Step.X`), alternative and parallel branches. The chart is translated to
   ST and runs on the same compiler; active steps light up online.
 - **On-call mode „Dyżur”** — a working machine breaks down at night (broken wire, stuck sensor,
@@ -94,6 +105,10 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Compilers** — `src/lib/ladder/compiler.ts` and `src/lib/st/*`; both emit the same IR.
 - **Runtime** — `RuntimeCore` (tested in Node) inside a Web Worker; the UI receives snapshots.
 - **Plants & lessons** — `src/lib/processes`, `src/lib/lessons` (the runner reuses the engine).
+- **POUs** — `src/lib/st/pou.ts` expands FBs, functions, structs and arrays into flat variables
+  and inlined code before code generation (static memory, no recursion — as IEC 61131-3 allows).
+- **FBD & export** — `src/lib/fbd` (diagram model, translation to ST, editor), `src/lib/export`
+  (ladder → ST, SCL and PLCopen XML printers).
 - **SFC & on-call** — `src/lib/sfc` (chart model, translation to ST, editor), `src/lib/oncall`
   (machines, incidents, scoring); faults are injected in `src/lib/circuit/model.ts`.
 - **Story & tips** — `src/lib/story` (tickets, grading, career), `src/lib/tips` (triggers on the
@@ -107,9 +122,9 @@ Design decisions are recorded as ADRs:
 
 ## Quality
 
-- ~260 unit tests (Vitest) for the engine, compilers, runtime, plants, lessons and persistence,
+- ~560 unit tests (Vitest) for the engine, compilers, runtime, plants, lessons and persistence,
   with coverage thresholds enforced in CI (~97 % lines, ~90 % branches on the core).
-- End-to-end tests (Playwright) for the main flows: running the demo, forcing, ST errors,
+- 43 end-to-end tests (Playwright) for the main flows: running the demo, forcing, ST errors,
   undo/redo, lessons, projects and share links.
 - Strict TypeScript, ESLint and Prettier; GitHub Actions runs everything on every push.
 

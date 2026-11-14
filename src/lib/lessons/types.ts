@@ -4,6 +4,7 @@ import type { Project } from '#lib/project/project.js';
 import type { Circuit } from '#lib/circuit/model.js';
 import type { Hmi } from '#lib/hmi/model.js';
 import type { Sfc } from '#lib/sfc/sfc.js';
+import type { Fbd } from '#lib/fbd/fbd.js';
 import type { ProcessKind, ProcessModel } from '#lib/processes/types.js';
 
 export interface TestContext {
@@ -32,6 +33,8 @@ export interface LessonStep {
 	hmi?: Record<string, number>;
 	/** Commissioning lessons: expected state of devices by label (lamp lit, contactor pulled in …). */
 	expectDevices?: Record<string, boolean>;
+	/** Restart the CPU first (Stop → Run: a new download) — retentive variables must survive it. */
+	restart?: boolean;
 	/** Commands to the process model (e.g. feed boxes). */
 	commands?: [name: string, value?: unknown][];
 	/** Simulated time to run, in ms. */
@@ -71,6 +74,8 @@ export interface Lesson {
 	solutionSt?: string;
 	/** SFC lessons: the reference chart. */
 	solutionSfc?: () => Sfc;
+	/** FBD lessons: the reference diagram */
+	solutionFbd?: () => Fbd;
 	tests: LessonTest[];
 }
 

@@ -66,7 +66,7 @@ export class RuntimeCore {
 	#handle(cmd: RuntimeCommand): RuntimeEvent | null {
 		switch (cmd.type) {
 			case 'load':
-				this.plc.load(cmd.program);
+				this.plc.load(cmd.program, cmd.options);
 				this.#paused = false;
 				this.#debtMs = 0;
 				this.#restartProcess();

@@ -1,5 +1,7 @@
 import { sfcStep, sfcTransition, type Sfc } from '#lib/sfc/sfc.js';
 import { widget } from '#lib/hmi/model.js';
+import { parseAddress } from '#lib/engine/index.js';
+import { box as fbdBox, fbdNetwork, operand } from '#lib/fbd/fbd.js';
 import { device, DEVICES, type Circuit, type Device, type DeviceType } from '#lib/circuit/model.js';
 import {
 	blockBox,
@@ -127,6 +129,87 @@ const ovenNear =
 		return Math.abs(t - sp) <= tol
 			? null
 			: `temperatura ${t.toFixed(1)} °C, a powinna być ${sp} ± ${tol} °C`;
+	};
+
+const FILTER_HEAD = `(* Nadzór temperatury pieca.
+   Temperature (IW4) = °C × 10. Czujnik łapie zakłócenia: pojedyncze próbki skaczą.
+   Avg (MW20) = średnia z 10 próbek, AlarmCount (MW22) = ile razy był alarm. *)
+VAR
+  buf : ARRAY[0..9] OF INT;     // 10 ostatnich próbek
+  pos : INT;                    // gdzie wpisać następną
+  i : INT;
+  sum : DINT;
+  alarm : BOOL;
+  edge : R_TRIG;
+END_VAR
+`;
+
+const FILTER_MAIN = `
+// OB1: grzanie przełącznikiem HeatOn, alarm je blokuje
+Heater := HeatOn AND DoorClosed AND NOT OverTemp AND NOT alarm;
+HeaterPower := 27648;
+OverheatLamp := alarm;
+AlarmCount := alarms;
+`;
+
+const FILTER_STARTER = `${FILTER_HEAD}VAR RETAIN
+  // TODO: licznik alarmów, który przeżyje Stop → Run
+END_VAR
+VAR
+  alarms : INT;
+END_VAR
+${FILTER_MAIN}
+CYCLIC_INTERRUPT T#100ms
+  // TODO: zapisz próbkę Temperature do buf[pos], przesuń pos (0 … 9, potem znowu 0)
+  // TODO: Avg := suma buf / 10
+  // TODO: alarm, gdy Avg > 2500 (250 °C); zgaś, gdy Avg < 2300
+  // TODO: zbocze narastające alarmu zwiększa alarms
+END_CYCLIC_INTERRUPT
+`;
+
+const FILTER_SOLUTION = `${FILTER_HEAD}VAR RETAIN
+  alarms : INT;                 // przeżywa Stop → Run
+END_VAR
+${FILTER_MAIN}
+CYCLIC_INTERRUPT T#100ms
+  // stała próbka co 100 ms, niezależnie od czasu cyklu OB1
+  buf[pos] := Temperature;
+  pos := pos + 1;
+  IF pos > 9 THEN
+    pos := 0;
+  END_IF;
+  sum := 0;
+  FOR i := 0 TO 9 DO
+    sum := sum + buf[i];
+  END_FOR;
+  Avg := DINT_TO_INT(sum / 10);
+  IF Avg > 2500 THEN
+    alarm := TRUE;
+  ELSIF Avg < 2300 THEN
+    alarm := FALSE;
+  END_IF;
+  edge(CLK := alarm);
+  IF edge.Q THEN
+    alarms := alarms + 1;
+  END_IF;
+END_CYCLIC_INTERRUPT
+`;
+
+/** The filtered value in MW20 is close to the real temperature. */
+const avgNear =
+	(tol: number): Check =>
+	({ plc, process }) => {
+		const avg = plc.memory.readNumber(parseAddress('MW20'));
+		const t = (process?.state() as OvenState).temp * 10;
+		return Math.abs(avg - t) <= tol
+			? null
+			: `Avg (MW20) = ${avg}, a temperatura to ${Math.round(t)} (°C × 10) — różnica ponad ${tol}`;
+	};
+const alarmCount =
+	(n: number): Check =>
+	({ plc }) => {
+		const c = plc.memory.readNumber(parseAddress('MW22'));
+		return c === n ? null : `AlarmCount (MW22) = ${c}, a powinno być ${n}`;
 	};
 
 /** The oven's PI controller in Structured Text with the given tuning. */
@@ -2419,6 +2502,99 @@ export const LESSONS: Lesson[] = [
 		]
 	},
 	{
+		slug: 'oven-filter',
+		title: 'Tablice, RETAIN i przerwanie cykliczne: filtr czujnika',
+		level: 'process',
+		scenario: 'oven',
+		summary:
+			'Próbkuj temperaturę co 100 ms w przerwaniu cyklicznym, uśrednij 10 próbek w tablicy i policz alarmy w pamięci RETAIN.',
+		instructions: [
+			'Termopara pieca (`Temperature`, `IW4`, °C × 10) łapie zakłócenia od styczników: pojedyncza próbka potrafi pokazać 300 °C, choć piec ma 150 °C. Alarm przegrzania na surowej wartości wyłączałby grzanie bez powodu.',
+			'Zrób **filtr średniej kroczącej**: w `CYCLIC_INTERRUPT T#100ms` (to odpowiednik OB30 w TIA Portal — kod uruchamiany co stały czas, niezależnie od cyklu OB1) zapisuj próbkę do tablicy `buf : ARRAY[0..9] OF INT` jak do bufora kołowego, a do `Avg` (`MW20`) wpisz średnią z 10 próbek — czyli z ostatniej sekundy.',
+			'Alarm `alarm` ma się włączyć, gdy `Avg` > 2500 (250 °C), i zgasnąć poniżej 2300 (histereza). Pojedyncza zakłócona próbka nie może go wywołać, ale temperatura trzymająca się powyżej 250 °C — tak.',
+			'Każde włączenie alarmu (zbocze narastające) zwiększa licznik `alarms`. Zadeklaruj go w **`VAR RETAIN`**: zwykłe zmienne po Stop → Run wracają do wartości początkowych, retencyjne zostają — tak jak licznik godzin pracy czy liczba wyprodukowanych sztuk.'
+		],
+		hints: [
+			'Bufor kołowy: `buf[pos] := Temperature; pos := pos + 1; IF pos > 9 THEN pos := 0; END_IF;`',
+			'Suma w pętli: `sum := 0; FOR i := 0 TO 9 DO sum := sum + buf[i]; END_FOR; Avg := DINT_TO_INT(sum / 10);`',
+			'Zbocze: `edge(CLK := alarm); IF edge.Q THEN alarms := alarms + 1; END_IF;` — a `alarms : INT;` przenieś do bloku `VAR RETAIN`.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'oven-filter',
+			scenario: 'oven',
+			language: 'st',
+			st: FILTER_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([['switch', 'HeatOn', 'I0.2']]),
+			symbols: [
+				symbol('DoorClosed', 'I0.0', 'Wyłącznik drzwi (1 = zamknięte)'),
+				symbol('OverTemp', 'I0.1', 'Termostat bezpieczeństwa > 280 °C'),
+				symbol('Temperature', 'IW4', 'Termopara, °C × 10'),
+				symbol('Heater', 'Q0.0', 'Stycznik grzałek'),
+				symbol('OverheatLamp', 'Q0.2', 'Lampka alarmu przegrzania'),
+				symbol('HeaterPower', 'QW4', 'Moc grzałek 0 … 27648'),
+				symbol('Avg', 'MW20', 'Temperatura po filtrze, °C × 10'),
+				symbol('AlarmCount', 'MW22', 'Liczba alarmów (RETAIN)')
+			],
+			watch: ['Temperature', 'Avg', 'OverheatLamp', 'AlarmCount'].map((w) =>
+				watchEntry(w, undefined, true)
+			)
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: FILTER_SOLUTION,
+		tests: [
+			{
+				name: 'Avg nadąża za temperaturą',
+				steps: [
+					{ label: 'piec 180 °C, 2 s', commands: [['temp', 180]], wait: 2000, check: avgNear(150) },
+					{ label: 'piec 120 °C, 2 s', commands: [['temp', 120]], wait: 2000, check: avgNear(150) }
+				]
+			},
+			{
+				name: 'Pojedyncza zakłócona próbka nie wywołuje alarmu',
+				steps: [
+					{ label: 'piec 150 °C', commands: [['temp', 150]], wait: 1500 },
+					{ label: 'zakłócenie: 300 °C przez 100 ms', commands: [['temp', 300]], wait: 100 },
+					{
+						label: 'z powrotem 150 °C, 2 s',
+						commands: [['temp', 150]],
+						wait: 2000,
+						expect: { 'Q0.2': false },
+						check: alarmCount(0)
+					}
+				]
+			},
+			{
+				name: 'Gorący piec: alarm, licznik i RETAIN po Stop → Run',
+				steps: [
+					{ label: 'piec 150 °C', commands: [['temp', 150]], wait: 1500 },
+					{
+						label: 'piec 300 °C, 1,5 s',
+						commands: [['temp', 300]],
+						wait: 1500,
+						expect: { 'Q0.2': true },
+						check: alarmCount(1)
+					},
+					{
+						label: 'ostygł do 150 °C, 2 s',
+						commands: [['temp', 150]],
+						wait: 2000,
+						expect: { 'Q0.2': false }
+					},
+					{ label: 'drugi alarm', commands: [['temp', 300]], wait: 1500, check: alarmCount(2) },
+					{ label: 'ostygł', commands: [['temp', 150]], wait: 2000 },
+					{
+						label: 'Stop → Run (nowe ładowanie programu)',
+						restart: true,
+						wait: 500,
+						check: alarmCount(2)
+					}
+				]
+			}
+		]
+	},
+	{
 		slug: 'oven-pid-lad',
 		title: 'Piec w drabince: blok PID',
 		level: 'process',
@@ -2478,6 +2654,50 @@ export const LESSONS: Lesson[] = [
 			),
 		tests: []
 	},
+	/* ---------- FBD ---------- */
+	{
+		slug: 'tank-fbd',
+		title: 'FBD: zbiornik na przerzutniku SR',
+		level: 'logic',
+		scenario: 'tank',
+		summary:
+			'Ten sam zbiornik co w lekcji drabinkowej, ale w języku bloków funkcyjnych: przerzutnik SR z negacją na wejściu.',
+		instructions: [
+			'**FBD** (Function Block Diagram, w Siemensie FUP) rysuje program jako bloki połączone liniami sygnałów: wejścia po lewej, wyniki płyną w prawo do przypisań. Elektronik zobaczy tu schemat bramek, a nie drabinkę.',
+			'Pompa `Pump` (`Q0.0`) ma się włączać, gdy poziom spadnie poniżej `Low` (`I0.0` = 0), i wyłączać przy `High` (`I0.1` = 1) — pomiędzy pamięta stan. To dokładnie **przerzutnik SR**: `S1` ustawia, `R` kasuje.',
+			'Zaznacz wejście networku i kliknij **SR** na palecie. Do `S1` wpisz `Low` i daj mu **negację** (przycisk „¬ negacja” — kółko na wejściu), do `R` wpisz `High`. Wyjście `=` → `Pump` już jest.'
+		],
+		hints: [
+			'SR to przerzutnik z dominującym ustawianiem, RS — z dominującym kasowaniem. Tu oba stany naraz nie wystąpią (Low = 0 i High = 1 to sprzeczność), więc wystarczy SR.',
+			'Negacja w FBD to kółko na wejściu bloku — odpowiednik styku rozwiernego w drabince.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'tank-fbd',
+			scenario: 'tank',
+			language: 'fbd',
+			fbd: { version: 1, networks: [fbdNetwork(operand(), [['=', 'Pump']])] },
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([['motor', 'Pump', 'Q0.0']]),
+			symbols: [symbol('Low', 'I0.0', 'Poziom ≥ 20 %'), symbol('High', 'I0.1', 'Poziom ≥ 80 %')],
+			watch: ['Low', 'High', 'Pump'].map((w) => watchEntry(w, undefined, true))
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionFbd: () => ({
+			version: 1,
+			networks: [
+				{
+					...fbdNetwork(
+						{ kind: 'box', box: fbdBox('SR', [['Low', 'not'], 'High'], { instance: 'PumpOn' }) },
+						[['=', 'Pump']]
+					),
+					comment: 'Poniżej Low włącz, przy High wyłącz'
+				}
+			]
+		}),
+		// the same plant and acceptance test as the ladder version
+		tests: []
+	},
 	/* ---------- SFC ---------- */
 	{
 		slug: 'sfc-drilling',
@@ -2522,6 +2742,10 @@ export const LESSONS: Lesson[] = [
 	}
 ];
 
+// the FBD tank is accepted by the same test as the ladder one
+LESSONS.find((l) => l.slug === 'tank-fbd')!.tests = LESSONS.find(
+	(l) => l.slug === 'tank-level'
+)!.tests;
 // the ladder oven is accepted by the same tests as the ST one
 LESSONS.find((l) => l.slug === 'oven-pid-lad')!.tests = LESSONS.find(
 	(l) => l.slug === 'oven-pid'

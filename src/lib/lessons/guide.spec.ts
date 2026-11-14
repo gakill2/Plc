@@ -17,12 +17,14 @@ function context(
 	const hmi = which === 'solution' ? (lesson.solutionHmi?.() ?? project.hmi) : project.hmi;
 	const st = which === 'solution' ? (lesson.solutionSt ?? project.st) : project.st;
 	const sfc = which === 'solution' ? (lesson.solutionSfc?.() ?? project.sfc) : project.sfc;
+	const fbd = which === 'solution' ? (lesson.solutionFbd?.() ?? project.fbd) : project.fbd;
 	return {
 		ladder,
 		circuit,
 		hmi,
 		st,
 		sfc,
+		fbd,
 		addr: addressResolver(map),
 		online: false,
 		passed: false
@@ -55,7 +57,8 @@ describe('lesson guides', () => {
 				circuit: undefined,
 				hmi: undefined,
 				st: undefined,
-				sfc: undefined
+				sfc: undefined,
+				fbd: undefined
 			};
 			expect(steps.some((s) => s.done(empty))).toBe(false);
 			const start = context(slug, lesson.starter().ladder, 'starter');

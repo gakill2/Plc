@@ -17,6 +17,8 @@
 	import TipToast from '#lib/tips/TipToast.svelte';
 	import SfcView from '#lib/sfc/SfcView.svelte';
 	import { demoSfc } from '#lib/sfc/sfc.js';
+	import FbdView from '#lib/fbd/FbdView.svelte';
+	import { demoFbd } from '#lib/fbd/fbd.js';
 	import OnCallPanel from '#lib/oncall/OnCallPanel.svelte';
 	import { machineFromProjectId, machineProject } from '#lib/oncall/machines.js';
 	import { incidentOf, loadLog } from '#lib/oncall/shift.js';
@@ -193,6 +195,7 @@
 			ladder: $state.snapshot(project.ladder.program),
 			st: project.st,
 			sfc: $state.snapshot(project.sfc),
+			fbd: $state.snapshot(project.fbd),
 			library: project.library,
 			symbols: [...project.deviceSymbols, ...project.userSymbols].map((s) => ({
 				name: s.name,
@@ -366,12 +369,12 @@
 
 	function run() {
 		if (runtime.status === 'PAUSED') runtime.resume();
-		else if (download()) runtime.start(loaded!.program);
+		else if (download()) runtime.start(loaded!.program, loaded!.load);
 	}
 
 	function step() {
-		if (runtime.status === 'PAUSED') runtime.step(loaded!.program);
-		else if (download()) runtime.step(loaded!.program);
+		if (runtime.status === 'PAUSED') runtime.step(loaded!.program, loaded!.load);
+		else if (download()) runtime.step(loaded!.program, loaded!.load);
 	}
 
 	function showProblem(p: Problem) {
@@ -425,9 +428,40 @@
 	/** Variables of the ST program that is running (the source may have been edited since). */
 	let loadedVariables = $state.raw<StVariable[]>([]);
 
+	/** Online value of an operand: a symbol, an address, a variable or an instance output (Timer1.Q). */
+	function liveValue(text: string): boolean | number | null {
+		const snap = runtime.snapshot;
+		const t = text.trim();
+		if (!runtime.online || !snap || !t) return null;
+		const vars = loadedVariables;
+		const read = (r: StVariable['reads'][number]) => {
+			const a = parseAddress(r.address);
+			return r.kind === 'bool' ? readBit(snap, a) : readNumber(snap, a, r.numType);
+		};
+		const v = vars.find((x) => x.name.toUpperCase() === t.toUpperCase());
+		if (v?.reads[0]) return read(v.reads[0]);
+		const dot = t.lastIndexOf('.');
+		if (dot > 0) {
+			const inst = vars.find((x) => x.name.toUpperCase() === t.slice(0, dot).toUpperCase());
+			const r = inst?.reads.find((x) => x.label.toUpperCase() === t.slice(dot + 1).toUpperCase());
+			if (r) return read(r);
+		}
+		try {
+			const a = parseAddress(resolveSymbol(project.symbols.map, t));
+			const bit = a.area === 'T' || a.area === 'C' || a.size === 'X';
+			return bit ? readBit(snap, a) : readNumber(snap, a);
+		} catch {
+			return null;
+		}
+	}
+
 	function setLanguage(language: ProgramLanguage) {
 		if (language === 'st' && !project.st.trim()) project.st = lesson ? EMPTY_ST : DEMO_ST;
 		if (language === 'sfc' && !project.sfc.transitions.length && !lesson) project.sfc = demoSfc();
+		const blank = project.fbd.networks.every(
+			(n) => n.value.kind === 'operand' && !n.value.text.trim()
+		);
+		if (language === 'fbd' && blank && !lesson) project.fbd = demoFbd();
 		project.language = language;
 	}
 
@@ -438,6 +472,7 @@
 			if (lesson.solutionHmi) project.hmi = lesson.solutionHmi();
 			if (lesson.solutionSt) project.st = lesson.solutionSt;
 			if (lesson.solutionSfc) project.sfc = lesson.solutionSfc();
+			if (lesson.solutionFbd) project.fbd = lesson.solutionFbd();
 			project.ladder.select(null);
 			view = 'program';
 		}
@@ -470,7 +505,7 @@
 		role="group"
 		aria-label="Language"
 	>
-		{#each [{ id: 'ladder', label: 'Ladder (LAD)' }, { id: 'st', label: 'Structured Text' }, { id: 'sfc', label: 'SFC' }] as const as l (l.id)}
+		{#each [{ id: 'ladder', label: 'Ladder (LAD)' }, { id: 'st', label: 'Structured Text' }, { id: 'sfc', label: 'SFC' }, { id: 'fbd', label: 'FBD' }] as const as l (l.id)}
 			<button
 				class="rounded px-2.5 py-1 text-xs font-medium disabled:cursor-not-allowed {project.language ===
 				l.id
@@ -590,7 +625,24 @@
 	<div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_20rem]">
 		<div class="flex min-h-0 flex-col">
 			<div class="min-h-0 flex-1">
-				{#if view === 'program' && project.language === 'sfc'}
+				{#if view === 'program' && project.language === 'fbd'}
+					<FbdView
+						fbd={project.fbd}
+						types={project.boxTypes}
+						readOnly={runtime.online}
+						online={runtime.online}
+						problemIds={project.compiled.diagnostics.map((d) => d.id)}
+						generated={project.fbdSt?.source ?? ''}
+						names={[...project.deviceSymbols, ...project.userSymbols].map((x) => x.name)}
+						valueOf={liveValue}
+						signal={(id) => {
+							const s = project.fbdSt?.signals[id];
+							return s ? liveValue(s) : null;
+						}}
+					>
+						{#snippet header()}{@render languageSwitch()}{/snippet}
+					</FbdView>
+				{:else if view === 'program' && project.language === 'sfc'}
 					<SfcView
 						sfc={project.sfc}
 						readOnly={runtime.online}
@@ -731,6 +783,7 @@
 					hmi={project.hmi}
 					st={project.st}
 					sfc={project.sfc}
+					fbd={project.fbd}
 				/>
 			{:else if machine}
 				<OnCallPanel {machine} circuit={project.circuit} onRepaired={() => (sim.faults = [])} />

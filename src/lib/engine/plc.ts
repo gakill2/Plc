@@ -14,6 +14,17 @@ import type { Address, MemAddress, NumType } from './types.js';
 
 export type PlcMode = 'STOP' | 'RUN' | 'FAULT';
 
+/** How a downloaded program is run, besides its instructions. */
+export interface LoadOptions {
+	/**
+	 * Retentive memory: marker bytes [from, to) survive a new download / restart, as long as the
+	 * retentive variables stay the same (`signature`).
+	 */
+	retain?: { from: number; to: number; signature: string };
+	/** Cyclic interrupt (like OB30): the code at `entry` runs every `intervalMs`, besides the main scan. */
+	cyclic?: { entry: number; intervalMs: number };
+}
+
 export class ProgramError extends Error {
 	override name = 'ProgramError';
 	readonly issues: ProgramIssue[];
@@ -30,6 +41,8 @@ export interface PlcSnapshot {
 	scanCount: number;
 	timeMs: number;
 	lastScanSteps: number;
+	/** runs of the cyclic interrupt since the restart */
+	cyclicCount: number;
 	fault: { message: string; pc: number } | null;
 	/** Physical input / output terminals. */
 	inputs: Uint8Array;
@@ -71,6 +84,9 @@ export class Plc {
 	#lastScanSteps = 0;
 	#fault: PlcFault | null = null;
 	#forces = new Map<string, { addr: MemAddress; value: boolean }>();
+	#options: LoadOptions = {};
+	#cyclicDueMs = 0;
+	#cyclicCount = 0;
 
 	constructor(config: Partial<MemoryConfig> = {}) {
 		this.config = { ...DEFAULT_MEMORY_CONFIG, ...config };
@@ -95,16 +111,34 @@ export class Plc {
 		return this.#program;
 	}
 
-	/** Validates and downloads a program. Puts the CPU in STOP with cleared memory. */
-	load(program: Program): void {
+	/**
+	 * Validates and downloads a program. Puts the CPU in STOP with cleared memory — except the
+	 * retentive area, which is kept when the new program declares the same retentive variables.
+	 */
+	load(program: Program, options: LoadOptions = {}): void {
 		const issues = validateProgram(program, this.config);
+		const c = options.cyclic;
+		if (c && (!(c.intervalMs > 0) || c.entry < 0 || c.entry > program.length))
+			issues.push({ pc: c.entry, message: 'Invalid cyclic interrupt' });
 		if (issues.length > 0) throw new ProgramError(issues);
+		const r = options.retain;
+		const keep =
+			r && this.#options.retain?.signature === r.signature
+				? this.memory.M.slice(r.from, r.to)
+				: null;
+		this.#options = options;
 		this.#program = [...program];
 		this.#tapCount = program.reduce(
 			(max, ins) => (ins.op === 'TAP' || ins.op === 'LDT' ? Math.max(max, ins.slot + 1) : max),
 			0
 		);
 		this.reset();
+		if (keep && r) this.memory.M.set(keep, r.from);
+	}
+
+	/** How many times the cyclic interrupt has run since the last restart. */
+	get cyclicCount(): number {
+		return this.#cyclicCount;
 	}
 
 	/** Switches to RUN. Returns false when the CPU is in FAULT (call reset first). */
@@ -130,6 +164,8 @@ export class Plc {
 		this.#lastScanSteps = 0;
 		this.#fault = null;
 		this.#mode = 'STOP';
+		this.#cyclicDueMs = this.#options.cyclic?.intervalMs ?? 0;
+		this.#cyclicCount = 0;
 	}
 
 	/** Sets a physical input terminal. The program sees it on the next scan. */
@@ -177,6 +213,23 @@ export class Plc {
 		this.memory.I.set(this.#inputs);
 		this.#applyForces(true);
 		try {
+			// the cyclic interrupt interrupts the main program each time its interval elapses
+			const cyclic = this.#options.cyclic;
+			if (cyclic) {
+				while (this.#timeMs + dtMs >= this.#cyclicDueMs) {
+					execute(
+						this.#program,
+						this.memory,
+						this.#vm,
+						cyclic.intervalMs,
+						this.maxStepsPerScan,
+						undefined,
+						cyclic.entry
+					);
+					this.#cyclicDueMs += cyclic.intervalMs;
+					this.#cyclicCount++;
+				}
+			}
 			this.#lastScanSteps = execute(
 				this.#program,
 				this.memory,
@@ -205,6 +258,7 @@ export class Plc {
 			scanCount: this.#scanCount,
 			timeMs: this.#timeMs,
 			lastScanSteps: this.#lastScanSteps,
+			cyclicCount: this.#cyclicCount,
 			fault: this.#fault ? { message: this.#fault.message, pc: this.#fault.pc } : null,
 			inputs: this.#inputs.slice(),
 			outputs: this.#outputs.slice(),

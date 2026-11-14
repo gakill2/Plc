@@ -103,10 +103,12 @@ export function execute(
 	state: VmState,
 	dtMs: number,
 	maxSteps = DEFAULT_MAX_STEPS,
-	hook?: ExecHook
+	hook?: ExecHook,
+	/** first instruction: 0 for the main program, another entry point for an interrupt */
+	entry = 0
 ): number {
 	const stack: boolean[] = [];
-	let pc = 0;
+	let pc = entry;
 	let steps = 0;
 
 	const push = (v: boolean) => {

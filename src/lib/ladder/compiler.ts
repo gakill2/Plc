@@ -6,6 +6,7 @@ import {
 	validateProgram,
 	type Address,
 	type Instr,
+	type LoadOptions,
 	type MemoryConfig,
 	type AddrOperand,
 	type Operand
@@ -28,6 +29,8 @@ export interface CompiledLadder {
 	/** Instruction index → id of the node that produced it. */
 	sourceMap: (string | null)[];
 	diagnostics: Diagnostic[];
+	/** retentive memory and cyclic interrupt (ST programs) */
+	load?: LoadOptions;
 }
 
 /** Probe key for the power entering a parallel block. */

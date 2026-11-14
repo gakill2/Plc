@@ -31,6 +31,13 @@
 		<span class="font-mono text-[11px] text-slate-500" title="Simulated time · scan count">
 			{((snapshot?.timeMs ?? 0) / 1000).toFixed(2)} s · #{snapshot?.scanCount ?? 0}
 		</span>
+		{#if snapshot?.cyclicCount}
+			<span
+				class="font-mono text-[11px] text-sky-400"
+				title="Cyclic interrupt (OB30): runs since the restart"
+				aria-label="Cyclic interrupt runs">OB30 ×{snapshot.cyclicCount}</span
+			>
+		{/if}
 	</div>
 
 	<div class="flex items-center gap-0.5 rounded-md border border-slate-800 bg-slate-900 p-0.5">

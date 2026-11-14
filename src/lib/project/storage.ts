@@ -12,7 +12,7 @@ export interface ProjectSummary {
 	updatedAt: number;
 	lesson?: string;
 	scenario?: string;
-	language: 'ladder' | 'st' | 'sfc';
+	language: 'ladder' | 'st' | 'sfc' | 'fbd';
 	networks: number;
 	devices: number;
 }

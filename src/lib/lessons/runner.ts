@@ -1,4 +1,10 @@
-import { parseAddress, Plc, ProgramError, type Instr } from '#lib/engine/index.js';
+import {
+	parseAddress,
+	Plc,
+	ProgramError,
+	type Instr,
+	type LoadOptions
+} from '#lib/engine/index.js';
 import { DeviceBank } from '#lib/circuit/devices.js';
 import {
 	hasFault,
@@ -21,13 +27,14 @@ export function runLessonTests(
 	lesson: Lesson,
 	program: Instr[],
 	circuit?: Circuit,
-	faults: Fault[] = []
+	faults: Fault[] = [],
+	load?: LoadOptions
 ): TestResult[] {
 	const field = (lesson.kind === 'commissioning' || lesson.fieldTests) && circuit ? circuit : null;
 	return lesson.tests.map((test) => {
 		const plc = new Plc();
 		try {
-			plc.load(program);
+			plc.load(program, load);
 		} catch (e) {
 			const message = e instanceof ProgramError ? e.message : String(e);
 			return { name: test.name, passed: false, message: `Program się nie ładuje: ${message}` };
@@ -58,6 +65,10 @@ export function runLessonTests(
 		});
 
 		for (const step of test.steps) {
+			if (step.restart) {
+				plc.load(program, load);
+				plc.run();
+			}
 			for (const [terminal, value] of Object.entries(step.set ?? {})) plc.setInput(terminal, value);
 			for (const [name, value] of step.commands ?? []) process?.command(name, value);
 			for (const [address, value] of Object.entries(step.hmi ?? {})) plc.modify(address, value);

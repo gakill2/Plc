@@ -1,4 +1,5 @@
 import type { Sfc } from '#lib/sfc/sfc.js';
+import type { FbdBox, FbdValue, Fbd } from '#lib/fbd/fbd.js';
 import { formatAddress, parseAddress } from '#lib/engine/index.js';
 import type {
 	CoilType,
@@ -26,6 +27,8 @@ export interface GuideContext {
 	st?: string;
 	/** Sequential function chart (SFC lessons) */
 	sfc?: Sfc;
+	/** Function block diagram (FBD lessons) */
+	fbd?: Fbd;
 	/** the project's operator panel (HMI lessons) */
 	hmi?: Hmi;
 	/** the project's circuit (commissioning lessons check the wiring) */
@@ -229,6 +232,24 @@ const transitionIs = (c: GuideContext, from: string, to: string, cond: RegExp) =
 			t.to.some((n) => n.toUpperCase() === to.toUpperCase()) &&
 			cond.test(t.condition)
 	);
+
+/** The first SR flip-flop of the FBD diagram. */
+const srBox = (c: GuideContext) => {
+	const walk = (v: FbdValue): FbdBox | null => {
+		if (v.kind !== 'box') return null;
+		if (v.box.type.toUpperCase() === 'SR') return v.box;
+		for (const p of v.box.inputs) {
+			const r = walk(p.value);
+			if (r) return r;
+		}
+		return null;
+	};
+	for (const n of c.fbd?.networks ?? []) {
+		const r = walk(n.value);
+		if (r) return r;
+	}
+	return null;
+};
 
 /** The first PID box in the program. */
 const pidBlock = (c: GuideContext) => {
@@ -827,6 +848,56 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		},
 		runIt(
 			'w Watch podejrzyj m1.Run, m2.Fault… — każda instancja ma swoje zmienne. Wyłącz Fb2 i uruchom taśmę 2.'
+		),
+		checkIt
+	],
+
+	'tank-fbd': [
+		{
+			text: 'Zaznacz pole wejścia networku i kliknij **SR** na palecie bloków.',
+			done: (c) => !!srBox(c)
+		},
+		{
+			text: 'Wejście `S1` = `Low` z **negacją** (zaznacz pin S1 → „¬ negacja”).',
+			done: (c) => {
+				const p = srBox(c)?.inputs.find((x) => x.name === 'S1');
+				return !!p?.negated && p.value.kind === 'operand' && sameAddr(c, p.value.text, 'I0.0');
+			}
+		},
+		{
+			text: 'Wejście `R` = `High`.',
+			done: (c) => {
+				const p = srBox(c)?.inputs.find((x) => x.name === 'R');
+				return !!p && p.value.kind === 'operand' && sameAddr(c, p.value.text, 'I0.1');
+			}
+		},
+		runIt('obserwuj w widoku Process, jak pompa włącza się przy Low i wyłącza przy High.'),
+		checkIt
+	],
+
+	'oven-filter': [
+		{
+			text: 'W `CYCLIC_INTERRUPT` zapisz próbkę: `buf[pos] := Temperature;` i przesuń `pos` z powrotem do 0 po 9.',
+			done: (c) =>
+				/buf\s*\[\s*pos\s*\]\s*:=\s*Temperature/i.test(c.st ?? '') &&
+				/pos\s*:=\s*0/i.test(c.st ?? '')
+		},
+		{
+			text: 'Policz średnią: suma w pętli `FOR i := 0 TO 9` i `Avg := DINT_TO_INT(sum / 10);`',
+			done: (c) => /FOR\s+i\s*:=\s*0\s+TO\s+9/i.test(c.st ?? '') && /Avg\s*:=/i.test(c.st ?? '')
+		},
+		{
+			text: 'Alarm z histerezą: włącz powyżej `2500`, wyłącz poniżej `2300`.',
+			done: (c) => /2500/.test(c.st ?? '') && /2300/.test(c.st ?? '')
+		},
+		{
+			text: 'Licznik `alarms` przenieś do `VAR RETAIN` i zwiększaj go na zboczu alarmu (`R_TRIG`).',
+			done: (c) =>
+				/VAR\s+RETAIN((?!END_VAR)[^])*\balarms\s*:/i.test(c.st ?? '') &&
+				/alarms\s*:=\s*alarms\s*\+\s*1/i.test(c.st ?? '')
+		},
+		runIt(
+			'włącz HeatOn i obserwuj Temperature i Avg w Watch; obok statusu PLC widać licznik OB30. Zatrzymaj i uruchom PLC — AlarmCount zostaje.'
 		),
 		checkIt
 	],

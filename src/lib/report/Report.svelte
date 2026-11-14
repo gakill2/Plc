@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FbdView from '#lib/fbd/FbdView.svelte';
 	import SfcEditor from '#lib/sfc/SfcEditor.svelte';
 	import { resolve } from '$app/paths';
 	import { untrack } from 'svelte';
@@ -158,7 +159,9 @@
 					? 'Structured Text (IEC 61131-3)'
 					: project.language === 'sfc'
 						? 'Sequential Function Chart (SFC)'
-						: 'Ladder diagram (LAD)'}
+						: project.language === 'fbd'
+							? 'Function Block Diagram (FBD)'
+							: 'Ladder diagram (LAD)'}
 				{#if plant}· plant: {plant.name}{/if} · {project.compiled.program.length} IL instructions · made
 				with PLC Sim
 			</p>
@@ -179,6 +182,20 @@
 						<div class="sfc">
 							<SfcEditor sfc={project.sfc} readOnly={true} active={() => null} flagged={[]} />
 						</div>
+					{:else if project.language === 'fbd'}
+						<FbdView
+							fbd={project.fbd}
+							types={project.boxTypes}
+							readOnly={true}
+							online={false}
+							problemIds={[]}
+							generated=""
+							names={[]}
+							valueOf={() => null}
+							signal={() => null}
+						>
+							{#snippet header()}{/snippet}
+						</FbdView>
 					{:else if project.language === 'st'}
 						<pre class="code text-xs leading-5">{#each stLines as line, i (i)}<span class="ln"
 									>{String(i + 1).padStart(3)}</span

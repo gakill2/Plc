@@ -1,5 +1,15 @@
 import { STDLIB } from '#lib/st/stdlib.js';
 import { checkSfc, emptySfc, sfcToSt, type GeneratedSt, type Sfc } from '#lib/sfc/sfc.js';
+import {
+	boxTypes,
+	checkFbd,
+	emptyFbd,
+	fbdToSt,
+	type BoxType,
+	type Fbd,
+	type GeneratedFbd
+} from '#lib/fbd/fbd.js';
+import { blockCatalog } from '#lib/st/stdlib.js';
 import { emptyHmi, WRITES, type Hmi } from '#lib/hmi/model.js';
 import { formatAddress, parseAddress } from '#lib/engine/index.js';
 import { DEFAULT_MEMORY_CONFIG } from '#lib/engine/index.js';
@@ -50,6 +60,13 @@ export class ProjectState {
 	/** The project's own function blocks, in ST. */
 	library: string = $state('');
 	readonly prelude: string = $derived(this.library.trim() ? `${STDLIB}\n${this.library}` : STDLIB);
+	fbd: Fbd = $state(emptyFbd());
+	/** FBD boxes: the built-in ones and every function block of the library. */
+	readonly boxTypes: BoxType[] = $derived(boxTypes(blockCatalog(this.library)));
+	/** The diagram translated to ST, while FBD is the active language. */
+	readonly fbdSt: GeneratedFbd | null = $derived(
+		this.language === 'fbd' ? fbdToSt(this.fbd, this.boxTypes) : null
+	);
 	/** The chart translated to ST, while SFC is the active language. */
 	readonly sfcSt: GeneratedSt | null = $derived(this.language === 'sfc' ? sfcToSt(this.sfc) : null);
 
@@ -59,7 +76,9 @@ export class ProjectState {
 			? compileSt(this.st, { symbols: this.symbols.map, prelude: this.prelude })
 			: this.sfcSt
 				? compileSt(this.sfcSt.source, { symbols: this.symbols.map, prelude: this.prelude })
-				: null
+				: this.fbdSt
+					? compileSt(this.fbdSt.source, { symbols: this.symbols.map, prelude: this.prelude })
+					: null
 	);
 	/** The active program in a common shape — this is what gets downloaded and graded. */
 	readonly compiled: CompiledLadder;
@@ -86,13 +105,16 @@ export class ProjectState {
 		this.language = project.language ?? 'ladder';
 		this.st = project.st ?? '';
 		this.sfc = project.sfc ?? emptySfc();
+		this.fbd = project.fbd ?? emptyFbd();
 		this.hmi = project.hmi ?? emptyHmi();
 		this.compiled = $derived(
 			this.sfcSt && this.stResult
 				? fromSfc(this.sfc, this.stResult, this.sfcSt)
-				: this.stResult
-					? fromSt(this.stResult, this.st)
-					: this.ladder.compiled
+				: this.fbdSt && this.stResult
+					? fromFbd(this.fbd, this.boxTypes, this.stResult, this.fbdSt)
+					: this.stResult
+						? fromSt(this.stResult, this.st)
+						: this.ladder.compiled
 		);
 		this.problems = $derived([
 			...this.compiled.diagnostics.map((d) => ({ ...d, source: 'program' as const })),
@@ -186,6 +208,9 @@ export class ProjectState {
 		this.language = p.language ?? 'ladder';
 		this.st = p.st ?? '';
 		this.hmi = p.hmi ?? emptyHmi();
+		this.sfc = p.sfc ?? emptySfc();
+		this.fbd = p.fbd ?? emptyFbd();
+		this.library = p.library ?? '';
 	}
 
 	toJSON(): Project {
@@ -205,6 +230,10 @@ export class ProjectState {
 				this.language === 'sfc' || this.sfc.steps.length > 1
 					? $state.snapshot(this.sfc)
 					: undefined,
+			fbd:
+				this.language === 'fbd' || this.fbd.networks.length > 1
+					? $state.snapshot(this.fbd)
+					: undefined,
 			hmi: $state.snapshot(this.hmi)
 		};
 	}
@@ -216,6 +245,7 @@ function fromSfc(sfc: Sfc, result: StCompileResult, gen: GeneratedSt): CompiledL
 	const issues = checkSfc(sfc);
 	return {
 		program: result.program,
+		...(result.load ? { load: result.load } : {}),
 		taps: new Map(),
 		sourceMap: result.lines.map((l) => (l === null ? null : `L${l}`)),
 		diagnostics: [
@@ -230,11 +260,41 @@ function fromSfc(sfc: Sfc, result: StCompileResult, gen: GeneratedSt): CompiledL
 	};
 }
 
+/** FBD: diagram issues first, then errors of the generated ST — named after the network. */
+function fromFbd(
+	fbd: Fbd,
+	types: BoxType[],
+	result: StCompileResult,
+	gen: GeneratedFbd
+): CompiledLadder {
+	const lineOf = (offset: number) => gen.source.slice(0, offset).split('\n').length;
+	const issues = checkFbd(fbd, types);
+	const label = (line: number) => {
+		const i = fbd.networks.findIndex((n) => n.id === gen.origin[line]);
+		return i >= 0 ? `Network ${i + 1}` : 'FBD';
+	};
+	return {
+		program: result.program,
+		taps: new Map(),
+		sourceMap: result.lines.map((l) => (l === null ? null : `L${l}`)),
+		diagnostics: [
+			...issues.map((i) => ({ id: `fbd:${i.id}`, message: i.message })),
+			...(issues.length
+				? []
+				: result.diagnostics.map((d) => ({
+						id: `fbd:${gen.origin[lineOf(d.from)] ?? 'st'}`,
+						message: d.library ? d.message : `${label(lineOf(d.from))}: ${d.message}`
+					})))
+		]
+	};
+}
+
 /** Adapts an ST compile result to the shape the rest of the app uses for compiled programs. */
 function fromSt(result: StCompileResult, src: string): CompiledLadder {
 	const lineOf = (offset: number) => src.slice(0, offset).split('\n').length;
 	return {
 		program: result.program,
+		...(result.load ? { load: result.load } : {}),
 		taps: new Map(),
 		sourceMap: result.lines.map((l) => (l === null ? null : `L${l}`)),
 		diagnostics: result.diagnostics.map((d) => ({

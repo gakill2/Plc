@@ -5,6 +5,7 @@
 	import type { Circuit } from '#lib/circuit/model.js';
 	import type { Hmi } from '#lib/hmi/model.js';
 	import type { Sfc } from '#lib/sfc/sfc.js';
+	import type { Fbd } from '#lib/fbd/fbd.js';
 	import type { SymbolMap } from '#lib/symbols/symbols.js';
 	import { addressResolver, GUIDES } from './guide.js';
 	import { onMount } from 'svelte';
@@ -25,11 +26,12 @@
 		ladder: LadderProgram;
 		symbols: SymbolMap;
 		online: boolean;
-		language: 'ladder' | 'st' | 'sfc';
+		language: 'ladder' | 'st' | 'sfc' | 'fbd';
 		circuit: Circuit;
 		hmi: Hmi;
 		st: string;
 		sfc: Sfc;
+		fbd: Fbd;
 	};
 	let {
 		lesson,
@@ -44,7 +46,8 @@
 		circuit,
 		hmi,
 		st,
-		sfc
+		sfc,
+		fbd
 	}: Props = $props();
 
 	let results = $state.raw<TestResult[] | null>(null);
@@ -89,6 +92,7 @@
 			hmi,
 			st,
 			sfc,
+			fbd,
 			addr: addressResolver(symbols),
 			online,
 			passed: passed || completedBefore
@@ -107,7 +111,13 @@
 		checking = true;
 		// let the button show its busy state, then run the (synchronous) simulation
 		setTimeout(() => {
-			results = runLessonTests(lesson, compiled.program, $state.snapshot(circuit) as Circuit);
+			results = runLessonTests(
+				lesson,
+				compiled.program,
+				$state.snapshot(circuit) as Circuit,
+				[],
+				$state.snapshot(compiled.load)
+			);
 			checking = false;
 			if (results.every((r) => r.passed)) {
 				markCompleted(lesson.slug);
@@ -142,7 +152,7 @@
 		{#each lesson.instructions as p, i (i)}<p><RichText text={p} /></p>{/each}
 	</div>
 
-	{#if guide.length && (language === 'ladder' || lesson.kind === 'commissioning' || lesson.solutionSt || lesson.solutionSfc)}
+	{#if guide.length && (language === 'ladder' || lesson.kind === 'commissioning' || lesson.solutionSt || lesson.solutionSfc || lesson.solutionFbd)}
 		<div lang="pl">
 			<p class="mb-1 text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
 				Krok po kroku · {ticks.filter(Boolean).length}/{guide.length}

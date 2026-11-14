@@ -1098,6 +1098,26 @@ Gotowe := opoznienie.Q;`,
 				options: ['Y := A OR NOT B;', 'Y := A AND NOT B;', 'Y := NOT A AND B;'],
 				correct: 1,
 				explanation: `Szeregowo to AND, styk rozwierny to NOT: \`Y := A AND NOT B;\`.`
+			},
+			{
+				kind: 'text',
+				text: `Trzeci język „do logiki” to **FBD** (Function Block Diagram, w Siemensie **FUP**). Program to bloki połączone liniami: bramka **&** (AND), **>=1** (OR), porównania, timery i liczniki. Sygnał płynie od wejść po lewej do przypisań po prawej, a **kółko** na wejściu bloku to negacja (jak styk rozwierny). Elektronikom FBD przypomina schemat bramek — w wielu firmach (energetyka, wod-kan, procesy ciągłe) to podstawowy język.`
+			},
+			{
+				kind: 'table',
+				head: ['Drabinka (LAD)', 'FBD', 'ST'],
+				rows: [
+					['styki szeregowo', 'blok & (AND)', 'A AND B'],
+					['styki równolegle', 'blok >=1 (OR)', 'A OR B'],
+					['styk rozwierny', 'kółko na wejściu', 'NOT A'],
+					['cewki (S) i (R)', 'przerzutnik SR / RS albo wyjście S, R', 'IF … THEN … := TRUE'],
+					['timer TON', 'blok TON z IN i PT', 't(IN := …, PT := …)']
+				]
+			},
+			{
+				kind: 'lesson',
+				slug: 'tank-fbd',
+				text: 'Zbiornik w FBD: przerzutnik SR z negacją na wejściu zamiast dwóch cewek S / R.'
 			}
 		]
 	},
@@ -1188,7 +1208,7 @@ Wentylator(Start := S3, Stop := P3, Potwierdzenie := K3_FB);`
 				kind: 'callout',
 				tone: 'info',
 				title: 'W PLC Sim',
-				text: 'Symulator ma jeden program cykliczny (jak OB1) i gotowe bloki TON/TOF/TP/CTU/CTD/R_TRIG/F_TRIG — własnych FB jeszcze nie. Strukturę i tak ćwiczysz: **komentarze networków**, **tablica symboli** i podział programu na części.'
+				text: 'W ST piszesz własne `FUNCTION_BLOCK`, `FUNCTION` i `STRUCT` (w widoku **Blocks** — biblioteka projektu, bloki widać potem w palecie drabinki). Do tego tablice, `VAR RETAIN` i przerwanie cykliczne — poniżej.'
 			},
 			{
 				kind: 'text',
@@ -1265,6 +1285,47 @@ K2 := m2.Run;           // wyjście czytasz też przez kropkę`
 				kind: 'lesson',
 				slug: 'fb-motor',
 				text: 'Napisz blok silnika z kontrolą styku zwrotnego i użyj go w trzech instancjach.'
+			},
+			{
+				kind: 'text',
+				text: `Trzy rzeczy, bez których nie obejdzie się żaden większy program:
+
+1. **Tablice** — \`ARRAY[1..10] OF INT\`, także tablice struktur i instancji FB (\`motors : ARRAY[1..3] OF Motor;\` i \`motors[i](…)\` w pętli). Indeks może być zmienną. Typowe zastosowania: receptury, bufor ostatnich próbek, rejestr przesuwny śledzący detale na taśmie. Indeks spoza zakresu to w prawdziwym CPU błąd dostępu — pilnuj granic.
+2. **Pamięć retencyjna** — zmienne z \`VAR RETAIN\` przeżywają zanik zasilania i ponowne ładowanie programu (w TIA Portal: kolumna *Retain* w interfejsie bloku). Liczniki sztuk, godziny pracy, ostatnia receptura. Zwykłe zmienne po restarcie wracają do wartości początkowych.
+3. **Przerwanie cykliczne** (OB30 … OB38 w S7, zadanie cykliczne w CODESYS) — kod wywoływany co **stały** czas, np. 100 ms, niezależnie od tego, jak długo trwa cykl OB1. Tam umieszcza się regulatory PID i filtry, bo ich obliczenia zakładają stały czas próbkowania.`
+			},
+			{
+				kind: 'code',
+				title: 'Tablica, RETAIN i przerwanie cykliczne w PLC Sim',
+				code: `VAR RETAIN
+  parts : DINT;                       // zostaje po Stop → Run
+END_VAR
+VAR
+  recipe : ARRAY[1..3] OF INT := [180, 200, 220];
+  sel : INT := 1;
+END_VAR
+Setpoint := recipe[sel];
+
+CYCLIC_INTERRUPT T#100ms               // jak OB30: co 100 ms
+  (* próbkowanie, filtr, PID … *)
+END_CYCLIC_INTERRUPT`
+			},
+			{
+				kind: 'quiz',
+				question: 'Dlaczego regulator PID umieszcza się w przerwaniu cyklicznym, a nie w OB1?',
+				options: [
+					'Bo OB1 nie może zapisywać wyjść analogowych',
+					'Bo całkowanie i różniczkowanie zakładają stały czas próbkowania, a cykl OB1 się waha',
+					'Bo przerwanie wykonuje się szybciej'
+				],
+				correct: 1,
+				explanation:
+					'Czas cyklu OB1 zależy od tego, które gałęzie programu akurat się wykonują i od komunikacji. Przerwanie cykliczne daje stałe Δt, na którym opierają się nastawy Ti i Td.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'oven-filter',
+				text: 'Filtr średniej kroczącej w przerwaniu cyklicznym, bufor w tablicy i licznik alarmów w RETAIN.'
 			}
 		]
 	},

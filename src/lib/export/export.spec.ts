@@ -10,7 +10,8 @@ import { exportPlcOpen, exportScl, iecAddress, ladderToSt, type ExportInput } fr
 
 /** Ladder lessons whose tests run on the plain PLC (no wiring) — their solutions are translated to ST. */
 const ladderLessons = LESSONS.filter(
-	(l) => !l.solutionSt && !l.solutionSfc && l.kind !== 'commissioning' && !l.fieldTests
+	(l) =>
+		!l.solutionSt && !l.solutionSfc && !l.solutionFbd && l.kind !== 'commissioning' && !l.fieldTests
 );
 
 describe('ladder → Structured Text', () => {
@@ -58,6 +59,34 @@ pid1(SP := 50.0, PV := level, OUT => QW4);`,
 };
 
 describe('export', () => {
+	it('exports arrays, VAR RETAIN and the cyclic interrupt', () => {
+		const lesson = LESSONS.find((l) => l.slug === 'oven-filter')!;
+		const project = lesson.starter();
+		const input: ExportInput = {
+			...sample,
+			library: '',
+			st: lesson.solutionSt!,
+			symbols: project.symbols.map((x) => ({
+				name: x.name,
+				address: x.address,
+				comment: x.comment
+			}))
+		};
+		const { scl, errors } = exportScl(input);
+		expect(errors).toEqual([]);
+		expect(scl).toContain('buf : Array[0..9] of Int;');
+		expect(scl).toMatch(/VAR RETAIN\s+alarms : Int;/);
+		expect(scl).toContain('ORGANIZATION_BLOCK "Cyclic_interrupt"');
+		expect(scl).toContain('"Main_DB".buf["Main_DB".pos] := "Temperature";');
+		const { xml } = exportPlcOpen(input);
+		expect(xml).toContain('<localVars retain="true">');
+		expect(xml).toContain(
+			'<array><dimension lower="0" upper="9"/><baseType><INT/></baseType></array>'
+		);
+		expect(xml).toContain('<task name="CyclicTask" interval="T#100ms"');
+		expect(xml).toContain('PLC_PRG.buf[PLC_PRG.pos] := Temperature;');
+	});
+
 	it('writes TIA Portal SCL with # locals, "tags" and %addresses', () => {
 		const { scl, tags, errors } = exportScl(sample);
 		expect(errors).toEqual([]);

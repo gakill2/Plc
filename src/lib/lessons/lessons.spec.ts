@@ -7,6 +7,10 @@ import type { LadderProgram } from '#lib/ladder/model.js';
 import { checkSymbols } from '#lib/symbols/symbols.js';
 import { LESSONS } from './lessons.js';
 import { runLessonTests } from './runner.js';
+import { boxTypes, fbdToSt } from '#lib/fbd/fbd.js';
+import { blockCatalog } from '#lib/st/stdlib.js';
+
+const FBD_TYPES = boxTypes(blockCatalog(''));
 
 /** Compiles a ladder with the symbols of the lesson's starter project, like the editor does. */
 function compile(lesson: (typeof LESSONS)[number], ladder: LadderProgram) {
@@ -19,35 +23,40 @@ function compile(lesson: (typeof LESSONS)[number], ladder: LadderProgram) {
 /** Structured Text lessons: compiles the source with the starter's symbols. */
 function compileStLesson(lesson: (typeof LESSONS)[number], src: string) {
 	const project = lesson.starter();
-	const { map } = checkSymbols([...deviceSymbols(project.circuit), ...project.symbols]);
+	const { map, issues } = checkSymbols([...deviceSymbols(project.circuit), ...project.symbols]);
+	expect(issues).toEqual([]);
 	const r = compileSt(src, { symbols: map });
-	return { program: r.program, diagnostics: r.diagnostics };
+	return { program: r.program, diagnostics: r.diagnostics, load: r.load };
 }
 
 describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, lesson) => {
 	it('the reference solution passes every test', () => {
-		const { program, diagnostics } = lesson.solutionSfc
+		const { program, diagnostics, load } = lesson.solutionSfc
 			? compileStLesson(lesson, sfcToSt(lesson.solutionSfc()).source)
-			: lesson.solutionSt
-				? compileStLesson(lesson, lesson.solutionSt)
-				: compile(lesson, lesson.solution());
+			: lesson.solutionFbd
+				? compileStLesson(lesson, fbdToSt(lesson.solutionFbd(), FBD_TYPES).source)
+				: lesson.solutionSt
+					? compileStLesson(lesson, lesson.solutionSt)
+					: compile(lesson, lesson.solution());
 		expect(diagnostics).toEqual([]);
 		const circuit = lesson.solutionCircuit?.() ?? lesson.starter().circuit;
-		const results = runLessonTests(lesson, program, circuit);
+		const results = runLessonTests(lesson, program, circuit, [], load);
 		expect(results.filter((r) => !r.passed)).toEqual([]);
 	});
 
 	it('the starter project does not pass', () => {
 		const start = lesson.starter();
-		const { program } =
+		const { program, load } =
 			start.language === 'sfc' && start.sfc
 				? compileStLesson(lesson, sfcToSt(start.sfc).source)
-				: start.language === 'st'
-					? compileStLesson(lesson, start.st ?? '')
-					: compile(lesson, start.ladder);
-		expect(runLessonTests(lesson, program, lesson.starter().circuit).some((r) => !r.passed)).toBe(
-			true
-		);
+				: start.language === 'fbd' && start.fbd
+					? compileStLesson(lesson, fbdToSt(start.fbd, FBD_TYPES).source)
+					: start.language === 'st'
+						? compileStLesson(lesson, start.st ?? '')
+						: compile(lesson, start.ladder);
+		expect(
+			runLessonTests(lesson, program, lesson.starter().circuit, [], load).some((r) => !r.passed)
+		).toBe(true);
 	});
 });
 

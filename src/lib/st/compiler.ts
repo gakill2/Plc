@@ -7,6 +7,7 @@ import {
 	type AddrOperand,
 	type CmpOp,
 	type Instr,
+	type LoadOptions,
 	type MathFn,
 	type MemoryConfig,
 	type NumType,

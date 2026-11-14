@@ -4,7 +4,11 @@
 	import { blockers, explainRung } from '#lib/ladder/explain.js';
 	import type { Monitor } from '#lib/ladder/monitor.js';
 
-	type Props = { doc: LadderDocument; monitor: Monitor | null; language: 'ladder' | 'st' | 'sfc' };
+	type Props = {
+		doc: LadderDocument;
+		monitor: Monitor | null;
+		language: 'ladder' | 'st' | 'sfc' | 'fbd';
+	};
 	let { doc, monitor, language }: Props = $props();
 
 	let open = $state(true);

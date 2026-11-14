@@ -1,4 +1,4 @@
-import type { Instr, NumType, PlcSnapshot, ProgramIssue } from '#lib/engine/index.js';
+import type { Instr, LoadOptions, NumType, PlcSnapshot, ProgramIssue } from '#lib/engine/index.js';
 import type { ProcessKind, ProcessState } from '#lib/processes/types.js';
 
 /** A signal recorded for the timing diagram. `bit` reads Q of timers/counters, `number` reads ET/CV. */
@@ -16,7 +16,7 @@ export interface TraceSample {
 
 /** Messages from the UI to the PLC worker. */
 export type RuntimeCommand =
-	| { type: 'load'; program: Instr[] }
+	| { type: 'load'; program: Instr[]; options?: LoadOptions }
 	| { type: 'run' }
 	| { type: 'pause' }
 	| { type: 'step' }

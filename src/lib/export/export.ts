@@ -10,10 +10,11 @@
  * already compiled to ST. Then one printer writes the dialect.
  */
 import { formatAddress, parseAddress } from '#lib/engine/index.js';
+import { boxTypes, fbdToSt, type Fbd } from '#lib/fbd/fbd.js';
 import type { BlockBox, Element, LadderProgram, Series } from '#lib/ladder/model.js';
 import type { Expr, Pou, Stmt, StructType, VarDecl } from '#lib/st/ast.js';
 import { parse } from '#lib/st/parser.js';
-import { STDLIB } from '#lib/st/stdlib.js';
+import { blockCatalog, STDLIB } from '#lib/st/stdlib.js';
 import { sfcToSt, type Sfc } from '#lib/sfc/sfc.js';
 
 /* ================================================================ ladder → ST */
@@ -181,10 +182,11 @@ export function ladderToSt(
 
 export interface ExportInput {
 	name: string;
-	language: 'ladder' | 'st' | 'sfc';
+	language: 'ladder' | 'st' | 'sfc' | 'fbd';
 	ladder: LadderProgram;
 	st: string;
 	sfc: Sfc;
+	fbd?: Fbd;
 	library: string;
 	/** symbol table (user + wired devices) */
 	symbols: { name: string; address: string; comment: string }[];
@@ -193,7 +195,7 @@ export interface ExportInput {
 interface Unit {
 	types: StructType[];
 	pous: Pou[];
-	main: { vars: VarDecl[]; body: Stmt[] };
+	main: { vars: VarDecl[]; body: Stmt[]; cyclic?: { intervalMs: number; body: Stmt[] } };
 	errors: string[];
 	/** The parser upper-cases parameter, member and type names; this restores how they were declared. */
 	caseOf: (name: string) => string;
@@ -207,7 +209,9 @@ export function programSource(p: ExportInput, symbols = symbolMap(p)): string {
 		? ladderToSt(p.ladder, symbols)
 		: p.language === 'sfc'
 			? sfcToSt(p.sfc).source
-			: p.st;
+			: p.language === 'fbd' && p.fbd
+				? fbdToSt(p.fbd, boxTypes(blockCatalog(p.library))).source
+				: p.st;
 }
 
 /** Library, the standard blocks the program actually uses, and the program — parsed. */
@@ -215,7 +219,7 @@ function unit(p: ExportInput): Unit {
 	const program = programSource(p, symbolMap(p));
 	const std = parse(STDLIB).program.pous ?? [];
 	const text = `${p.library}\n${program}`;
-	const used = std.filter((b) => new RegExp(`:\\s*${b.name}\\s*;`, 'i').test(text));
+	const used = std.filter((b) => new RegExp(`(?::|\\bOF)\\s*${b.name}\\s*[;:]`, 'i').test(text));
 	const usedSrc = used
 		.map((b) =>
 			STDLIB.slice(
@@ -240,7 +244,7 @@ function unit(p: ExportInput): Unit {
 	return {
 		types: ast.types ?? [],
 		pous: ast.pous ?? [],
-		main: { vars: ast.vars, body: ast.body },
+		main: { vars: ast.vars, body: ast.body, cyclic: ast.cyclic },
 		errors: errors.map((e) => e.message),
 		caseOf: (n) => names.get(up(n)) ?? n
 	};
@@ -287,6 +291,8 @@ function expr(e: Expr, d: Dialect, parent = 0): string {
 			return d.address(e.text);
 		case 'member':
 			return d.member(e.object, d.caseOf(e.member));
+		case 'index':
+			return `${d.name(e.array)}[${expr(e.index, d)}]${e.member ? `.${d.caseOf(e.member)}` : ''}`;
 		case 'unary':
 			return e.op === 'NOT' ? `NOT ${expr(e.expr, d, 8)}` : `-${expr(e.expr, d, 8)}`;
 		case 'binary': {
@@ -300,6 +306,7 @@ function expr(e: Expr, d: Dialect, parent = 0): string {
 				e.args.map((a) => expr(a, d))
 			);
 	}
+	return '';
 }
 
 function stmts(list: Stmt[], d: Dialect, indent: string): string[] {
@@ -316,7 +323,8 @@ function stmts(list: Stmt[], d: Dialect, indent: string): string[] {
 						? `${d.caseOf(a.name)} => ${target(a.value)}`
 						: `${d.caseOf(a.name)} := ${expr(a.value, d)}`
 				);
-				out.push(`${indent}${d.call(s.name)}(${args.join(', ')});`);
+				const index = s.index ? `[${expr(s.index, d)}]` : '';
+				out.push(`${indent}${d.call(s.name)}${index}(${args.join(', ')});`);
 				break;
 			}
 			case 'if':
@@ -433,13 +441,21 @@ export function exportScl(p: ExportInput): { scl: string; tags: string; errors: 
 					: `${name}(${args.join(', ')})`,
 		call: (name) => (locals.has(up(name)) ? `#${name}` : `"${name}"`)
 	});
+	const declType = (v: VarDecl) =>
+		v.dims ? `Array[${v.dims.low}..${v.dims.high}] of ${type(v.type)}` : type(v.type);
+	const declInit = (v: VarDecl, d: Dialect) =>
+		v.initList
+			? ` := [${v.initList.map((x) => expr(x, d)).join(', ')}]`
+			: v.init
+				? ` := ${expr(v.init, d)}`
+				: '';
 	const varSection = (head: string, list: VarDecl[], d: Dialect) =>
 		list.length
 			? [
 					`   ${head}`,
 					...list.map(
 						(v) =>
-							`      ${v.name} : ${type(v.type)}${v.init ? ` := ${expr(v.init, d)}` : ''};${v.at ? ` // było AT ${v.at} — użyj tagu PLC` : ''}`
+							`      ${v.name} : ${declType(v)}${declInit(v, d)};${v.at ? ` // było AT ${v.at} — użyj tagu PLC` : ''}`
 					),
 					'   END_VAR'
 				]
@@ -453,8 +469,7 @@ export function exportScl(p: ExportInput): { scl: string; tags: string; errors: 
 	for (const t of u.types) {
 		const d = dialect(new Set());
 		out.push(`TYPE "${t.name}"`, 'VERSION : 0.1', '   STRUCT');
-		for (const f of t.fields)
-			out.push(`      ${f.name} : ${type(f.type)}${f.init ? ` := ${expr(f.init, d)}` : ''};`);
+		for (const f of t.fields) out.push(`      ${f.name} : ${declType(f)}${declInit(f, d)};`);
 		out.push('   END_STRUCT;', 'END_TYPE', '');
 	}
 	for (const pou of u.pous) {
@@ -480,13 +495,23 @@ export function exportScl(p: ExportInput): { scl: string; tags: string; errors: 
 	const mainLocals = new Set(u.main.vars.map((v) => up(v.name)));
 	const md = dialect(mainLocals);
 	out.push('FUNCTION_BLOCK "Main"', "{ S7_Optimized_Access := 'TRUE' }", 'VERSION : 0.1');
-	out.push(...varSection('VAR', u.main.vars, md));
+	out.push(
+		...varSection(
+			'VAR RETAIN',
+			u.main.vars.filter((v) => v.retain),
+			md
+		),
+		...varSection(
+			'VAR',
+			u.main.vars.filter((v) => !v.retain),
+			md
+		)
+	);
 	out.push('', 'BEGIN', ...stmts(u.main.body, md, '\t'), 'END_FUNCTION_BLOCK', '');
 	out.push(
 		'DATA_BLOCK "Main_DB"',
 		"{ S7_Optimized_Access := 'TRUE' }",
 		'VERSION : 0.1',
-		'NON_RETAIN',
 		'"Main"',
 		'BEGIN',
 		'END_DATA_BLOCK',
@@ -503,6 +528,27 @@ export function exportScl(p: ExportInput): { scl: string; tags: string; errors: 
 		'END_ORGANIZATION_BLOCK',
 		''
 	);
+	if (u.main.cyclic) {
+		// the interrupt reads the program's variables through its instance DB
+		const cd: Dialect = {
+			...md,
+			name: (n) => (mainLocals.has(up(n)) ? `"Main_DB".${n}` : md.name(n)),
+			member: (o, m) => (mainLocals.has(up(o)) ? `"Main_DB".${o}.${m}` : md.member(o, m)),
+			call: (n) => (mainLocals.has(up(n)) ? `"Main_DB".${n}` : md.call(n))
+		};
+		out.push(
+			'ORGANIZATION_BLOCK "Cyclic_interrupt"',
+			"TITLE = 'Przerwanie cykliczne'",
+			`// We właściwościach OB ustaw: Cyclic interrupt (OB30), czas cyklu ${u.main.cyclic.intervalMs} ms.`,
+			"{ S7_Optimized_Access := 'TRUE' }",
+			'VERSION : 0.1',
+			'',
+			'BEGIN',
+			...stmts(u.main.cyclic.body, cd, '\t'),
+			'END_ORGANIZATION_BLOCK',
+			''
+		);
+	}
 
 	const tags = [
 		'Name;Path;Data Type;Logical Address;Comment',
@@ -541,8 +587,12 @@ export function iecAddress(text: string): string {
 export function exportPlcOpen(p: ExportInput, now = new Date()): { xml: string; errors: string[] } {
 	const u = unit(p);
 	const elementary = new Set(['BOOL', 'BYTE', 'INT', 'DINT', 'REAL', 'TIME']);
-	const typeXml = (t: string) =>
-		elementary.has(up(t)) ? `<${up(t)}/>` : `<derived name="${esc(u.caseOf(t))}"/>`;
+	const typeXml = (t: string, dims?: { low: number; high: number }) => {
+		const base = elementary.has(up(t)) ? `<${up(t)}/>` : `<derived name="${esc(u.caseOf(t))}"/>`;
+		return dims
+			? `<array><dimension lower="${dims.low}" upper="${dims.high}"/><baseType>${base}</baseType></array>`
+			: base;
+	};
 	const d: Dialect = {
 		caseOf: u.caseOf,
 		name: (n) => n,
@@ -551,25 +601,27 @@ export function exportPlcOpen(p: ExportInput, now = new Date()): { xml: string; 
 		fcall: (name, args) => `${name}(${args.join(', ')})`,
 		call: (name) => name
 	};
-	const vars = (tag: string, list: VarDecl[]) =>
+	const initXml = (v: VarDecl) =>
+		v.initList
+			? `<initialValue><arrayValue>${v.initList.map((x) => `<value><simpleValue value="${esc(expr(x, d))}"/></value>`).join('')}</arrayValue></initialValue>`
+			: v.init
+				? `<initialValue><simpleValue value="${esc(expr(v.init, d))}"/></initialValue>`
+				: '';
+	const vars = (tag: string, list: VarDecl[], attrs = '') =>
 		list.length
 			? [
-					`          <${tag}>`,
+					`          <${tag}${attrs}>`,
 					...list.map(
 						(v) =>
-							`            <variable name="${esc(v.name)}"${v.at ? ` address="${iecAddress(v.at)}"` : ''}><type>${typeXml(v.type)}</type>${
-								v.init
-									? `<initialValue><simpleValue value="${esc(expr(v.init, d))}"/></initialValue>`
-									: ''
-							}</variable>`
+							`            <variable name="${esc(v.name)}"${v.at ? ` address="${iecAddress(v.at)}"` : ''}><type>${typeXml(v.type, v.dims)}</type>${initXml(v)}</variable>`
 					),
 					`          </${tag}>`
 				]
 			: [];
-	const body = (list: Stmt[]) => [
+	const body = (list: Stmt[], dialect = d) => [
 		'        <body>',
 		'          <ST>',
-		`            <xhtml xmlns="http://www.w3.org/1999/xhtml">${esc(stmts(list, d, '').join('\n'))}</xhtml>`,
+		`            <xhtml xmlns="http://www.w3.org/1999/xhtml">${esc(stmts(list, dialect, '').join('\n'))}</xhtml>`,
 		'          </ST>',
 		'        </body>'
 	];
@@ -587,7 +639,7 @@ export function exportPlcOpen(p: ExportInput, now = new Date()): { xml: string; 
 		out.push(`      <dataType name="${esc(t.name)}"><baseType><struct>`);
 		for (const f of t.fields)
 			out.push(
-				`        <variable name="${esc(f.name)}"><type>${typeXml(f.type)}</type></variable>`
+				`        <variable name="${esc(f.name)}"><type>${typeXml(f.type, f.dims)}</type>${initXml(f)}</variable>`
 			);
 		out.push('      </struct></baseType></dataType>');
 	}
@@ -607,11 +659,35 @@ export function exportPlcOpen(p: ExportInput, now = new Date()): { xml: string; 
 	out.push(
 		'      <pou name="PLC_PRG" pouType="program">',
 		'        <interface>',
-		...vars('localVars', u.main.vars),
+		...vars(
+			'localVars',
+			u.main.vars.filter((v) => v.retain),
+			' retain="true"'
+		),
+		...vars(
+			'localVars',
+			u.main.vars.filter((v) => !v.retain)
+		),
 		'        </interface>',
 		...body(u.main.body),
 		'      </pou>'
 	);
+	const mainNames = new Set(u.main.vars.map((v) => up(v.name)));
+	if (u.main.cyclic) {
+		// a second program in its own task; it reaches the main program's variables as PLC_PRG.x
+		const cd: Dialect = {
+			...d,
+			name: (n) => (mainNames.has(up(n)) ? `PLC_PRG.${n}` : n),
+			member: (o, m) => (mainNames.has(up(o)) ? `PLC_PRG.${o}.${m}` : `${o}.${m}`),
+			call: (n) => (mainNames.has(up(n)) ? `PLC_PRG.${n}` : n)
+		};
+		out.push(
+			'      <pou name="CYCLIC_PRG" pouType="program">',
+			'        <interface/>',
+			...body(u.main.cyclic.body, cd),
+			'      </pou>'
+		);
+	}
 	out.push(
 		'    </pous>',
 		'  </types>',
@@ -623,6 +699,10 @@ export function exportPlcOpen(p: ExportInput, now = new Date()): { xml: string; 
 	out.push(
 		'          <task name="MainTask" interval="T#10ms" priority="1"><pouInstance name="PLC_PRG_inst" typeName="PLC_PRG"/></task>'
 	);
+	if (u.main.cyclic)
+		out.push(
+			`          <task name="CyclicTask" interval="T#${u.main.cyclic.intervalMs}ms" priority="0"><pouInstance name="CYCLIC_PRG_inst" typeName="CYCLIC_PRG"/></task>`
+		);
 	out.push('          <globalVars>');
 	for (const s of p.symbols) {
 		const addr = iecAddress(s.address);

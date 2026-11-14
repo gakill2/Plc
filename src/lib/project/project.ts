@@ -1,4 +1,5 @@
 import { isSfc, type Sfc } from '#lib/sfc/sfc.js';
+import { isFbd, type Fbd } from '#lib/fbd/fbd.js';
 import { demoHmi, isHmi, type Hmi } from '#lib/hmi/model.js';
 import { demoCircuit, type Circuit } from '#lib/circuit/model.js';
 import { demoProgram } from '#lib/ladder/defaults.js';
@@ -34,9 +35,11 @@ export interface Project {
 	sfc?: Sfc;
 	/** The project's own function blocks (ST source), usable from LAD, ST and SFC. */
 	library?: string;
+	/** Function block diagram (when the FBD language is active). */
+	fbd?: Fbd;
 }
 
-export type ProgramLanguage = 'ladder' | 'st' | 'sfc';
+export type ProgramLanguage = 'ladder' | 'st' | 'sfc' | 'fbd';
 
 export const demoProject = (): Project => ({
 	version: 2,
@@ -77,11 +80,15 @@ export function parseProject(raw: unknown): Project | null {
 			watch: Array.isArray(raw.watch) ? (raw.watch as WatchEntry[]) : demoWatch(),
 			scenario: isProcessKind(raw.scenario) ? raw.scenario : undefined,
 			lesson: typeof raw.lesson === 'string' ? raw.lesson : undefined,
-			language: raw.language === 'st' || raw.language === 'sfc' ? raw.language : 'ladder',
+			language:
+				raw.language === 'st' || raw.language === 'sfc' || raw.language === 'fbd'
+					? raw.language
+					: 'ladder',
 			st: typeof raw.st === 'string' ? raw.st : '',
 			hmi: isHmi(raw.hmi) ? raw.hmi : undefined,
 			sfc: isSfc(raw.sfc) ? raw.sfc : undefined,
-			library: typeof raw.library === 'string' ? raw.library : undefined
+			library: typeof raw.library === 'string' ? raw.library : undefined,
+			fbd: isFbd(raw.fbd) ? raw.fbd : undefined
 		};
 	}
 	// stage 2 saved the bare ladder program

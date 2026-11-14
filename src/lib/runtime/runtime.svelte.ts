@@ -1,4 +1,4 @@
-import type { Instr, NumType, ProgramIssue } from '#lib/engine/index.js';
+import type { Instr, LoadOptions, NumType, ProgramIssue } from '#lib/engine/index.js';
 import type {
 	RuntimeCommand,
 	RuntimeEvent,
@@ -52,9 +52,13 @@ export class PlcRuntime {
 	}
 
 	/** Downloads the program and starts it (cold start). */
-	start(program: Instr[]) {
+	start(program: Instr[], options?: LoadOptions) {
 		this.loadError = null;
-		this.#send({ type: 'load', program: $state.snapshot(program) as Instr[] });
+		this.#send({
+			type: 'load',
+			program: $state.snapshot(program) as Instr[],
+			options: $state.snapshot(options) as LoadOptions | undefined
+		});
 		this.#send({ type: 'run' });
 	}
 
@@ -64,10 +68,14 @@ export class PlcRuntime {
 	reset = () => this.#send({ type: 'reset' });
 	clearForces = () => this.#send({ type: 'clearForces' });
 
-	step(program: Instr[]) {
+	step(program: Instr[], options?: LoadOptions) {
 		if (this.status === 'STOP') {
 			this.loadError = null;
-			this.#send({ type: 'load', program: $state.snapshot(program) as Instr[] });
+			this.#send({
+				type: 'load',
+				program: $state.snapshot(program) as Instr[],
+				options: $state.snapshot(options) as LoadOptions | undefined
+			});
 		}
 		this.#send({ type: 'step' });
 	}

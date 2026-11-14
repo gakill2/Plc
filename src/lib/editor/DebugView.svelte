@@ -12,7 +12,7 @@
 		snapshot: RuntimeSnapshot | null;
 		/** address → symbol name */
 		names: ReadonlyMap<string, string>;
-		language: 'ladder' | 'st' | 'sfc';
+		language: 'ladder' | 'st' | 'sfc' | 'fbd';
 		/** Network label for a source id (ladder node id / "L<line>"). */
 		place: (owner: string) => string;
 		onSelect: (owner: string) => void;

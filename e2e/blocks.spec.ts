@@ -45,3 +45,14 @@ test('exports a lesson solution as TIA Portal SCL and PLCopen XML', async ({ pag
 	const doc = Buffer.concat(await (await xmlFile.createReadStream()).toArray()).toString();
 	expect(doc).toContain('<pou name="PID" pouType="functionBlock">');
 });
+
+test('arrays, RETAIN and a cyclic interrupt: the oven filter lesson', async ({ page }) => {
+	page.on('dialog', (d) => d.accept());
+	await page.goto('/editor/lesson-oven-filter');
+	await page.evaluate(() => localStorage.setItem('plcsim:tips-off', '1'));
+	await page.getByRole('button', { name: 'Pokaż rozwiązanie' }).click();
+	await page.getByRole('button', { name: 'Sprawdź rozwiązanie' }).click();
+	await expect(page.getByText('Zaliczone!')).toBeVisible({ timeout: 30_000 });
+	await page.getByRole('button', { name: '▶ Run' }).click();
+	await expect(page.getByLabel('Cyclic interrupt runs')).toBeVisible();
+});
