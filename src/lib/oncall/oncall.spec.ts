@@ -4,20 +4,73 @@ import { compileLadder } from '#lib/ladder/compiler.js';
 import { getLesson } from '#lib/lessons/lessons.js';
 import { runLessonTests } from '#lib/lessons/runner.js';
 import { checkSymbols } from '#lib/symbols/symbols.js';
-import { faultOptions, MACHINES, machineProject, sameFault, type Machine } from './machines.js';
+import {
+	faultOptions,
+	fieldSuspects,
+	isFieldFault,
+	MACHINES,
+	machineProject,
+	sameFault,
+	type IncidentFault,
+	type Machine
+} from './machines.js';
+import type { Fault } from '#lib/circuit/model.js';
+import type { LessonTest } from '#lib/lessons/types.js';
+import { compileSt } from '#lib/st/compiler.js';
+import { STDLIB } from '#lib/st/stdlib.js';
+import { sfcToSt } from '#lib/sfc/sfc.js';
 import { diagnose, downtimeMin, loadLog, pickIncident, startShift } from './shift.js';
 
-function run(m: Machine, faults = m.incidents.slice(0, 0).map((i) => i.fault)) {
+function run(m: Machine, faults: IncidentFault[] = []) {
 	const project = machineProject(m);
 	const { map } = checkSymbols([...deviceSymbols(project.circuit), ...project.symbols]);
-	const { program, diagnostics } = compileLadder(project.ladder, { symbols: map });
-	expect(diagnostics).toEqual([]);
+	const source =
+		project.language === 'st'
+			? project.st
+			: project.language === 'sfc'
+				? sfcToSt(project.sfc!).source
+				: null;
+	const compiled =
+		source !== null && source !== undefined
+			? compileSt(source, { symbols: map, prelude: STDLIB })
+			: compileLadder(project.ladder, { symbols: map });
+	expect(compiled.diagnostics).toEqual([]);
 	const lesson = getLesson(m.lesson)!;
+	const field = faults.filter(isFieldFault);
+	const circuitFaults = faults.filter((f): f is Fault => !isFieldFault(f));
+	// plant and sensor faults are there from the first step of every test
+	const inject = (t: LessonTest): LessonTest => ({
+		...t,
+		steps: t.steps.map((st, i) =>
+			i > 0
+				? st
+				: {
+						...st,
+						fieldFaults: {
+							...st.fieldFaults,
+							...Object.fromEntries(
+								field.filter((f) => f.kind === 'sensor').map((f) => [f.device, f.fault])
+							)
+						},
+						plantFaults: {
+							...st.plantFaults,
+							...Object.fromEntries(
+								field.filter((f) => f.kind === 'plant').map((f) => [f.device, true])
+							)
+						}
+					}
+		)
+	});
 	return runLessonTests(
-		{ ...lesson, fieldTests: true, tests: [...lesson.tests, ...m.tests] },
-		program,
+		{
+			...lesson,
+			fieldTests: !lesson.scenario,
+			tests: [...lesson.tests, ...m.tests].map(inject)
+		},
+		compiled.program,
 		project.circuit,
-		faults
+		circuitFaults,
+		'load' in compiled ? compiled.load : undefined
 	);
 }
 
@@ -34,12 +87,22 @@ describe.each(MACHINES.map((m) => [m.name, m] as const))('%s', (_name, machine) 
 	);
 
 	it('every fault is one of the choices for its device', () => {
-		const devices = machineProject(machine).circuit.devices;
+		const project = machineProject(machine);
+		const devices = project.circuit.devices;
+		const suspects = fieldSuspects(project.scenario);
 		for (const i of machine.incidents) {
+			if (isFieldFault(i.fault)) {
+				const f = i.fault;
+				expect(
+					suspects.some((s) => s.options.some((o) => sameFault(o.fault, f))),
+					i.id
+				).toBe(true);
+				continue;
+			}
 			const d = devices.find((x) => x.label === i.fault.device);
 			expect(d, i.id).toBeTruthy();
 			expect(
-				faultOptions(d!.type, d!.label).some((o) => sameFault(o.fault, i.fault)),
+				faultOptions(d!.type, d!.label).some((o) => sameFault(o.fault, i.fault as Fault)),
 				i.id
 			).toBe(true);
 		}

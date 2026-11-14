@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import { onMount } from 'svelte';
 
 	/** Chrome / Edge fire this when the app can be installed; Safari uses Share → Add to Home Screen. */
@@ -41,13 +42,13 @@
 {#if offline}
 	<span
 		class="rounded border border-amber-500/40 px-2 py-0.5 text-xs text-amber-300"
-		title="No network — PLC Sim keeps working from its offline copy">offline</span
+		title={t('install.offlineTitle')}>{t('install.offline')}</span
 	>
 {/if}
 {#if deferred}
 	<button
 		class="rounded border border-emerald-500/50 px-2.5 py-1 text-xs text-emerald-300 hover:bg-emerald-500/10"
-		title="Install PLC Sim as an app — it then works without internet"
-		onclick={install}>Install app</button
+		title={t('install.title')}
+		onclick={install}>{t('install.button')}</button
 	>
 {/if}

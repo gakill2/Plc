@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import { parseAddress } from '#lib/engine/index.js';
 	import type { RuntimeSnapshot } from '#lib/runtime/protocol.js';
 	import { readBit, readNumber } from '#lib/runtime/read.js';
@@ -19,11 +20,11 @@
 
 <section class="space-y-2" aria-labelledby="st-vars">
 	<h2 id="st-vars" class="text-xs font-semibold tracking-wider text-slate-400 uppercase">
-		Variables
+		{t('stv.title')}
 	</h2>
 	{#if variables.length === 0}
 		<p class="text-xs text-slate-500">
-			Declare variables in a <code class="text-emerald-300">VAR … END_VAR</code> block.
+			{t('stv.declare')} <code class="text-emerald-300">VAR … END_VAR</code> block.
 		</p>
 	{:else}
 		<table class="w-full text-left text-xs">

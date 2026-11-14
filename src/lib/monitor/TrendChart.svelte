@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import type { TraceBuffer } from '#lib/runtime/trace.js';
 	import type { TraceSample } from '#lib/runtime/protocol.js';
 	import { formatValue, type TrendLane } from './watch.js';
@@ -107,7 +108,7 @@
 	<div class="flex items-center gap-3 border-b border-slate-800 px-3 py-1.5 text-xs">
 		<span class="font-semibold tracking-wider text-slate-400 uppercase">Trend</span>
 		<label class="flex items-center gap-1 text-slate-400">
-			Window
+			{t('trend.window')}
 			<select class="rounded bg-slate-800 px-1 py-0.5 text-slate-200" bind:value={windowMs}>
 				{#each WINDOWS as w (w)}<option value={w}>{w / 1000} s</option>{/each}
 			</select>
@@ -117,12 +118,12 @@
 				? 'bg-amber-500 text-slate-950'
 				: 'bg-slate-800 hover:bg-slate-700'}"
 			onclick={() => (hold = hold === null ? (runtime.snapshot?.timeMs ?? 0) : null)}
-			title="Freeze the view while the PLC keeps running"
+			title={t('trend.holdTitle')}
 		>
-			{hold !== null ? 'Holding' : 'Hold'}
+			{hold !== null ? t('trend.holding') : t('trend.hold')}
 		</button>
 		<button class="rounded bg-slate-800 px-2 py-0.5 hover:bg-slate-700" onclick={onRestart}
-			>Clear</button
+			>{t('trend.clear')}</button
 		>
 		<span class="ml-auto font-mono text-slate-500">
 			{cursorT !== null ? `t = ${(cursorT / 1000).toFixed(3)} s` : `${(now / 1000).toFixed(2)} s`}
@@ -132,11 +133,11 @@
 	<div class="min-h-0 flex-1 overflow-auto" bind:clientWidth={width}>
 		{#if lanes.length === 0}
 			<div class="flex flex-wrap items-center gap-3 p-4 text-xs text-slate-500">
-				<span>No signals — tick “Trend” next to a row in the Watch view to plot it here.</span>
+				<span>{t('trend.empty')}</span>
 				{#if onAddSignals}
 					<button
 						class="rounded border border-sky-500/50 px-2.5 py-1 text-sky-300 hover:bg-sky-500/10"
-						onclick={onAddSignals}>Plot the main signals</button
+						onclick={onAddSignals}>{t('trend.plotMain')}</button
 					>
 				{/if}
 			</div>
@@ -146,7 +147,7 @@
 				{height}
 				class="block select-none"
 				role="img"
-				aria-label="Timing diagram"
+				aria-label={t('trend.timing')}
 				onpointermove={onMove}
 				onpointerleave={() => (cursorX = null)}
 			>

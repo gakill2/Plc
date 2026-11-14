@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import { onMount } from 'svelte';
 	import { Plc } from '#lib/engine/index.js';
 	import { compileSt } from '#lib/st/compiler.js';
@@ -76,7 +77,7 @@ Running := ready.Q;`;
 	const lamp = $derived(outputs[1]);
 </script>
 
-<figure class="hero-plc" aria-label="A working PLC: press Start, then Stop">
+<figure class="hero-plc" aria-label={t('hero.label')}>
 	<svg viewBox="0 0 520 400" role="presentation" class="w-full">
 		<!-- DIN rail -->
 		<rect x="0" y="150" width="520" height="22" fill="#9aa3a8" />
@@ -185,7 +186,7 @@ Running := ready.Q;`;
 			style="left: 13.5%"
 			class="push green"
 			class:pressed={start}
-			aria-label="Start push button, input I0.0"
+			aria-label={t('hero.start')}
 			{...startBtn}
 		>
 			<span>I</span>
@@ -194,15 +195,15 @@ Running := ready.Q;`;
 			style="left: 36.5%"
 			class="push red"
 			class:pressed={stop}
-			aria-label="Stop push button, input I0.1"
+			aria-label={t('hero.stop')}
 			{...stopBtn}
 		>
 			<span>O</span>
 		</button>
 	</div>
 	<figcaption>
-		<code>Motor := (Start OR Motor) AND NOT Stop;</code> — hold Start, then Stop. The lamp lights after
-		1 s.
+		<code>Motor := (Start OR Motor) AND NOT Stop;</code>
+		{t('hero.caption')}
 	</figcaption>
 </figure>
 

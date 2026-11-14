@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import type { Snippet } from 'svelte';
 	import { parseAddress } from '#lib/engine/index.js';
 	import type { RuntimeSnapshot } from '#lib/runtime/protocol.js';
@@ -35,12 +36,9 @@
 <div class="flex h-full flex-col">
 	<div class="flex flex-wrap items-center gap-3 border-b border-slate-800 px-4 py-2">
 		{@render header()}
-		<span class="text-[11px] text-slate-500" lang="pl">
-			Warunki to wyrażenia ST · <code>Krok.T</code> = czas aktywności kroku, <code>Krok.X</code> = krok
-			aktywny
-		</span>
+		<span class="text-[11px] text-slate-500">{t('sfc.hint')}</span>
 		<button class="ml-auto text-[11px] text-slate-400 underline" onclick={() => (showSt = !showSt)}
-			>{showSt ? 'Ukryj' : 'Pokaż'} wygenerowany ST</button
+			>{showSt ? t('fbd.hideSt') : t('fbd.showSt')}</button
 		>
 	</div>
 	<div class="grid min-h-0 flex-1 {showSt ? 'grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''}">
@@ -50,27 +48,27 @@
 					class="mx-4 mt-3 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-200"
 					lang="pl"
 				>
-					Online — aktywne kroki są zielone. Zatrzymaj PLC, żeby edytować diagram.
+					{t('sfc.online')}
 				</p>
 			{/if}
 			<SfcEditor {sfc} {readOnly} {active} {flagged} />
 			<section class="mx-4 mb-4 space-y-1" lang="pl">
 				<h3 class="text-xs font-semibold tracking-wider text-slate-400 uppercase">
-					Logika stała (ST, co cykl obok diagramu)
+					{t('sfc.logic')}
 				</h3>
 				<textarea
 					class="h-40 w-full rounded border border-slate-700 bg-slate-900 p-2 font-mono text-xs text-slate-100 disabled:opacity-70"
 					bind:value={sfc.logic}
 					disabled={readOnly}
 					spellcheck="false"
-					aria-label="Logika stała"
+					aria-label={t('sfc.logicLabel')}
 					placeholder="Run := (Start OR Run) AND Stop;"></textarea>
 			</section>
 		</div>
 		{#if showSt}
 			<pre
 				class="min-h-0 overflow-auto border-l border-slate-800 bg-slate-950 p-3 font-mono text-[11px] text-slate-300"
-				aria-label="Wygenerowany ST">{generated}</pre>
+				aria-label={t('fbd.generated')}>{generated}</pre>
 		{/if}
 	</div>
 </div>

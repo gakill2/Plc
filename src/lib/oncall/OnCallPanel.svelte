@@ -1,13 +1,19 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
-	import type { Circuit, Fault } from '#lib/circuit/model.js';
+	import type { Circuit } from '#lib/circuit/model.js';
 	import { beginShift } from './begin.js';
-	import { faultOptions, sameFault, type Machine } from './machines.js';
+	import { faultOptions, fieldSuspects, sameFault, type Machine } from './machines.js';
+	import type { ProcessKind } from '#lib/processes/types.js';
 	import { diagnose, downtimeMin, incidentOf, loadLog, PENALTY_MIN, type Shift } from './shift.js';
 
-	type Props = { machine: Machine; circuit: Circuit; onRepaired: () => void };
-	let { machine, circuit, onRepaired }: Props = $props();
+	type Props = {
+		machine: Machine;
+		circuit: Circuit;
+		scenario: ProcessKind | undefined;
+		onRepaired: () => void;
+	};
+	let { machine, circuit, scenario, onRepaired }: Props = $props();
 
 	let shift = $state<Shift | null>(null);
 	let now = $state(Date.now());
@@ -25,14 +31,19 @@
 	let deviceLabel = $state('');
 	let choice = $state(-1);
 	let feedback = $state<string | null>(null);
-	const device = $derived(circuit.devices.find((d) => d.label === deviceLabel));
-	const options = $derived(device ? faultOptions(device.type, device.label) : []);
+	/** suspects: the circuit's devices, then the plant's sensors and the plant itself */
+	const suspects = $derived([
+		...circuit.devices.map((d) => ({ label: d.label, options: faultOptions(d.type, d.label) })),
+		...fieldSuspects(scenario)
+	]);
+	const device = $derived(suspects.find((d) => d.label === deviceLabel));
+	const options = $derived(device?.options ?? []);
 
 	function submit() {
 		const option = options[choice];
 		if (!option || !incident) return;
-		const text = `${option.fault.device}: ${option.text}`;
-		const ok = sameFault(option.fault as Fault, incident.fault);
+		const text = `${device?.label}: ${option.text}`;
+		const ok = sameFault(option.fault, incident.fault);
 		shift = diagnose(ok, text);
 		now = Date.now();
 		if (ok) {
@@ -66,7 +77,8 @@
 			<p class="text-slate-400">
 				Przestój: <b class="text-orange-200" data-testid="downtime">{minutes} min</b>. Program i
 				okablowanie są dobre — coś się zepsuło. Uruchom PLC, odtwórz objaw, patrz w
-				<b>Test I/O</b>, <b>Watch</b>, trend i widok <b>Circuit</b>.
+				<b>Test I/O</b>, <b>Watch</b>, trend, <b>Diagnostykę</b> i widoki <b>Circuit</b> /
+				<b>Process</b>.
 			</p>
 			<form
 				class="space-y-2"
@@ -83,7 +95,7 @@
 						class="mt-0.5 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100"
 					>
 						<option value="">— wybierz —</option>
-						{#each circuit.devices as d (d.id)}<option value={d.label}>{d.label}</option>{/each}
+						{#each suspects as d (d.label)}<option value={d.label}>{d.label}</option>{/each}
 					</select>
 				</label>
 				<label class="block">

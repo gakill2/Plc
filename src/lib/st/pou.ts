@@ -410,7 +410,7 @@ export function expandPous(program: StProgram, report: Report): StProgram {
 
 	const outOfRange = (name: string, m: { low: number; high: number }, at: Span): Stmt => ({
 		kind: 'fault',
-		message: `indeks poza zakresem tablicy ${name}[${m.low}..${m.high}]`,
+		message: `${name}[${m.low}..${m.high}]`,
 		...sp(at)
 	});
 

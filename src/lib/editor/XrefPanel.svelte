@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import type { XrefEntry } from '#lib/analysis/analysis.js';
 
 	type Props = {
@@ -54,19 +55,19 @@
 	{#if open}
 		<input
 			class="mb-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-500"
-			placeholder="Filter address or symbol…"
-			aria-label="Filter cross-reference"
+			placeholder={t('xref.filter')}
+			aria-label={t('xref.filterLabel')}
 			bind:value={filter}
 		/>
 		{#if shown.length === 0}
-			<p class="text-xs text-slate-500">No addresses used.</p>
+			<p class="text-xs text-slate-500">{t('xref.none')}</p>
 		{:else}
 			<table class="w-full text-left text-xs">
 				<thead class="text-[10px] text-slate-500 uppercase">
 					<tr>
 						<th class="py-1 font-medium">Address</th>
-						<th class="py-1 font-medium">Written</th>
-						<th class="py-1 font-medium">Read</th>
+						<th class="py-1 font-medium">{t('xref.written')}</th>
+						<th class="py-1 font-medium">{t('xref.read')}</th>
 					</tr>
 				</thead>
 				<tbody>

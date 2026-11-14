@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import { setLadderView } from '#lib/ladder/context.js';
 	import type { LadderDocument } from '#lib/ladder/document.svelte.js';
 	import type { Monitor } from '#lib/ladder/monitor.js';
@@ -50,7 +51,7 @@
 		<p
 			class="rounded-lg border border-dashed border-slate-700 p-6 text-center text-sm text-slate-500"
 		>
-			No networks yet — add one with “+ Network”.
+			{t('ladder.empty')}
 		</p>
 	{/each}
 </div>

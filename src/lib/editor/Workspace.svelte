@@ -1,10 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import CircuitEditor from '#lib/circuit/CircuitEditor.svelte';
-	import { inputDrive, portOf } from '#lib/circuit/model.js';
-	import { terminalBit } from '#lib/circuit/context.js';
-	import { readNumber } from '#lib/runtime/read.js';
-	import { parseAddress } from '#lib/engine/index.js';
+	import { portOf } from '#lib/circuit/model.js';
 	import { CircuitSim } from '#lib/circuit/sim.svelte.js';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
 	import { createMonitor } from '#lib/ladder/monitor.js';
@@ -20,7 +17,7 @@
 	import FbdView from '#lib/fbd/FbdView.svelte';
 	import { demoFbd } from '#lib/fbd/fbd.js';
 	import OnCallPanel from '#lib/oncall/OnCallPanel.svelte';
-	import { machineFromProjectId, machineProject } from '#lib/oncall/machines.js';
+	import { isFieldFault, machineFromProjectId, machineProject } from '#lib/oncall/machines.js';
 	import { incidentOf, loadLog } from '#lib/oncall/shift.js';
 	import { getLesson, LESSON_PREFIX } from '#lib/lessons/lessons.js';
 	import ProcessView from '#lib/processes/ProcessView.svelte';
@@ -30,7 +27,15 @@
 	import { DEMO_ST, EMPTY_ST } from '#lib/st/examples.js';
 	import StEditor from '#lib/st/StEditor.svelte';
 	import LibraryView from './LibraryView.svelte';
-	import { exportPlcOpen, exportScl, programSource, type ExportInput } from '#lib/export/export.js';
+	import { download as downloadFiles, exportFiles } from '#lib/project/export-file.svelte.js';
+	import { liveValue as readLive } from '#lib/runtime/live.js';
+	import WorkspaceHeader from './WorkspaceHeader.svelte';
+	import { AlarmLog, connectCircuit } from './bridge.svelte.js';
+	import ProgramLanguageSwitch from './ProgramLanguageSwitch.svelte';
+	import ProblemsPanel from './ProblemsPanel.svelte';
+	import ShareDialog from './ShareDialog.svelte';
+	import type { View } from './views.js';
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import StVariables from '#lib/st/StVariables.svelte';
 	import { ProjectState, type Problem } from '#lib/project/state.svelte.js';
 	import { PlcRuntime } from '#lib/runtime/runtime.svelte.js';
@@ -45,8 +50,6 @@
 	import { watchEntry } from '#lib/monitor/watch.js';
 	import IoCheck from './IoCheck.svelte';
 	import HmiView from '#lib/hmi/HmiView.svelte';
-	import { ackAlarms, newAlarmLog, unacked, updateAlarms } from '#lib/hmi/alarms.js';
-	import { readBit } from '#lib/runtime/read.js';
 	import { findRung } from '#lib/ladder/ops.js';
 	import Palette from './Palette.svelte';
 	import RuntimeToolbar from './RuntimeToolbar.svelte';
@@ -59,19 +62,15 @@
 	type Props = { projectId: string };
 	let { projectId }: Props = $props();
 
-	type View =
-		| 'program'
-		| 'library'
-		| 'process'
-		| 'circuit'
-		| 'symbols'
-		| 'watch'
-		| 'debug'
-		| 'diag'
-		| 'hmi'
-		| 'iocheck';
-
-	let showTrend = $state(true);
+	/** small screens (tablets) start with a shorter trend and the side panel closed */
+	const wide = typeof window === 'undefined' || window.innerWidth >= 1280;
+	let showTrend = $state(typeof window === 'undefined' || window.innerHeight >= 700);
+	// lessons and on-call shifts need their instructions: the panel starts open there
+	let sidePanel = $state(
+		wide ||
+			untrack(() => projectId).startsWith(LESSON_PREFIX) ||
+			untrack(() => !!machineFromProjectId(projectId))
+	);
 
 	// The workspace is re-created ({#key}) when the project changes, so reading the id once is fine.
 	const id = untrack(() => projectId);
@@ -92,19 +91,17 @@
 	);
 	const lesson = $derived(project.lesson ? getLesson(project.lesson) : null);
 
-	const VIEWS: { id: View; label: string }[] = $derived([
-		{ id: 'program', label: 'Program' },
-		{ id: 'library', label: 'Blocks' },
-		...(project.scenario ? [{ id: 'process' as const, label: 'Process' }] : []),
-		{ id: 'circuit', label: 'Circuit' },
-		...(lesson?.kind === 'commissioning' || machine
-			? [{ id: 'iocheck' as const, label: 'Test I/O' }]
-			: []),
-		{ id: 'hmi', label: 'HMI' },
-		{ id: 'symbols', label: 'Symbols' },
-		{ id: 'watch', label: 'Watch' },
-		{ id: 'debug', label: 'Debug' },
-		{ id: 'diag', label: 'Diagnostics' }
+	const VIEWS: View[] = $derived([
+		'program',
+		'library',
+		...(project.scenario ? (['process'] as const) : []),
+		'circuit',
+		...(lesson?.kind === 'commissioning' || machine ? (['iocheck'] as const) : []),
+		'hmi',
+		'symbols',
+		'watch',
+		'debug',
+		'diag'
 	]);
 
 	// The simulated plant runs in the worker next to the PLC.
@@ -122,7 +119,12 @@
 		const shift = loadLog().current;
 		const incident =
 			shift && !shift.solvedAt && shift.machine === machine?.id ? incidentOf(shift) : null;
-		if (incident) sim.faults = [incident.fault];
+		if (!incident) return;
+		const f = incident.fault;
+		if (!isFieldFault(f)) sim.faults = [f];
+		else if (f.kind === 'sensor')
+			runtime.processCommand('field:fault', { address: f.device, fault: f.fault });
+		else runtime.processCommand('field:plant', { id: f.device, on: true });
 	});
 	onDestroy(() => runtime.dispose());
 
@@ -176,131 +178,11 @@
 		}
 	}
 
-	function saveFile(text: string, name: string, type: string) {
-		const blob = new Blob([text], { type });
-		const a = document.createElement('a');
-		a.href = URL.createObjectURL(blob);
-		a.download = name;
-		a.click();
-		URL.revokeObjectURL(a.href);
-	}
-
-	/** Export the project: as a project file, or as source for TIA Portal / CODESYS. */
-	function exportFile(format: string) {
-		const base = (project.name || 'project').replace(/[^\w-]+/g, '_');
-		if (format === 'json') {
-			saveFile(
-				JSON.stringify(project.toJSON(), null, 2),
-				`${base}.plcsim.json`,
-				'application/json'
-			);
-			return;
-		}
-		const input: ExportInput = {
-			name: project.name,
-			language: project.language,
-			ladder: $state.snapshot(project.ladder.program),
-			st: project.st,
-			sfc: $state.snapshot(project.sfc),
-			fbd: $state.snapshot(project.fbd),
-			library: project.library,
-			symbols: [...project.deviceSymbols, ...project.userSymbols].map((s) => ({
-				name: s.name,
-				address: s.address,
-				comment: s.comment
-			}))
-		};
-		if (format === 'scl') {
-			const { scl, tags } = exportScl(input);
-			saveFile(scl, `${base}.scl`, 'text/plain');
-			saveFile(tags, `${base}_tags.csv`, 'text/csv');
-		} else if (format === 'xml') {
-			saveFile(exportPlcOpen(input).xml, `${base}.xml`, 'application/xml');
-		} else if (format === 'st') {
-			saveFile(programSource(input), `${base}.st`, 'text/plain');
-		}
-	}
-
-	// Devices drive the input terminals they are wired to.
-	let sent = new Map<string, boolean>();
-	$effect(() => {
-		const outputs = runtime.snapshot?.outputs;
-		const drive = inputDrive(project.circuit, sim.actuated, {
-			positions: sim.positions,
-			faults: sim.faults,
-			output: (t) => terminalBit(outputs, t),
-			vfd: (id) => sim.vfd[id]
-		});
-		untrack(() => {
-			for (const [terminal, value] of drive)
-				if (sent.get(terminal) !== value) runtime.setInput(terminal, value);
-			for (const terminal of sent.keys())
-				if (!drive.has(terminal)) runtime.setInput(terminal, false);
-			sent = drive;
-		});
-	});
-
-	// Frequency inverters run on the PLC's simulated time and drive analog input words.
-	let deviceTime = 0;
-	let sentWords = new Map<string, number>();
-	$effect(() => {
-		const snap = runtime.snapshot;
-		if (!snap) return;
-		untrack(() => {
-			const dt = snap.timeMs - deviceTime;
-			deviceTime = snap.timeMs;
-			if (!project.circuit.devices.some((d) => d.type === 'vfd')) return;
-			const words = sim.stepDevices(project.circuit, Math.min(500, Math.max(0, dt)), {
-				bit: (t) => terminalBit(snap.outputs, t),
-				word: (a) => readNumber(snap, parseAddress(a)) ?? 0
-			});
-			for (const [address, value] of words)
-				if (sentWords.get(address) !== value) runtime.setInputNumber(address, value);
-			sentWords = words;
-		});
-	});
-
-	/* ---------- operator panel: alarms ---------- */
-
-	let alarmLog = $state.raw(newAlarmLog());
-	let ackPending = false;
-	$effect(() => {
-		const snap = runtime.snapshot;
-		if (!snap) return;
-		untrack(() => {
-			if (ackPending && project.hmi.ackTag.trim()) {
-				ackPending = false;
-				hmiWrite(project.hmi.ackTag, 0);
-			}
-			alarmLog = updateAlarms(
-				alarmLog,
-				project.hmi.alarms,
-				(tag) => {
-					try {
-						return readBit(snap, parseAddress(resolveSymbol(project.symbols.map, tag.trim())));
-					} catch {
-						return null;
-					}
-				},
-				snap.timeMs
-			);
-		});
-	});
-	function hmiWrite(tag: string, value: number) {
-		try {
-			runtime.modify(resolveSymbol(project.symbols.map, tag.trim()), value);
-		} catch {
-			// an invalid tag is reported in the panel editor
-		}
-	}
-	function ackAlarm(seqs?: number[]) {
-		alarmLog = ackAlarms(alarmLog, runtime.snapshot?.timeMs ?? 0, seqs);
-		if (project.hmi.ackTag.trim()) {
-			hmiWrite(project.hmi.ackTag, 1);
-			ackPending = true;
-		}
-	}
-	const pendingAlarms = $derived(unacked(alarmLog));
+	connectCircuit(() => project, runtime, sim);
+	const alarms = new AlarmLog(() => project, runtime);
+	const hmiWrite = (tag: string, value: number) => alarms.write(tag, value);
+	const ackAlarm = (seqs?: number[]) => alarms.ack(seqs);
+	const pendingAlarms = $derived(alarms.pending);
 
 	/** Device labels per terminal, for the I/O panel. */
 	const terminalLabels = $derived.by(() => {
@@ -436,31 +318,8 @@
 	let loadedVariables = $state.raw<StVariable[]>([]);
 
 	/** Online value of an operand: a symbol, an address, a variable or an instance output (Timer1.Q). */
-	function liveValue(text: string): boolean | number | null {
-		const snap = runtime.snapshot;
-		const t = text.trim();
-		if (!runtime.online || !snap || !t) return null;
-		const vars = loadedVariables;
-		const read = (r: StVariable['reads'][number]) => {
-			const a = parseAddress(r.address);
-			return r.kind === 'bool' ? readBit(snap, a) : readNumber(snap, a, r.numType);
-		};
-		const v = vars.find((x) => x.name.toUpperCase() === t.toUpperCase());
-		if (v?.reads[0]) return read(v.reads[0]);
-		const dot = t.lastIndexOf('.');
-		if (dot > 0) {
-			const inst = vars.find((x) => x.name.toUpperCase() === t.slice(0, dot).toUpperCase());
-			const r = inst?.reads.find((x) => x.label.toUpperCase() === t.slice(dot + 1).toUpperCase());
-			if (r) return read(r);
-		}
-		try {
-			const a = parseAddress(resolveSymbol(project.symbols.map, t));
-			const bit = a.area === 'T' || a.area === 'C' || a.size === 'X';
-			return bit ? readBit(snap, a) : readNumber(snap, a);
-		} catch {
-			return null;
-		}
-	}
+	const liveValue = (text: string) =>
+		runtime.online ? readLive(runtime.snapshot, loadedVariables, project.symbols.map, text) : null;
 
 	function setLanguage(language: ProgramLanguage) {
 		if (language === 'st' && !project.st.trim()) project.st = lesson ? EMPTY_ST : DEMO_ST;
@@ -473,7 +332,7 @@
 	}
 
 	function showSolution() {
-		if (lesson && confirm('Zastąpić Twój program rozwiązaniem wzorcowym?')) {
+		if (lesson && confirm(t('lesson.confirmSolution'))) {
 			project.ladder.program = lesson.solution();
 			if (lesson.solutionCircuit) project.circuit = lesson.solutionCircuit();
 			if (lesson.solutionHmi) project.hmi = lesson.solutionHmi();
@@ -486,10 +345,7 @@
 	}
 
 	function restartLesson() {
-		if (
-			lesson &&
-			confirm('Zacząć ćwiczenie od nowa? Program, obwód i symbole wrócą do stanu początkowego.')
-		) {
+		if (lesson && confirm(t('lesson.confirmRestart'))) {
 			runtime.stop();
 			project = new ProjectState(lesson.starter());
 			sim.reset();
@@ -497,7 +353,7 @@
 	}
 
 	function resetToDemo() {
-		if (confirm('Replace the whole project (program, circuit, symbols) with the demo?')) {
+		if (confirm(t('ws.confirmDemo'))) {
 			project = new ProjectState(demoProject());
 			sim.reset();
 		}
@@ -507,129 +363,54 @@
 <svelte:window onkeydown={onKeydown} />
 
 {#snippet languageSwitch()}
-	<div
-		class="flex shrink-0 gap-0.5 rounded-md border border-slate-800 bg-slate-900 p-0.5"
-		role="group"
-		aria-label="Language"
-	>
-		{#each [{ id: 'ladder', label: 'Ladder (LAD)' }, { id: 'st', label: 'Structured Text' }, { id: 'sfc', label: 'SFC' }, { id: 'fbd', label: 'FBD' }] as const as l (l.id)}
-			<button
-				class="rounded px-2.5 py-1 text-xs font-medium disabled:cursor-not-allowed {project.language ===
-				l.id
-					? 'bg-sky-600 text-white'
-					: 'text-slate-400 hover:text-white'}"
-				aria-pressed={project.language === l.id}
-				disabled={runtime.online}
-				onclick={() => setLanguage(l.id)}
-			>
-				{l.label}
-			</button>
-		{/each}
-	</div>
+	<ProgramLanguageSwitch
+		value={project.language}
+		disabled={runtime.online}
+		onChange={setLanguage}
+	/>
 {/snippet}
 
-<div class="p-8 text-center text-sm text-slate-400 lg:hidden">
-	The editor needs a wider screen (at least 1024 px). Try a laptop or desktop — or rotate your
-	tablet.
+<div class="p-8 text-center text-sm text-slate-400 md:hidden">
+	{t('ws.narrow')}
 </div>
 
-<div class="hidden h-[calc(100dvh-3.5rem)] flex-col lg:flex">
+<div class="hidden h-[calc(100dvh-3.5rem)] flex-col md:flex">
 	<div
 		class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-2"
 	>
+		<WorkspaceHeader
+			{id}
+			name={project.name}
+			fixedName={lesson ? lesson.title : null}
+			online={runtime.online}
+			{canUndo}
+			{canRedo}
+			views={VIEWS}
+			bind:view
+			bind:showTrend
+			problemViews={problems.map((p) => p.source)}
+			{pendingAlarms}
+			forces={runtime.forces.size}
+			onName={(n) => (project.name = n)}
+			onUndo={() => travel('undo')}
+			onRedo={() => travel('redo')}
+			onShare={share}
+			onExport={(f) => downloadFiles(exportFiles(project, f))}
+		/>
 		<div class="flex items-center gap-2">
-			<input
-				class="w-56 rounded border border-transparent bg-transparent px-2 py-1 text-sm font-semibold text-white outline-none hover:border-slate-700 focus:border-emerald-500 disabled:opacity-70"
-				placeholder={lesson ? lesson.title : 'Untitled project'}
-				bind:value={project.name}
-				disabled={!!lesson}
-				aria-label="Project name"
-			/>
-			<div class="flex gap-0.5">
-				<button
-					class="rounded px-2 py-1 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-30"
-					title="Undo (Ctrl+Z)"
-					aria-label="Undo"
-					disabled={!canUndo || runtime.online}
-					onclick={() => travel('undo')}>↶</button
-				>
-				<button
-					class="rounded px-2 py-1 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-30"
-					title="Redo (Ctrl+Shift+Z)"
-					aria-label="Redo"
-					disabled={!canRedo || runtime.online}
-					onclick={() => travel('redo')}>↷</button
-				>
-				<button class="rounded px-2 py-1 text-xs text-slate-300 hover:bg-slate-800" onclick={share}
-					>Share</button
-				>
-				<select
-					class="rounded bg-transparent px-1 py-1 text-xs text-slate-300 hover:bg-slate-800"
-					aria-label="Export"
-					value=""
-					onchange={(e) => {
-						const f = e.currentTarget.value;
-						e.currentTarget.value = '';
-						if (f) exportFile(f);
-					}}
-				>
-					<option value="">Export</option>
-					<option value="json">Project file (.json)</option>
-					<option value="scl">TIA Portal: SCL source + tags (.scl, .csv)</option>
-					<option value="xml">CODESYS: PLCopen XML (.xml)</option>
-					<option value="st">Structured Text (.st)</option>
-				</select>
-				<a
-					class="rounded px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
-					href={resolve('/editor/[id]/report', { id })}
-					title="Printable report: ladder diagram, symbol table and I/O list (PDF / PNG)">Report</a
-				>
-			</div>
-		</div>
-		<nav
-			class="flex gap-0.5 rounded-md border border-slate-800 bg-slate-900 p-0.5"
-			aria-label="Views"
-		>
-			{#each VIEWS as v (v.id)}
-				<button
-					class="rounded px-3 py-1 text-xs font-medium {view === v.id
-						? 'bg-slate-700 text-white'
-						: 'text-slate-400 hover:text-white'}"
-					aria-current={view === v.id ? 'page' : undefined}
-					onclick={() => (view = v.id)}
-				>
-					{v.label}
-					{#if problems.some((p) => p.source === v.id)}<span class="ml-1 text-red-400">●</span>{/if}
-					{#if v.id === 'hmi' && pendingAlarms}<span
-							class="ml-1 rounded-full bg-red-500 px-1.5 text-[10px] text-white"
-							aria-label="{pendingAlarms} unacknowledged alarms">{pendingAlarms}</span
-						>{/if}
-				</button>
-			{/each}
-			<span class="mx-1 w-px bg-slate-700"></span>
+			<RuntimeToolbar {runtime} onRun={run} onStep={step} />
 			<button
-				class="rounded px-3 py-1 text-xs font-medium {showTrend
-					? 'bg-slate-700 text-white'
-					: 'text-slate-400 hover:text-white'}"
-				aria-pressed={showTrend}
-				onclick={() => (showTrend = !showTrend)}
+				class="rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:border-slate-500 xl:hidden {sidePanel
+					? 'bg-slate-800'
+					: ''}"
+				aria-pressed={sidePanel}
+				aria-controls="side-panel"
+				onclick={() => (sidePanel = !sidePanel)}>{t('ws.panel')}</button
 			>
-				Trend
-			</button>
-			{#if runtime.forces.size}
-				<button
-					class="ml-1 rounded bg-red-600 px-2 py-1 text-[11px] font-bold text-white"
-					title="Forces active — open the watch table"
-					onclick={() => (view = 'watch')}
-				>
-					F × {runtime.forces.size}
-				</button>
-			{/if}
-		</nav>
-		<RuntimeToolbar {runtime} onRun={run} onStep={step} />
+		</div>
 	</div>
 
-	<div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_20rem]">
+	<div class="relative grid min-h-0 flex-1 {sidePanel ? 'xl:grid-cols-[minmax(0,1fr)_20rem]' : ''}">
 		<div class="flex min-h-0 flex-col">
 			<div class="min-h-0 flex-1">
 				{#if view === 'program' && project.language === 'fbd'}
@@ -667,7 +448,7 @@
 						<div class="flex items-center gap-3 border-b border-slate-800 px-4 py-2">
 							{@render languageSwitch()}
 							<span class="text-[11px] text-slate-500">
-								Ctrl+Space for completions · symbols and VAR names can be used directly
+								{t('ws.stHint')}
 							</span>
 						</div>
 						<div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_16rem]">
@@ -704,7 +485,7 @@
 								<p
 									class="mb-3 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-200"
 								>
-									Online — live values from the PLC. Stop it to edit the program.
+									{t('ws.online')}
 								</p>
 							{/if}
 							<LadderEditor {doc} {monitor} locked={runtime.online} warnings={project.warnings} />
@@ -743,7 +524,7 @@
 							.filter(Boolean)}
 						snapshot={runtime.snapshot}
 						online={runtime.online}
-						log={alarmLog}
+						log={alarms.log}
 						onWrite={hmiWrite}
 						onAck={ackAlarm}
 					/>
@@ -765,7 +546,7 @@
 				{/if}
 			</div>
 			{#if showTrend}
-				<div class="h-64 shrink-0 border-t border-slate-800 bg-slate-950">
+				<div class="h-48 shrink-0 border-t border-slate-800 bg-slate-950 xl:h-64">
 					<TrendChart
 						{runtime}
 						lanes={trend.lanes}
@@ -776,7 +557,13 @@
 			{/if}
 		</div>
 
-		<aside class="space-y-6 overflow-auto border-l border-slate-800 p-4">
+		<!-- the side panel: a column on wide screens, a drawer over the program on tablets -->
+		<aside
+			id="side-panel"
+			class="absolute inset-y-0 right-0 z-30 w-80 max-w-[90vw] space-y-6 overflow-auto border-l border-slate-800 bg-slate-950 p-4 shadow-2xl xl:static xl:w-auto xl:max-w-none xl:shadow-none {sidePanel
+				? ''
+				: 'hidden'}"
+		>
 			{#if lesson}
 				<LessonPanel
 					{lesson}
@@ -795,64 +582,48 @@
 					fbd={project.fbd}
 				/>
 			{:else if machine}
-				<OnCallPanel {machine} circuit={project.circuit} onRepaired={() => (sim.faults = [])} />
+				<OnCallPanel
+					{machine}
+					circuit={project.circuit}
+					scenario={project.scenario}
+					onRepaired={() => {
+						sim.faults = [];
+						// a repaired sensor or plant: clear every fault between the plant and the PLC
+						const field = runtime.snapshot?.field;
+						for (const address of Object.keys(field?.faults ?? {}))
+							runtime.processCommand('field:fault', { address, fault: null });
+						for (const id of field?.plantFaults ?? [])
+							runtime.processCommand('field:plant', { id, on: false });
+					}}
+				/>
 			{/if}
 			<IoPanel {runtime} labels={terminalLabels} />
 
-			<section aria-labelledby="problems-title">
-				<h2
-					id="problems-title"
-					class="mb-2 text-xs font-semibold tracking-wider uppercase {problems.length
-						? 'text-red-400'
-						: 'text-slate-400'}"
-				>
-					Problems ({problems.length})
-				</h2>
-				{#if problems.length === 0}
-					<p class="text-xs text-slate-500">Program compiles — ready to run.</p>
-				{:else}
-					<ul class="space-y-1 text-xs {flashProblems ? 'animate-pulse' : ''}">
-						{#each problems as p, i (i)}
-							<li>
-								<button
-									class="w-full rounded bg-red-500/10 px-2 py-1 text-left text-red-200 hover:bg-red-500/20"
-									onclick={() => showProblem(p)}
-								>
-									<span class="text-[10px] text-red-400 uppercase">{p.source}</span>
-									{p.message}
-								</button>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-				{#if project.warnings.length}
-					<h3 class="mt-3 mb-1 text-xs font-semibold tracking-wider text-amber-400 uppercase">
-						Warnings ({project.warnings.length})
-					</h3>
-					<ul class="space-y-1 text-xs" aria-label="Warnings">
-						{#each project.warnings as w, i (i)}
-							<li>
-								<button
-									class="w-full rounded bg-amber-400/10 px-2 py-1 text-left text-amber-100 hover:bg-amber-400/20"
-									onclick={() => jumpTo(w.id)}
-								>
-									{#if w.id && project.language === 'ladder'}
-										<span class="text-[10px] text-amber-400">{place(w.id)}</span>
-									{/if}
-									{w.message}
-								</button>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-				{#if runtime.loadError}
-					<p class="mt-2 rounded bg-red-500/10 px-2 py-1 text-xs text-red-200">
-						{runtime.loadError.message}
-					</p>
-				{/if}
-			</section>
+			<ProblemsPanel
+				{problems}
+				warnings={project.warnings}
+				flash={flashProblems}
+				loadError={runtime.loadError?.message ?? null}
+				place={project.language === 'ladder' ? place : null}
+				onProblem={showProblem}
+				onWarning={jumpTo}
+			/>
 
-			<ExplainPanel {doc} {monitor} language={project.language} />
+			<ExplainPanel
+				{doc}
+				{monitor}
+				language={project.language}
+				fbd={{
+					fbd: project.fbd,
+					types: project.boxTypes,
+					live: runtime.online
+						? (v) =>
+								v.kind === 'operand'
+									? liveValue(v.text)
+									: liveValue(project.fbdSt?.signals[v.box.id] ?? '')
+						: null
+				}}
+			/>
 
 			<CodeView
 				compiled={loaded && runtime.online ? loaded : project.compiled}
@@ -872,41 +643,14 @@
 				disabled={runtime.online}
 				onclick={resetToDemo}
 			>
-				Load demo project
+				{t('ws.loadDemo')}
 			</button>
 		</aside>
 	</div>
 </div>
 
 {#if shareUrl}
-	<div class="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4" role="presentation">
-		<div
-			class="w-full max-w-lg space-y-3 rounded-lg border border-slate-700 bg-slate-900 p-5 shadow-2xl"
-			role="dialog"
-			aria-label="Share project"
-		>
-			<h2 class="font-semibold text-white">Share this project</h2>
-			<p class="text-sm text-slate-400">
-				{copied ? 'Link copied to the clipboard.' : 'Copy the link below.'} The whole project is inside
-				the link — nothing is uploaded. Whoever opens it gets their own copy.
-			</p>
-			<input
-				class="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-xs text-slate-200"
-				readonly
-				value={shareUrl}
-				aria-label="Share link"
-				onfocus={(e) => e.currentTarget.select()}
-			/>
-			<div class="text-right">
-				<button
-					class="rounded-md bg-slate-700 px-3 py-1.5 text-sm hover:bg-slate-600"
-					onclick={() => (shareUrl = null)}
-				>
-					Close
-				</button>
-			</div>
-		</div>
-	</div>
+	<ShareDialog url={shareUrl} {copied} onClose={() => (shareUrl = null)} />
 {/if}
 
 <TipToast

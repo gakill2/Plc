@@ -4,7 +4,7 @@ import { openEditor } from './helpers';
 test('explain panel and scan-cycle debugger', async ({ page }) => {
 	await openEditor(page);
 	await page.getByText('Network 1').click();
-	const explain = page.locator('section', { has: page.getByRole('button', { name: /Wyjaśnij/ }) });
+	const explain = page.locator('section', { has: page.getByRole('button', { name: /Explain/ }) });
 	await expect(explain).toContainText(
 		'Motor (Q0.0) = 1 gdy (Start (I0.0) LUB Motor (Q0.0)) I NIE Stop (I0.1)'
 	);
@@ -31,10 +31,10 @@ test('explain panel and scan-cycle debugger', async ({ page }) => {
 test('production line plant runs a part through the drill', async ({ page }) => {
 	await page.goto('/learn', { waitUntil: 'networkidle' });
 	await page.getByRole('link', { name: /Proces: stacja wiercenia/ }).click();
-	await expect(page.getByRole('list', { name: 'Krok po kroku' })).toBeVisible();
+	await expect(page.getByRole('list', { name: 'Step by step' })).toBeVisible();
 	page.once('dialog', (d) => d.accept());
-	await page.getByRole('button', { name: 'Pokaż rozwiązanie' }).click();
-	await expect(page.getByText(/Krok po kroku · 8\/10/)).toBeVisible();
+	await page.getByRole('button', { name: 'Show solution' }).click();
+	await expect(page.getByText(/Step by step · 8\/10/)).toBeVisible();
 
 	await page.getByRole('button', { name: '▶ Run' }).click();
 	await page.getByRole('button', { name: 'Process' }).click();
@@ -56,8 +56,8 @@ test('production line plant runs a part through the drill', async ({ page }) => 
 test('find-the-bug lesson and the review quiz', async ({ page }) => {
 	await page.goto('/learn', { waitUntil: 'networkidle' });
 	await page.getByRole('link', { name: /Znajdź błąd: lampka z dwóch miejsc/ }).click();
-	await expect(page.getByText('🐞 Znajdź błąd · logika')).toBeVisible();
-	await page.getByRole('button', { name: 'Sprawdź rozwiązanie' }).click();
+	await expect(page.getByText('🐞 Find the bug · logic')).toBeVisible();
+	await page.getByRole('button', { name: 'Check solution' }).click();
 	await expect(page.getByText(/✗\s*Każdy przycisk zapala lampkę/)).toBeVisible();
 	await expect(
 		page.getByText(/Po kroku „tylko Button1”: Q0.0 powinno być 1, a jest 0/)

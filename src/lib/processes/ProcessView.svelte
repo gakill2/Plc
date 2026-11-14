@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t, type MessageKey } from '#lib/i18n/i18n.svelte.js';
 	import type { PlcRuntime } from '#lib/runtime/runtime.svelte.js';
 	import ConveyorView from './ConveyorView.svelte';
 	import CraneView from './CraneView.svelte';
@@ -33,7 +34,7 @@
 </script>
 
 {#if !state}
-	<p class="p-6 text-sm text-slate-500">Starting the plant simulation…</p>
+	<p class="p-6 text-sm text-slate-500">{t('proc.starting')}</p>
 {:else if state.kind === 'traffic'}
 	<TrafficView {state} />
 {:else if state.kind === 'tank'}
@@ -59,15 +60,14 @@
 {#if info}
 	<details
 		class="mx-6 mb-4 max-w-2xl rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-xs"
-		lang="pl"
 	>
 		<summary class="cursor-pointer font-semibold text-slate-200">
-			Czujniki i usterki
+			{t('proc.faults')}
 			{#if faultCount}<span class="ml-2 rounded bg-red-500/20 px-1.5 text-red-300"
-					>{faultCount} aktywne</span
+					>{t('proc.active', { n: faultCount })}</span
 				>{/if}
 			{#if field?.realism}<span class="ml-2 rounded bg-sky-500/20 px-1.5 text-sky-300"
-					>realistyczne sygnały</span
+					>{t('proc.realismOn')}</span
 				>{/if}
 		</summary>
 		<div class="mt-3 space-y-3">
@@ -77,12 +77,9 @@
 					checked={field?.realism ?? false}
 					onchange={(e) => command('field:realism', e.currentTarget.checked)}
 				/>
-				<span
-					>Realistyczne sygnały — szum na wejściach analogowych, a wartość poza zakresem pomiarowym
-					czytana jako 32767 (przepełnienie), jak na module S7.</span
-				>
+				<span>{t('proc.realism')}</span>
 			</label>
-			<table class="w-full text-left" aria-label="Usterki czujników">
+			<table class="w-full text-left" aria-label={t('proc.sensorFaults')}>
 				<tbody>
 					{#each sensors as io (io.address)}
 						{@const f = field?.faults[io.address.toUpperCase()] ?? ''}
@@ -94,7 +91,7 @@
 									class="rounded border bg-slate-950 px-1 py-0.5 {f
 										? 'border-red-500 text-red-300'
 										: 'border-slate-700 text-slate-300'}"
-									aria-label="Usterka {io.name}"
+									aria-label={t('proc.faultOf', { name: io.name })}
 									value={f}
 									onchange={(e) =>
 										command('field:fault', {
@@ -102,9 +99,9 @@
 											fault: e.currentTarget.value || null
 										})}
 								>
-									<option value="">sprawny</option>
+									<option value="">{t('proc.ok')}</option>
 									{#each choices(io.address) as c (c)}
-										<option value={c}>{SIGNAL_FAULTS[c].label}</option>
+										<option value={c}>{t(`fault.${c}`)}</option>
 									{/each}
 								</select>
 							</td>
@@ -114,7 +111,7 @@
 			</table>
 			{#if info.faults?.length}
 				<div class="space-y-1">
-					<h3 class="font-semibold text-slate-300">Usterki obiektu</h3>
+					<h3 class="font-semibold text-slate-300">{t('proc.plantFaults')}</h3>
 					{#each info.faults as pf (pf.id)}
 						<label class="flex items-center gap-2 text-slate-300">
 							<input
@@ -122,15 +119,12 @@
 								checked={field?.plantFaults.includes(pf.id) ?? false}
 								onchange={(e) => command('field:plant', { id: pf.id, on: e.currentTarget.checked })}
 							/>
-							{pf.label}
+							{t(`plantFault.${pf.id}` as MessageKey)}
 						</label>
 					{/each}
 				</div>
 			{/if}
-			<p class="text-slate-500">
-				Usterki zostają do odznaczenia — także po Stop → Run. Dobry program wykrywa je sam: brak
-				potwierdzenia ruchu w czasie, wartość analogowa 32767, sprzeczne czujniki.
-			</p>
+			<p class="text-slate-500">{t('proc.faultsNote')}</p>
 		</div>
 	</details>
 

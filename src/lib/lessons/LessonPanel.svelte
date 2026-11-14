@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import { resolve } from '$app/paths';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
 	import type { LadderProgram } from '#lib/ladder/model.js';
@@ -55,10 +56,10 @@
 	let checking = $state(false);
 
 	const LEVELS = {
-		basics: 'podstawy',
-		logic: 'logika',
-		timers: 'timery',
-		process: 'proces'
+		basics: 'lesson.level.basics',
+		logic: 'lesson.level.logic',
+		timers: 'lesson.level.timers',
+		process: 'lesson.level.process'
 	} as const;
 	const passed = $derived(results !== null && results.every((r) => r.passed));
 	let completedBefore = $state(false);
@@ -103,9 +104,7 @@
 
 	function check() {
 		if (blocked) {
-			results = [
-				{ name: 'Program', passed: false, message: 'Najpierw popraw błędy z listy Problems.' }
-			];
+			results = [{ name: 'Program', passed: false, message: t('lesson.fixFirst') }];
 			return;
 		}
 		checking = true;
@@ -140,10 +139,10 @@
 	<div>
 		<p class="text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
 			{lesson.kind === 'debug'
-				? '🐞 Znajdź błąd'
+				? t('lesson.debug')
 				: lesson.kind === 'commissioning'
-					? '🔧 Uruchomienie'
-					: 'Ćwiczenie'} · {LEVELS[lesson.level]}
+					? t('lesson.commissioning')
+					: t('lesson.exercise')} · {t(LEVELS[lesson.level])}
 		</p>
 		<h2 id="lesson-title" class="text-sm font-semibold text-white">{lesson.title}</h2>
 	</div>
@@ -155,9 +154,9 @@
 	{#if guide.length && (language === 'ladder' || lesson.kind === 'commissioning' || lesson.solutionSt || lesson.solutionSfc || lesson.solutionFbd)}
 		<div lang="pl">
 			<p class="mb-1 text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
-				Krok po kroku · {ticks.filter(Boolean).length}/{guide.length}
+				{t('lesson.steps')} · {ticks.filter(Boolean).length}/{guide.length}
 			</p>
-			<ol class="space-y-1 text-xs" aria-label="Krok po kroku">
+			<ol class="space-y-1 text-xs" aria-label={t('lesson.steps')}>
 				{#each guide as step, i (i)}
 					<li
 						class="flex gap-2 rounded px-1.5 py-1 {i === nextStep
@@ -173,7 +172,8 @@
 							]
 								? 'bg-emerald-500 text-slate-950'
 								: 'border border-slate-600'}"
-							aria-label={ticks[i] ? 'zrobione' : 'do zrobienia'}>{ticks[i] ? '✓' : i + 1}</span
+							aria-label={ticks[i] ? t('lesson.done') : t('lesson.todo')}
+							>{ticks[i] ? '✓' : i + 1}</span
 						>
 						<span class="leading-relaxed"><RichText text={step.text} /></span>
 					</li>
@@ -188,7 +188,7 @@
 			disabled={checking}
 			onclick={check}
 		>
-			{checking ? 'Sprawdzam…' : 'Sprawdź rozwiązanie'}
+			{checking ? t('lesson.checking') : t('lesson.check')}
 		</button>
 		{#if hintsShown < lesson.hints.length}
 			<button
@@ -198,7 +198,7 @@
 					track((r) => r.hints++);
 				}}
 			>
-				Podpowiedź {hintsShown + 1}/{lesson.hints.length}
+				{t('lesson.hint', { n: hintsShown + 1, total: lesson.hints.length })}
 			</button>
 		{/if}
 	</div>
@@ -222,7 +222,9 @@
 					{#if r.message}
 						<div class="mt-0.5 text-[11px] text-red-300/90">
 							{r.message}{#if r.atMs !== undefined}
-								<span class="text-slate-500"> (w {(r.atMs / 1000).toFixed(2)} s)</span>{/if}
+								<span class="text-slate-500">
+									{t('lesson.at', { s: (r.atMs / 1000).toFixed(2) })}</span
+								>{/if}
 						</div>
 					{/if}
 				</li>
@@ -232,17 +234,17 @@
 			<TicketCard {ticket} {record} {justSolved} part="debrief" />
 		{:else if passed}
 			<p class="rounded bg-emerald-500/15 px-2 py-1.5 text-xs font-semibold text-emerald-200">
-				Zaliczone! <a href={resolve('/learn')} class="underline">Dalej na ścieżce →</a>
+				{t('lesson.passed')} <a href={resolve('/learn')} class="underline">{t('lesson.next')}</a>
 			</p>
 		{/if}
 	{/if}
 
 	<div class="flex gap-3 border-t border-slate-800 pt-2 text-[11px]">
 		<button class="text-slate-400 underline hover:text-slate-200" onclick={showSolution}
-			>Pokaż rozwiązanie</button
+			>{t('lesson.showSolution')}</button
 		>
 		<button class="text-slate-400 underline hover:text-slate-200" onclick={onRestart}
-			>Zacznij od nowa</button
+			>{t('lesson.restart')}</button
 		>
 	</div>
 </section>

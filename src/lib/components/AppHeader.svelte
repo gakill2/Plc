@@ -4,6 +4,7 @@
 	import { APP_NAME, NAV_ITEMS, REPO_URL } from '#lib/config.js';
 	import InstallButton from './InstallButton.svelte';
 	import StatusLed from './StatusLed.svelte';
+	import { i18n, t, type MessageKey } from '#lib/i18n/i18n.svelte.js';
 
 	const isActive = (href: string) => page.url.pathname.startsWith(href);
 </script>
@@ -27,13 +28,29 @@
 						: 'text-slate-400 hover:text-white'}"
 					aria-current={isActive(item.href) ? 'page' : undefined}
 				>
-					{item.label}
+					{t(item.label as MessageKey)}
 				</a>
 			{/each}
 		</nav>
 
 		<div class="ml-auto flex items-center gap-3">
 			<InstallButton />
+			<div
+				class="flex shrink-0 rounded border border-slate-700 text-[11px]"
+				role="group"
+				aria-label={t('nav.language')}
+			>
+				{#each ['pl', 'en'] as const as l (l)}
+					<button
+						class="px-1.5 py-0.5 uppercase {i18n.locale === l
+							? 'bg-slate-700 text-white'
+							: 'text-slate-400 hover:text-white'}"
+						aria-pressed={i18n.locale === l}
+						lang={l}
+						onclick={() => i18n.set(l)}>{l}</button
+					>
+				{/each}
+			</div>
 		</div>
 		<!-- eslint-disable svelte/no-navigation-without-resolve -- external link -->
 		<a

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import { disassemble } from '#lib/engine/index.js';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
 
@@ -20,7 +21,7 @@
 	</summary>
 	<label class="mt-2 flex items-center gap-1.5 text-[11px] text-slate-500">
 		<input type="checkbox" bind:checked={showProbes} class="accent-emerald-500" />
-		show power-flow probes (TAP)
+		{t('code.probes')}
 	</label>
 	<ol
 		class="mt-2 max-h-80 overflow-auto rounded border border-slate-800 bg-slate-950 py-1 font-mono text-[11px]"

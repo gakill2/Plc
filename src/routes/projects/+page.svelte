@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
@@ -45,7 +46,7 @@
 
 	function remove(p: ProjectSummary) {
 		const what = p.id.startsWith(LESSON_PREFIX) ? 'your progress in this lesson' : `“${p.name}”`;
-		if (!confirm(`Delete ${what}? This cannot be undone.`)) return;
+		if (!confirm(t('proj.confirmDelete', { what }))) return;
 		deleteProject(localStorage, p.id);
 		refresh();
 	}
@@ -91,9 +92,9 @@
 <section class="mx-auto max-w-5xl px-4 py-12">
 	<div class="flex flex-wrap items-end justify-between gap-4">
 		<div>
-			<h1 class="text-3xl font-bold text-white">Projects</h1>
+			<h1 class="text-3xl font-bold text-white">{t('proj.title')}</h1>
 			<p class="mt-2 text-slate-400">
-				Saved in this browser. Export a project to keep it or move it elsewhere.
+				{t('proj.saved')}
 			</p>
 		</div>
 		<div class="flex flex-wrap gap-2">
@@ -101,26 +102,26 @@
 				class="rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400"
 				onclick={() => create(emptyProject())}
 			>
-				+ New project
+				{t('proj.new')}
 			</button>
 			<button
 				class="rounded-md border border-slate-700 px-4 py-2 text-sm hover:border-slate-500"
 				onclick={() => create({ ...demoProject(), name: 'Motor demo' })}
 			>
-				New from demo
+				{t('proj.fromDemo')}
 			</button>
 			<button
 				class="rounded-md border border-slate-700 px-4 py-2 text-sm hover:border-slate-500"
 				onclick={() => fileInput.click()}
 			>
-				Import…
+				{t('proj.import')}
 			</button>
 			<input
 				bind:this={fileInput}
 				type="file"
 				accept=".json,application/json"
 				class="hidden"
-				aria-label="Import project file"
+				aria-label={t('proj.importLabel')}
 				onchange={importFile}
 			/>
 		</div>
@@ -152,28 +153,28 @@
 				{#if !p.lesson}
 					<button
 						class="rounded px-2 py-1 text-slate-300 hover:bg-slate-800"
-						onclick={() => duplicate(p)}>Duplicate</button
+						onclick={() => duplicate(p)}>{t('proj.duplicate')}</button
 					>
 				{/if}
 				<button
 					class="rounded px-2 py-1 text-slate-300 hover:bg-slate-800"
-					onclick={() => exportProject(p)}>Export</button
+					onclick={() => exportProject(p)}>{t('editor.export')}</button
 				>
 				<button class="rounded px-2 py-1 text-red-300 hover:bg-red-500/15" onclick={() => remove(p)}
-					>Delete</button
+					>{t('proj.delete')}</button
 				>
 			</div>
 		</li>
 	{/snippet}
 
 	<h2 class="mt-10 mb-3 text-sm font-semibold tracking-wider text-slate-400 uppercase">
-		My projects
+		{t('proj.mine')}
 	</h2>
 	{#if own.length === 0}
 		<p
 			class="rounded-lg border border-dashed border-slate-700 p-6 text-center text-sm text-slate-500"
 		>
-			No projects yet — create one, start from the demo or import a file.
+			{t('proj.none')}
 		</p>
 	{:else}
 		<ul class="space-y-2">
@@ -183,7 +184,7 @@
 
 	{#if lessons.length}
 		<h2 class="mt-10 mb-3 text-sm font-semibold tracking-wider text-slate-400 uppercase">
-			Lessons in progress
+			{t('proj.lessons')}
 		</h2>
 		<ul class="space-y-2">
 			{#each lessons as p (p.id)}{@render card(p)}{/each}

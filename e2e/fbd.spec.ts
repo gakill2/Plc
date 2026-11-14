@@ -8,7 +8,7 @@ test('FBD lesson: build an SR flip-flop with a negated input', async ({ page }) 
 	await expect(async () => {
 		await page.getByLabel('Wejście networku 1').click();
 		await page
-			.getByRole('toolbar', { name: 'Bloki FBD' })
+			.getByRole('toolbar', { name: 'FBD blocks' })
 			.getByRole('button', { name: 'SR', exact: true })
 			.click();
 		await expect(page.getByLabel('Instancja SR')).toBeVisible({ timeout: 1000 });
@@ -16,9 +16,9 @@ test('FBD lesson: build an SR flip-flop with a negated input', async ({ page }) 
 	await page.getByLabel('SR S1').fill('Low');
 	await page.getByLabel('SR R').fill('High');
 	await page.getByRole('button', { name: 'Wejście S1 bloku SR' }).click();
-	await page.getByRole('button', { name: '¬ negacja' }).click();
-	await page.getByRole('button', { name: 'Sprawdź rozwiązanie' }).click();
-	await expect(page.getByText('Zaliczone!')).toBeVisible({ timeout: 30_000 });
+	await page.getByRole('button', { name: '¬ negate' }).click();
+	await page.getByRole('button', { name: 'Check solution' }).click();
+	await expect(page.getByText('Passed!')).toBeVisible({ timeout: 30_000 });
 });
 
 test('FBD in an own project: the demo runs and shows the signal flow', async ({ page }) => {
@@ -29,7 +29,7 @@ test('FBD in an own project: the demo runs and shows the signal flow', async ({ 
 		await expect(page.getByLabel('Instancja TON')).toHaveValue('Timer1', { timeout: 1000 });
 	}).toPass();
 	await page.getByRole('button', { name: '▶ Run' }).click();
-	await expect(page.getByText(/Online — zielone linie/)).toBeVisible();
-	await page.getByRole('button', { name: 'Pokaż wygenerowany ST' }).click();
-	await expect(page.getByLabel('Wygenerowany ST')).toContainText('Timer1(IN := Q0.0, PT := T#2s);');
+	await expect(page.getByText(/Online — green lines/)).toBeVisible();
+	await page.getByRole('button', { name: 'Show generated ST' }).click();
+	await expect(page.getByLabel('Generated ST')).toContainText('Timer1(IN := Q0.0, PT := T#2s);');
 });

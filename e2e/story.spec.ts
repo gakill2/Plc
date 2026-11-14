@@ -10,8 +10,8 @@ test('a foreman ticket opens a lesson, is graded and unlocks the next one', asyn
 	const card = page.getByRole('article', { name: 'Zgłoszenie' });
 	await expect(card.getByText('Zgłoszenie #01')).toBeVisible();
 
-	await page.getByRole('button', { name: 'Pokaż rozwiązanie' }).click();
-	await page.getByRole('button', { name: 'Sprawdź rozwiązanie' }).click();
+	await page.getByRole('button', { name: 'Show solution' }).click();
+	await page.getByRole('button', { name: 'Check solution' }).click();
 	const debrief = page.getByTestId('debrief');
 	await expect(debrief).toContainText('Zgłoszenie zamknięte!');
 	await expect(debrief.getByLabel('1 z 3 gwiazdek')).toBeVisible();
@@ -32,7 +32,7 @@ test('a tip pops up on the first timer, glossary terms explain themselves', asyn
 	).toBeVisible();
 
 	await page.goto('/editor/lesson-traffic-light');
-	await page.getByRole('button', { name: 'Pokaż rozwiązanie' }).click();
+	await page.getByRole('button', { name: 'Show solution' }).click();
 	const tip = page.getByRole('complementary', { name: 'Podpowiedź' });
 	await expect(tip).toBeVisible();
 	const first = await tip.locator('p').nth(1).textContent();

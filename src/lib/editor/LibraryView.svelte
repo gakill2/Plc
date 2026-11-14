@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import StEditor from '#lib/st/StEditor.svelte';
 	import { compileSt } from '#lib/st/compiler.js';
 	import { blockCatalog, STDLIB } from '#lib/st/stdlib.js';
@@ -42,14 +43,12 @@ END_FUNCTION_BLOCK
 	<div
 		class="flex items-center gap-3 border-b border-slate-800 px-4 py-2 text-[11px] text-slate-400"
 	>
-		<span class="font-semibold text-slate-200">Biblioteka bloków</span>
-		<span
-			>Własne FUNCTION_BLOCK / FUNCTION / TYPE w ST — do użycia w LAD (paleta „FB…”), ST i SFC.</span
-		>
+		<span class="font-semibold text-slate-200">{t('lib.title')}</span>
+		<span>{t('lib.intro')}</span>
 		{#if !library.trim() && !readOnly}
 			<button
 				class="ml-auto rounded border border-slate-700 px-2 py-0.5 text-slate-300 hover:bg-slate-800"
-				onclick={() => onChange(TEMPLATE)}>Wstaw przykładowy blok</button
+				onclick={() => onChange(TEMPLATE)}>{t('lib.example')}</button
 			>
 		{/if}
 	</div>
@@ -62,12 +61,12 @@ END_FUNCTION_BLOCK
 			names={() => ({ symbols: symbolList, variables: [] })}
 		/>
 		<div class="space-y-3 overflow-auto border-l border-slate-800 p-3 text-xs">
-			<p class="font-semibold tracking-wider text-slate-400 uppercase">Dostępne bloki</p>
+			<p class="font-semibold tracking-wider text-slate-400 uppercase">{t('lib.available')}</p>
 			{#each catalog as b (b.name)}
 				<div class="rounded border border-slate-800 bg-slate-900/60 p-2">
 					<p class="font-mono font-semibold text-violet-300">
 						{b.name}{#if b.standard}<span class="ml-1 text-[10px] font-normal text-slate-500"
-								>standardowy</span
+								>{t('lib.standard')}</span
 							>{/if}
 					</p>
 					{#if b.comment}<p class="text-[11px] text-slate-400">{b.comment}</p>{/if}
@@ -85,7 +84,7 @@ END_FUNCTION_BLOCK
 				</p>
 			{/if}
 			<details class="text-slate-400">
-				<summary class="cursor-pointer">Kod bloków standardowych</summary>
+				<summary class="cursor-pointer">{t('lib.standardCode')}</summary>
 				<pre
 					class="mt-1 overflow-auto font-mono text-[10px] whitespace-pre text-slate-300">{STDLIB}</pre>
 			</details>

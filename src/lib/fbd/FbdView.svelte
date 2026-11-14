@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import type { Snippet } from 'svelte';
 	import { operandInput as baseInput, wireColor } from '#lib/editor/colors.js';
 	/** the shared operand style, with a width of its own */
@@ -158,14 +159,14 @@
 	{#each names as n (n)}<option value={n}></option>{/each}
 </datalist>
 
-<div class="flex h-full flex-col" lang="pl">
+<div class="flex h-full flex-col">
 	<div class="flex flex-wrap items-center gap-3 border-b border-slate-800 px-4 py-2">
 		{@render header()}
 		<span class="text-[11px] text-slate-500">
-			Zaznacz wejście (pole operandu albo nazwę pinu) i kliknij blok — wstawi się w to miejsce
+			{t('fbd.hint')}
 		</span>
 		<button class="ml-auto text-[11px] text-slate-400 underline" onclick={() => (showSt = !showSt)}
-			>{showSt ? 'Ukryj' : 'Pokaż'} wygenerowany ST</button
+			>{showSt ? t('fbd.hideSt') : t('fbd.showSt')}</button
 		>
 	</div>
 
@@ -173,7 +174,7 @@
 		<div
 			class="flex flex-wrap items-start gap-x-4 gap-y-1 border-b border-slate-800 px-4 py-2"
 			role="toolbar"
-			aria-label="Bloki FBD"
+			aria-label={t('fbd.blocks')}
 		>
 			{#each GROUPS as g (g.group)}
 				{@const list = types.filter((t) => t.group === g.group)}
@@ -196,14 +197,14 @@
 				<button
 					class="rounded border border-slate-700 px-1.5 py-0.5 text-[11px] text-slate-200 hover:border-emerald-500 disabled:opacity-40"
 					disabled={!selectedPin}
-					title="Negacja zaznaczonego wejścia (kółko)"
-					onclick={negate}>¬ negacja</button
+					title={t('fbd.negateTitle')}
+					onclick={negate}>{t('fbd.negate')}</button
 				>
 				<button
 					class="rounded border border-slate-700 px-1.5 py-0.5 text-[11px] text-slate-200 hover:border-red-400 disabled:opacity-40"
 					disabled={!canRemovePin}
-					title="Usuń zaznaczone wejście bramki"
-					onclick={removePin}>− wejście</button
+					title={t('fbd.removePinTitle')}
+					onclick={removePin}>{t('fbd.removePin')}</button
 				>
 			</div>
 		</div>
@@ -215,7 +216,7 @@
 				<p
 					class="rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-200"
 				>
-					Online — zielone linie mają sygnał 1. Zatrzymaj PLC, żeby edytować.
+					{t('fbd.online')}
 				</p>
 			{/if}
 			{#each fbd.networks as n, i (n.id)}
@@ -231,19 +232,19 @@
 						<input
 							class="min-w-0 flex-1 bg-transparent text-xs text-slate-300 outline-none placeholder:text-slate-600"
 							bind:value={n.comment}
-							placeholder="Komentarz: po co ten network?"
+							placeholder={t('fbd.comment')}
 							disabled={readOnly}
 							aria-label="Komentarz networku {i + 1}"
 						/>
 						{#if !readOnly}
 							<button
 								class="text-xs text-slate-500 hover:text-slate-200"
-								title="W górę"
+								title={t('fbd.up')}
 								onclick={() => move(n, -1)}>↑</button
 							>
 							<button
 								class="text-xs text-slate-500 hover:text-slate-200"
-								title="W dół"
+								title={t('fbd.down')}
 								onclick={() => move(n, 1)}>↓</button
 							>
 							<button
@@ -261,7 +262,7 @@
 							<input
 								class="{operandInput} w-28 text-right {selected === n ? 'border-sky-400!' : ''}"
 								value={op.text}
-								placeholder="wejście…"
+								placeholder={t('fbd.input')}
 								list="fbd-names"
 								disabled={readOnly}
 								aria-label="Wejście networku {i + 1}"
@@ -286,7 +287,7 @@
 										)
 											? 'border-red-500'
 											: 'border-slate-500'} {o.kind === '=' ? 'text-slate-200' : 'text-amber-300'}"
-										title="= przypisanie · S ustaw · R skasuj (kliknij, żeby zmienić)"
+										title={t('fbd.outputKind')}
 										aria-label="Rodzaj wyjścia {o.kind}"
 										disabled={readOnly}
 										onclick={() => (o.kind = NEXT[o.kind])}>{o.kind}</button
@@ -294,7 +295,7 @@
 									<input
 										class="{operandInput} w-28 text-left"
 										value={o.target}
-										placeholder="operand…"
+										placeholder={t('fbd.operand')}
 										list="fbd-names"
 										disabled={readOnly}
 										aria-label="Wyjście networku {i + 1}"
@@ -303,7 +304,7 @@
 									{#if !readOnly}
 										<button
 											class="text-xs text-slate-600 hover:text-red-300"
-											aria-label="Usuń wyjście"
+											aria-label={t('fbd.removeOutput')}
 											onclick={() => n.outputs.splice(n.outputs.indexOf(o), 1)}>×</button
 										>
 									{/if}
@@ -313,7 +314,7 @@
 								<button
 									class="ml-3 text-left text-[11px] text-slate-500 hover:text-emerald-300"
 									onclick={() => n.outputs.push({ id: newId('o'), kind: '=', target: '' })}
-									>+ wyjście</button
+									>{t('fbd.addOutput')}</button
 								>
 							{/if}
 						</div>
@@ -323,14 +324,14 @@
 			{#if !readOnly}
 				<button
 					class="rounded border border-dashed border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:border-emerald-500 hover:text-emerald-300"
-					onclick={() => addNetwork()}>+ Network</button
+					onclick={() => addNetwork()}>{t('fbd.addNetwork')}</button
 				>
 			{/if}
 		</div>
 		{#if showSt}
 			<pre
 				class="min-h-0 overflow-auto border-l border-slate-800 bg-slate-950 p-3 font-mono text-[11px] text-slate-300"
-				aria-label="Wygenerowany ST">{generated}</pre>
+				aria-label={t('fbd.generated')}>{generated}</pre>
 		{/if}
 	</div>
 </div>

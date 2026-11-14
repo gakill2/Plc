@@ -3,13 +3,22 @@
  * The program and wiring are right — one component failed. Find which one, as fast as you can.
  */
 import type { Fault } from '#lib/circuit/model.js';
+import { SIGNAL_FAULTS, type SignalFault } from '#lib/processes/field.js';
+import { plantInfo } from '#lib/processes/plants.js';
 import { getLesson } from '#lib/lessons/lessons.js';
 import type { LessonTest } from '#lib/lessons/types.js';
 import type { Project } from '#lib/project/project.js';
 
+/** A fault between the plant and the PLC (a sensor) or of the plant itself. */
+export type FieldFault =
+	{ kind: 'sensor'; device: string; fault: SignalFault } | { kind: 'plant'; device: string };
+export type IncidentFault = Fault | FieldFault;
+export const isFieldFault = (f: IncidentFault): f is FieldFault =>
+	f.kind === 'sensor' || f.kind === 'plant';
+
 export type Incident = {
 	id: string;
-	fault: Fault;
+	fault: IncidentFault;
 	/** Who calls and at what time. */
 	caller: string;
 	time: string;
@@ -231,6 +240,104 @@ export const MACHINES: Machine[] = [
 				repair: 'Usunięcie blokady wirnika, kontrola łożysk.'
 			}
 		]
+	},
+	{
+		id: 'pr2',
+		name: 'Prasa PR2',
+		area: 'Hala B · tłocznia',
+		lesson: 'pneumatic-press',
+		tests: [],
+		incidents: [
+			{
+				id: 'pr2-reed',
+				fault: { kind: 'sensor', device: 'I0.1', fault: 'stuck0' },
+				caller: 'Operatorka Ewa',
+				time: '23:50',
+				report:
+					'Prasa dociska detal, ale dalej nic — po dwóch sekundach świeci alarm. Po kwitowaniu to samo.',
+				cause:
+					'Kontaktron 1B2 (docisk A wysunięty, I0.1) nie zgłasza — przesunięty na cylindrze albo uszkodzony. Program czeka na potwierdzenie i słusznie zgłasza błąd czasu ruchu.',
+				repair: 'Ustawienie kontaktronu na cylindrze i dokręcenie opaski.'
+			},
+			{
+				id: 'pr2-air',
+				fault: { kind: 'plant', device: 'noAir' },
+				caller: 'Operatorka Ewa',
+				time: '01:05',
+				report: 'Start nic nie robi. Detal leży, siłowniki schowane, alarmu nie ma.',
+				cause:
+					'Brak sprężonego powietrza (zamknięty zawór odcinający po przeglądzie sprężarki). Presostat AirOk = 0, więc program słusznie nie startuje cyklu.',
+				repair: 'Otwarcie zaworu odcinającego, sprawdzenie ciśnienia na reduktorze.'
+			},
+			{
+				id: 'pr2-leak',
+				fault: { kind: 'plant', device: 'leakB' },
+				caller: 'Mistrz Marek',
+				time: '03:30',
+				report: 'Prasa raz chodzi, raz staje z alarmem w połowie tłoczenia. Słychać syczenie.',
+				cause:
+					'Nieszczelny siłownik prasy B — zużyte uszczelnienie tłoka. Ruch trwa ponad 2 s i nadzór czasu zatrzymuje cykl.',
+				repair: 'Wymiana uszczelnień siłownika B.'
+			},
+			{
+				id: 'pr2-part',
+				fault: { kind: 'sensor', device: 'I0.4', fault: 'stuck0' },
+				caller: 'Operatorka Ewa',
+				time: '04:15',
+				report: 'Kładę detal, naciskam Start — prasa stoi. Powietrze jest, alarmu nie ma.',
+				cause:
+					'Czujnik obecności detalu (I0.4) nie widzi detalu — zabrudzona soczewka albo uszkodzony czujnik.',
+				repair: 'Czyszczenie czujnika, kontrola ustawienia.'
+			}
+		]
+	},
+	{
+		id: 'mx1',
+		name: 'Mieszalnik MX1',
+		area: 'Hala C · przygotowanie mas',
+		lesson: 'mixer-batch',
+		tests: [],
+		incidents: [
+			{
+				id: 'mx1-level',
+				fault: { kind: 'sensor', device: 'IW4', fault: 'wireBreak' },
+				caller: 'Operator Paweł',
+				time: '22:40',
+				report:
+					'Świeci alarm i nie da się zacząć partii. Na panelu poziom 100 %, a zbiornik pusty.',
+				cause:
+					'Zerwany przewód przetwornika poziomu 4–20 mA — karta podaje 32767. Blokada w programie słusznie zatrzymała dozowanie.',
+				repair: 'Naprawa przewodu przetwornika w puszce przy zbiorniku.'
+			},
+			{
+				id: 'mx1-heater',
+				fault: { kind: 'plant', device: 'heaterDead' },
+				caller: 'Operator Paweł',
+				time: '00:55',
+				report: 'Partia się nie kończy — mieszadło kręci, a temperatura stoi na 20 stopniach.',
+				cause: 'Uszkodzona grzałka — program włącza ją, ale temperatura nie rośnie.',
+				repair: 'Wymiana grzałki, pomiar izolacji.'
+			},
+			{
+				id: 'mx1-leak',
+				fault: { kind: 'plant', device: 'leakA' },
+				caller: 'Technolog Anna',
+				time: '02:20',
+				report: 'Ostatnie partie wychodzą złe — za dużo składnika A. Program nikt nie ruszał.',
+				cause: 'Zawór A nie domyka się i przepuszcza składnik także poza krokiem dozowania.',
+				repair: 'Wymiana uszczelnienia zaworu A.'
+			},
+			{
+				id: 'mx1-temp',
+				fault: { kind: 'sensor', device: 'IW6', fault: 'offset' },
+				caller: 'Technolog Anna',
+				time: '05:10',
+				report: 'Partie są niedogrzane, a grzanie kończy się po kilku sekundach.',
+				cause:
+					'Przetwornik temperatury zawyża pomiar o 10 % zakresu (rozkalibrowany) — program myśli, że produkt ma już 50 °C.',
+				repair: 'Kalibracja przetwornika PT100 i karty analogowej.'
+			}
+		]
 	}
 ];
 
@@ -249,6 +356,8 @@ export function machineProject(m: Machine): Project {
 		...starter,
 		name: m.name,
 		ladder: lesson.solution(),
+		...(lesson.solutionSt ? { language: 'st' as const, st: lesson.solutionSt } : {}),
+		...(lesson.solutionSfc ? { language: 'sfc' as const, sfc: lesson.solutionSfc() } : {}),
 		circuit: lesson.solutionCircuit?.() ?? starter.circuit,
 		lesson: undefined
 	};
@@ -296,7 +405,40 @@ export function faultOptions(type: string, label: string): { text: string; fault
 	}
 }
 
-export const sameFault = (a: Fault, b: Fault) =>
+export const sameFault = (a: IncidentFault, b: IncidentFault) =>
 	a.kind === b.kind &&
 	a.device.toUpperCase() === b.device.toUpperCase() &&
-	(a.port ?? 'main') === (b.port ?? 'main');
+	(isFieldFault(a) || isFieldFault(b)
+		? (a as { fault?: string }).fault === (b as { fault?: string }).fault
+		: ((a as Fault).port ?? 'main') === ((b as Fault).port ?? 'main'));
+
+/** The plant's sensors and the plant itself as suspects: label and the faults to choose from. */
+export function fieldSuspects(
+	scenario: Parameters<typeof plantInfo>[0]
+): { label: string; options: { text: string; fault: FieldFault }[] }[] {
+	const info = plantInfo(scenario);
+	if (!info) return [];
+	const sensors = info.io
+		.filter((io) => io.address.startsWith('I'))
+		.map((io) => ({
+			label: `${io.name} (${io.address})`,
+			options: (Object.keys(SIGNAL_FAULTS) as SignalFault[])
+				.filter((f) => SIGNAL_FAULTS[f].analog === /^I[WD]/i.test(io.address))
+				.map((f) => ({
+					text: SIGNAL_FAULTS[f].label,
+					fault: { kind: 'sensor' as const, device: io.address, fault: f }
+				}))
+		}));
+	const plant = info.faults?.length
+		? [
+				{
+					label: `Obiekt: ${info.name}`,
+					options: info.faults.map((pf) => ({
+						text: pf.label,
+						fault: { kind: 'plant' as const, device: pf.id }
+					}))
+				}
+			]
+		: [];
+	return [...sensors, ...plant];
+}

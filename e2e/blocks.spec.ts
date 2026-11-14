@@ -4,10 +4,10 @@ test('ladder PID block lesson and the block library', async ({ page }) => {
 	page.on('dialog', (d) => d.accept());
 	await page.goto('/editor/lesson-oven-pid-lad');
 	await page.evaluate(() => localStorage.setItem('plcsim:tips-off', '1'));
-	await page.getByRole('button', { name: 'Pokaż rozwiązanie' }).click();
+	await page.getByRole('button', { name: 'Show solution' }).click();
 	await expect(page.getByLabel('PID_1 KP')).toHaveValue('80.0');
-	await page.getByRole('button', { name: 'Sprawdź rozwiązanie' }).click();
-	await expect(page.getByText('Zaliczone!')).toBeVisible({ timeout: 30_000 });
+	await page.getByRole('button', { name: 'Check solution' }).click();
+	await expect(page.getByText('Passed!')).toBeVisible({ timeout: 30_000 });
 
 	// insert another block from the palette
 	await page.getByLabel('Insert a function block').selectOption('SCALE');
@@ -15,7 +15,7 @@ test('ladder PID block lesson and the block library', async ({ page }) => {
 
 	// own block in the library
 	await page.getByRole('button', { name: 'Blocks', exact: true }).click();
-	await page.getByRole('button', { name: 'Wstaw przykładowy blok' }).click();
+	await page.getByRole('button', { name: 'Insert an example block' }).click();
 	await expect(page.getByRole('paragraph').filter({ hasText: 'Valve' })).toBeVisible();
 	await page.getByRole('button', { name: 'Program', exact: true }).click();
 	await page.getByLabel('Insert a function block').selectOption('Valve');
@@ -26,7 +26,7 @@ test('exports a lesson solution as TIA Portal SCL and PLCopen XML', async ({ pag
 	page.on('dialog', (d) => d.accept());
 	await page.goto('/editor/lesson-oven-pid-lad');
 	await page.evaluate(() => localStorage.setItem('plcsim:tips-off', '1'));
-	await page.getByRole('button', { name: 'Pokaż rozwiązanie' }).click();
+	await page.getByRole('button', { name: 'Show solution' }).click();
 	await expect(page.getByLabel('PID_1 KP')).toHaveValue('80.0');
 
 	const scl = page.waitForEvent('download');
@@ -50,9 +50,9 @@ test('arrays, RETAIN and a cyclic interrupt: the oven filter lesson', async ({ p
 	page.on('dialog', (d) => d.accept());
 	await page.goto('/editor/lesson-oven-filter');
 	await page.evaluate(() => localStorage.setItem('plcsim:tips-off', '1'));
-	await page.getByRole('button', { name: 'Pokaż rozwiązanie' }).click();
-	await page.getByRole('button', { name: 'Sprawdź rozwiązanie' }).click();
-	await expect(page.getByText('Zaliczone!')).toBeVisible({ timeout: 30_000 });
+	await page.getByRole('button', { name: 'Show solution' }).click();
+	await page.getByRole('button', { name: 'Check solution' }).click();
+	await expect(page.getByText('Passed!')).toBeVisible({ timeout: 30_000 });
 	await page.getByRole('button', { name: '▶ Run' }).click();
 	await expect(page.getByLabel('Cyclic interrupt runs')).toBeVisible();
 });

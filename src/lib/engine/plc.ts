@@ -38,6 +38,10 @@ export interface DiagEntry {
 	/** simulated time of the event, ms */
 	timeMs: number;
 	kind: 'info' | 'warning' | 'error';
+	/** what happened, for translation: e.g. `progError`, with its values in `params` */
+	code: string;
+	params: Record<string, string | number>;
+	/** the event in Polish (the language of the learning content) */
 	text: string;
 }
 
@@ -171,7 +175,9 @@ export class Plc {
 		this.#options = options;
 		this.#log(
 			'info',
-			`Program wgrany do CPU (${program.length} instrukcji)${keep ? ', dane RETAIN zachowane' : ''}`
+			keep ? 'downloadRetain' : 'download',
+			`Program wgrany do CPU (${program.length} instrukcji)${keep ? ', dane RETAIN zachowane' : ''}`,
+			{ n: program.length }
 		);
 		this.#program = [...program];
 		this.#tapCount = program.reduce(
@@ -190,7 +196,7 @@ export class Plc {
 	/** Switches to RUN. Returns false when the CPU is in FAULT (call reset first). */
 	run(): boolean {
 		if (this.#mode === 'FAULT') return false;
-		if (this.#mode !== 'RUN') this.#log('info', 'Zmiana trybu: STOP → RUN');
+		if (this.#mode !== 'RUN') this.#log('info', 'toRun', 'Zmiana trybu: STOP → RUN');
 		this.#mode = 'RUN';
 		return true;
 	}
@@ -204,21 +210,26 @@ export class Plc {
 		return this.#cycle;
 	}
 
-	#log(kind: DiagEntry['kind'], text: string) {
-		this.#diag.push({ n: ++this.#diagCount, timeMs: this.#timeMs, kind, text });
+	#log(
+		kind: DiagEntry['kind'],
+		code: string,
+		text: string,
+		params: Record<string, string | number> = {}
+	) {
+		this.#diag.push({ n: ++this.#diagCount, timeMs: this.#timeMs, kind, code, params, text });
 		if (this.#diag.length > DIAG_SIZE) this.#diag.shift();
 	}
 
-	#halt(e: PlcFault, text: string) {
+	#halt(e: PlcFault, code: string, text: string, params: Record<string, string | number> = {}) {
 		this.#fault = e;
 		this.#mode = 'FAULT';
 		this.#outputs.fill(0);
-		this.#log('error', text);
+		this.#log('error', code, text, params);
 	}
 
 	/** Switches to STOP. Outputs go off, memory is kept (warm restart on next run). */
 	stop(): void {
-		if (this.#mode === 'RUN') this.#log('info', 'Zmiana trybu: RUN → STOP');
+		if (this.#mode === 'RUN') this.#log('info', 'toStop', 'Zmiana trybu: RUN → STOP');
 		if (this.#mode !== 'FAULT') this.#mode = 'STOP';
 		this.#outputs.fill(0);
 	}
@@ -292,11 +303,18 @@ export class Plc {
 			if (o.programmingError === undefined || handling) {
 				this.#log(
 					'error',
-					`Błąd programowania: ${message} (instrukcja ${pc}) — brak OB121, CPU w STOP`
+					'progError',
+					`Błąd programowania: indeks poza zakresem tablicy ${message} (instrukcja ${pc}) — brak OB121, CPU w STOP`,
+					{ what: message, pc }
 				);
 				return false;
 			}
-			this.#log('warning', `Błąd programowania: ${message} (instrukcja ${pc}) — obsłużony w OB121`);
+			this.#log(
+				'warning',
+				'progErrorOb121',
+				`Błąd programowania: indeks poza zakresem tablicy ${message} (instrukcja ${pc}) — obsłużony w OB121`,
+				{ what: message, pc }
+			);
 			handling = true;
 			steps += this.#exec(0, o.programmingError);
 			handling = false;
@@ -319,7 +337,7 @@ export class Plc {
 		try {
 			if (this.#scanCount === 0 && o.startup !== undefined) {
 				run(0, o.startup);
-				this.#log('info', 'Rozruch: wykonano OB100');
+				this.#log('info', 'startup', 'Rozruch: wykonano OB100');
 			}
 			// the cyclic interrupt interrupts the main program each time its interval elapses
 			if (o.cyclic) {
@@ -334,14 +352,16 @@ export class Plc {
 			this.#lastScanSteps = main;
 		} catch (e) {
 			if (!(e instanceof PlcFault)) throw e;
-			this.#halt(
-				e,
-				e.kind === 'watchdog'
-					? `Przekroczony 2 × maksymalny czas cyklu (${2 * MAX_CYCLE_MS} ms) — CPU w STOP`
-					: e.kind === 'program'
-						? `CPU w STOP po błędzie programowania`
-						: `Błąd CPU: ${e.message} — CPU w STOP`
-			);
+			if (e.kind === 'watchdog')
+				this.#halt(
+					e,
+					'watchdog2x',
+					`Przekroczony 2 × maksymalny czas cyklu (${2 * MAX_CYCLE_MS} ms) — CPU w STOP`,
+					{ ms: 2 * MAX_CYCLE_MS }
+				);
+			else if (e.kind === 'program')
+				this.#halt(e, 'progStop', 'CPU w STOP po błędzie programowania');
+			else this.#halt(e, 'cpuError', `Błąd CPU: ${e.message} — CPU w STOP`, { what: e.message });
 			return false;
 		}
 
@@ -349,15 +369,28 @@ export class Plc {
 		if (steps > this.maxStepsPerScan) {
 			const over = `Przekroczony maksymalny czas cyklu: ${execMs.toFixed(1)} ms > ${MAX_CYCLE_MS} ms`;
 			if (o.timeError === undefined) {
-				this.#halt(new PlcFault(over, 0, 'watchdog'), `${over} — brak OB80, CPU w STOP`);
+				this.#halt(
+					new PlcFault(over, 0, 'watchdog'),
+					'timeError',
+					`${over} — brak OB80, CPU w STOP`,
+					{
+						ms: execMs.toFixed(1),
+						max: MAX_CYCLE_MS
+					}
+				);
 				return false;
 			}
-			this.#log('warning', `${over} — obsłużony w OB80`);
+			this.#log('warning', 'timeErrorOb80', `${over} — obsłużony w OB80`, {
+				ms: execMs.toFixed(1),
+				max: MAX_CYCLE_MS
+			});
 			try {
 				this.#exec(elapsed, o.timeError, onError);
 			} catch (e) {
 				if (!(e instanceof PlcFault)) throw e;
-				this.#halt(e, `Błąd CPU w OB80: ${e.message} — CPU w STOP`);
+				this.#halt(e, 'cpuError', `Błąd CPU w OB80: ${e.message} — CPU w STOP`, {
+					what: e.message
+				});
 				return false;
 			}
 		}

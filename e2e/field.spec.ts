@@ -25,18 +25,18 @@ test('HMI: the demo panel shows the machine and raises a warning to acknowledge'
 
 test('commissioning: faulty wiring fails, the corrected circuit passes', async ({ page }) => {
 	await page.goto('/editor/lesson-commissioning-conveyor', { waitUntil: 'networkidle' });
-	await expect(page.getByText('🔧 Uruchomienie')).toBeVisible();
+	await expect(page.getByText('🔧 Commissioning')).toBeVisible();
 	await page.getByRole('button', { name: 'Test I/O' }).click();
 	await expect(page.getByRole('heading', { name: 'Test sygnałów (I/O check)' })).toBeVisible();
 	await expect(page.locator('tr', { hasText: 'BeltFeedback' })).toContainText('— nic —');
 
-	await page.getByRole('button', { name: 'Sprawdź rozwiązanie' }).click();
+	await page.getByRole('button', { name: 'Check solution' }).click();
 	await expect(page.getByText(/✗\s*Start i Stop sterują taśmą/)).toBeVisible();
 
 	page.once('dialog', (d) => d.accept());
-	await page.getByRole('button', { name: 'Pokaż rozwiązanie' }).click();
-	await page.getByRole('button', { name: 'Sprawdź rozwiązanie' }).click();
-	await expect(page.getByText('Zaliczone!')).toBeVisible();
+	await page.getByRole('button', { name: 'Show solution' }).click();
+	await page.getByRole('button', { name: 'Check solution' }).click();
+	await expect(page.getByText('Passed!')).toBeVisible();
 	await page.getByRole('button', { name: 'Test I/O' }).click();
 	await expect(page.locator('tr', { hasText: 'BeltFeedback' })).toContainText('K1 (FB)');
 });
@@ -44,7 +44,7 @@ test('commissioning: faulty wiring fails, the corrected circuit passes', async (
 test('VFD: the inverter follows RUN and the speed word', async ({ page }) => {
 	await page.goto('/editor/lesson-commissioning-vfd', { waitUntil: 'networkidle' });
 	page.once('dialog', (d) => d.accept());
-	await page.getByRole('button', { name: 'Pokaż rozwiązanie' }).click();
+	await page.getByRole('button', { name: 'Show solution' }).click();
 	await page.getByRole('button', { name: '▶ Run' }).click();
 	await page.getByRole('button', { name: 'Circuit' }).click();
 	await pressDevice(page, 'S1');

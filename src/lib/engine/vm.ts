@@ -262,7 +262,8 @@ export function execute(
 					push(state.taps[ins.slot] === 1);
 					break;
 				case 'ERR':
-					if (!onError?.(ins.message, pc)) throw new PlcFault(ins.message, pc, 'program');
+					if (!onError?.(ins.message, pc))
+						throw new PlcFault(`Index out of range: ${ins.message}`, pc, 'program');
 					break;
 			}
 

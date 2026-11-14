@@ -18,9 +18,9 @@ test('drive lab: a flywheel braked too fast trips on DC overvoltage', async ({ p
 test('PROFIdrive lesson: the reference program runs the drive', async ({ page }) => {
 	page.on('dialog', (d) => d.accept());
 	await page.goto('/editor/lesson-drive-profidrive');
-	await page.getByRole('button', { name: 'Pokaż rozwiązanie' }).click();
-	await page.getByRole('button', { name: 'Sprawdź rozwiązanie' }).click();
-	await expect(page.getByText('Zaliczone!')).toBeVisible({ timeout: 20_000 });
+	await page.getByRole('button', { name: 'Show solution' }).click();
+	await page.getByRole('button', { name: 'Check solution' }).click();
+	await expect(page.getByText('Passed!')).toBeVisible({ timeout: 20_000 });
 	await page.getByRole('button', { name: 'Process' }).click();
 	await expect(page.getByText('S1 · Blokada załączenia', { exact: true })).toBeVisible();
 });

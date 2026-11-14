@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import { newId } from '#lib/ladder/model.js';
 	import type { ProjectState } from '#lib/project/state.svelte.js';
 	import type { SymbolEntry } from '#lib/symbols/symbols.js';
@@ -26,13 +27,10 @@
 
 <div class="mx-auto max-w-4xl space-y-4 p-6">
 	<div>
-		<h1 class="text-lg font-semibold text-white">Symbol table</h1>
+		<h1 class="text-lg font-semibold text-white">{t('sym.title')}</h1>
 		<p class="mt-1 text-sm text-slate-400">
-			Give addresses meaningful names and use them in the program — <code class="text-emerald-300"
-				>Start</code
-			>
-			instead of <code class="text-emerald-300">I0.0</code>. Wired devices from the circuit are
-			added automatically.
+			{t('sym.intro1')} <code class="text-emerald-300">Start</code>
+			{t('sym.instead')} <code class="text-emerald-300">I0.0</code>{t('sym.intro2')}
 		</p>
 	</div>
 
@@ -41,8 +39,8 @@
 			<tr>
 				<th class="px-2 font-medium">Name</th>
 				<th class="w-28 px-2 font-medium">Address</th>
-				<th class="px-2 font-medium">Comment</th>
-				<th class="w-24 px-2 font-medium">Source</th>
+				<th class="px-2 font-medium">{t('sym.comment')}</th>
+				<th class="w-24 px-2 font-medium">{t('sym.source')}</th>
 				<th class="w-8"></th>
 			</tr>
 		</thead>
@@ -71,7 +69,7 @@
 							bind:value={s.name}
 							placeholder="Name"
 							disabled={locked}
-							aria-label="Symbol name"
+							aria-label={t('sym.symbolName')}
 						/>
 					</td>
 					<td
@@ -86,9 +84,9 @@
 						<input
 							class="{cell} font-sans"
 							bind:value={s.comment}
-							placeholder="Comment"
+							placeholder={t('sym.comment')}
 							disabled={locked}
-							aria-label="Comment"
+							aria-label={t('sym.comment')}
 						/>
 					</td>
 					<td class="px-3 text-xs text-slate-500">user</td>
@@ -110,7 +108,7 @@
 		disabled={locked}
 		onclick={add}
 	>
-		+ Add symbol
+		{t('sym.add')}
 	</button>
 
 	{#if project.symbols.issues.length}

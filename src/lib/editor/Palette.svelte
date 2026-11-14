@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import type { LadderDocument } from '#lib/ladder/document.svelte.js';
 	import {
 		coil,
@@ -54,7 +55,7 @@
 
 	const groups = [
 		{
-			label: 'Contacts',
+			label: 'pal.contacts' as const,
 			items: [
 				{ text: '┤ ├', title: 'Normally open contact', add: () => doc.insert(contact('NO')) },
 				{ text: '┤/├', title: 'Normally closed contact', add: () => doc.insert(contact('NC')) },
@@ -63,7 +64,7 @@
 			]
 		},
 		{
-			label: 'Coils',
+			label: 'pal.coils' as const,
 			items: [
 				{ text: '( )', title: 'Coil', add: () => doc.addCoil(coil('COIL')) },
 				{ text: '(/)', title: 'Negated coil', add: () => doc.addCoil(coil('NCOIL')) },
@@ -72,7 +73,7 @@
 			]
 		},
 		{
-			label: 'Boxes',
+			label: 'pal.boxes' as const,
 			items: [
 				{ text: 'TON', title: 'On-delay timer', add: () => doc.insert(timer('TON')) },
 				{ text: 'TOF', title: 'Off-delay timer', add: () => doc.insert(timer('TOF')) },
@@ -94,23 +95,27 @@
 		'rounded px-2 py-1 font-mono text-xs text-slate-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent';
 </script>
 
-<div class="flex flex-wrap items-center gap-3" role="toolbar" aria-label="Ladder elements">
+<div class="flex flex-wrap items-center gap-3" role="toolbar" aria-label={t('pal.elements')}>
 	<div class="flex items-center gap-0.5 rounded-md border border-slate-800 bg-slate-900 p-0.5">
-		<span class="px-1.5 text-[10px] tracking-wider text-slate-500 uppercase">Insert</span>
+		<span class="px-1.5 text-[10px] tracking-wider text-slate-500 uppercase">{t('pal.insert')}</span
+		>
 		{#each ['before', 'after'] as const as mode (mode)}
 			<button
 				class="{button} {doc.insertMode === mode ? 'bg-slate-700 text-emerald-300' : ''}"
 				title="Insert new elements {mode} the selection"
 				aria-pressed={doc.insertMode === mode}
 				{disabled}
-				onclick={() => (doc.insertMode = mode)}>{mode === 'before' ? '← before' : 'after →'}</button
+				onclick={() => (doc.insertMode = mode)}
+				>{mode === 'before' ? t('pal.before') : t('pal.after')}</button
 			>
 		{/each}
 	</div>
 
 	{#each groups as group (group.label)}
 		<div class="flex items-center gap-0.5 rounded-md border border-slate-800 bg-slate-900 p-0.5">
-			<span class="px-1.5 text-[10px] tracking-wider text-slate-500 uppercase">{group.label}</span>
+			<span class="px-1.5 text-[10px] tracking-wider text-slate-500 uppercase"
+				>{t(group.label)}</span
+			>
 			{#each group.items as item (item.text)}
 				<button class={button} title={item.title} {disabled} onclick={item.add}>{item.text}</button>
 			{/each}
@@ -118,10 +123,11 @@
 	{/each}
 
 	<label class="flex items-center gap-1 rounded-md border border-slate-800 bg-slate-900 p-0.5">
-		<span class="px-1.5 text-[10px] tracking-wider text-slate-500 uppercase">Blocks</span>
+		<span class="px-1.5 text-[10px] tracking-wider text-slate-500 uppercase">{t('pal.blocks')}</span
+		>
 		<select
 			class="rounded bg-slate-900 px-1 py-1 font-mono text-xs text-violet-200 disabled:opacity-40"
-			aria-label="Insert a function block"
+			aria-label={t('pal.insertFb')}
 			{disabled}
 			value=""
 			onchange={(e) => {
@@ -140,57 +146,52 @@
 	<div class="flex items-center gap-0.5 rounded-md border border-slate-800 bg-slate-900 p-0.5">
 		<button
 			class={button}
-			title="Add a parallel branch around the selected element"
+			title={t('pal.branchTitle')}
 			disabled={!canBranch}
 			onclick={() => doc.branch()}
 		>
-			⑂ Branch
+			{t('pal.branch')}
+		</button>
+		<button class={button} title={t('pal.networkTitle')} {disabled} onclick={() => doc.addRung()}>
+			{t('pal.network')}
 		</button>
 		<button
 			class={button}
-			title="Add a network below the selected one"
-			{disabled}
-			onclick={() => doc.addRung()}
-		>
-			+ Network
-		</button>
-		<button
-			class={button}
-			title="Move network up"
+			title={t('pal.up')}
 			disabled={disabled || !doc.selectedRung}
 			onclick={() => doc.moveSelectedRung(-1)}>↑</button
 		>
 		<button
 			class={button}
-			title="Move network down"
+			title={t('pal.down')}
 			disabled={disabled || !doc.selectedRung}
 			onclick={() => doc.moveSelectedRung(1)}>↓</button
 		>
 		<button
 			class={button}
-			title="Copy (Ctrl+C)"
+			title={t('pal.copyTitle')}
 			disabled={disabled || !doc.canCopy}
-			onclick={() => doc.copy()}>Copy</button
+			onclick={() => doc.copy()}>{t('pal.copy')}</button
 		>
 		<button
 			class={button}
-			title="Paste after the selection (Ctrl+V)"
+			title={t('pal.pasteTitle')}
 			disabled={disabled || !doc.clipboard}
-			onclick={() => doc.paste()}>Paste</button
+			onclick={() => doc.paste()}>{t('pal.paste')}</button
 		>
 		<button
 			class={button}
-			title="Duplicate (Ctrl+D)"
+			title={t('pal.duplicateTitle')}
 			disabled={disabled || !doc.canCopy}
-			onclick={() => doc.duplicate()}>Duplicate</button
+			onclick={() => doc.duplicate()}>{t('pal.duplicate')}</button
 		>
 		<button
 			class="{button} text-red-300"
-			title="Delete selection (Del)"
+			title={t('pal.deleteTitle')}
 			disabled={disabled || !doc.selectedId}
 			onclick={() => doc.removeSelected()}
 		>
-			Delete
+			{t('pal.delete')}
 		</button>
 	</div>
 </div>
@@ -200,7 +201,7 @@
 		Type
 		<select
 			class="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-xs text-slate-100 disabled:opacity-50"
-			aria-label="Element type"
+			aria-label={t('pal.elementType')}
 			value={selectedType.type}
 			{disabled}
 			onchange={(e) => doc.setType(e.currentTarget.value)}

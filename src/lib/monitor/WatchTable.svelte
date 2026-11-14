@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import { formatAddress } from '#lib/engine/index.js';
 	import type { ProjectState } from '#lib/project/state.svelte.js';
 	import { readBit, readNumber } from '#lib/runtime/read.js';
@@ -82,12 +83,12 @@
 <div class="mx-auto max-w-5xl space-y-4 p-6">
 	<div class="flex items-end justify-between gap-4">
 		<div>
-			<h1 class="text-lg font-semibold text-white">Watch table</h1>
+			<h1 class="text-lg font-semibold text-white">{t('watch.title')}</h1>
 			<p class="mt-1 text-sm text-slate-400">
-				Live values while the PLC runs. <b class="text-slate-300">Modify</b> writes a Q/M value
-				once;
-				<b class="text-slate-300">force</b> pins an I/Q/M bit until you release it — even against the
-				program.
+				{t('watch.live')} <b class="text-slate-300">Modify</b>
+				{t('watch.modifyText')}
+				<b class="text-slate-300">force</b>
+				{t('watch.forceText')}
 			</p>
 		</div>
 		<button
@@ -108,7 +109,7 @@
 			<tr>
 				<th class="px-2 font-medium">Operand</th>
 				<th class="w-20 px-2 font-medium">Format</th>
-				<th class="w-40 px-2 font-medium">Value</th>
+				<th class="w-40 px-2 font-medium">{t('watch.value')}</th>
 				<th class="w-44 px-2 font-medium">Modify</th>
 				<th class="w-28 px-2 font-medium">Force</th>
 				<th class="w-12 px-2 text-center font-medium">Trend</th>
@@ -134,7 +135,7 @@
 						<select
 							class="rounded bg-slate-800 px-1 py-0.5 font-mono text-[11px] text-slate-200"
 							bind:value={row.entry.format}
-							aria-label="Display format"
+							aria-label={t('watch.displayFormat')}
 						>
 							{#each WATCH_FORMATS as f (f)}<option value={f}>{f}</option>{/each}
 						</select>
@@ -156,7 +157,7 @@
 						{#if row.forced !== null}
 							<span
 								class="ml-1 rounded bg-red-600 px-1 text-[9px] font-bold text-white"
-								title="Forced">F</span
+								title={t('watch.forced')}>F</span
 							>
 						{/if}
 					</td>
@@ -179,9 +180,10 @@
 										class="w-24 rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[11px] text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500"
 										placeholder="value"
 										bind:value={pending[row.entry.id]}
-										aria-label="New value"
+										aria-label={t('watch.newValue')}
 									/>
-									<button class="{small} bg-slate-800 hover:bg-slate-700">Write</button>
+									<button class="{small} bg-slate-800 hover:bg-slate-700">{t('watch.write')}</button
+									>
 								</form>
 							{/if}
 						{:else}
@@ -195,19 +197,19 @@
 									class="{small} {row.forced === false
 										? 'bg-red-600 text-white'
 										: 'bg-slate-800 hover:bg-slate-700'}"
-									title="Force to 0"
+									title={t('watch.force0')}
 									onclick={() => runtime.force(row.key!, false)}>F0</button
 								>
 								<button
 									class="{small} {row.forced === true
 										? 'bg-red-600 text-white'
 										: 'bg-slate-800 hover:bg-slate-700'}"
-									title="Force to 1"
+									title={t('watch.force1')}
 									onclick={() => runtime.force(row.key!, true)}>F1</button
 								>
 								<button
 									class="{small} bg-slate-800 hover:bg-slate-700"
-									title="Release force"
+									title={t('watch.release')}
 									disabled={row.forced === null}
 									onclick={() => runtime.force(row.key!, null)}>×</button
 								>
@@ -221,7 +223,7 @@
 							type="checkbox"
 							class="accent-emerald-500"
 							bind:checked={row.entry.trend}
-							aria-label="Show in trend"
+							aria-label={t('watch.showTrend')}
 						/>
 					</td>
 					<td class="rounded-r">
@@ -239,14 +241,14 @@
 	<form class="flex gap-2" onsubmit={(e) => (e.preventDefault(), add())}>
 		<input
 			class="w-56 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 font-mono text-xs text-slate-100 outline-none focus:border-emerald-500"
-			placeholder="Address or symbol, e.g. MW10"
+			placeholder={t('watch.addressHint')}
 			bind:value={newOperand}
-			aria-label="Operand to watch"
+			aria-label={t('watch.operandToWatch')}
 		/>
 		<button
 			class="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:border-slate-500"
 		>
-			+ Watch
+			{t('watch.add')}
 		</button>
 	</form>
 </div>

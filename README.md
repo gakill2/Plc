@@ -10,6 +10,8 @@ it and watch the controller execute your program scan by scan — or let it driv
 
 ## Features
 
+- **English and Polish interface** — switch in the header (the learning content is in Polish).
+  Works on desktops and tablets; installable as an offline PWA.
 - **Realistic scan cycle** — process images, RUN / STOP / PAUSE / single STEP, adjustable speed
   (×0.1 – ×10). The cycle time follows the program (about 1 µs per instruction over a 10 ms
   minimum), a maximum cycle time of 150 ms calls OB80 or stops the CPU, programming errors (an array
@@ -131,9 +133,9 @@ Design decisions are recorded as ADRs:
 
 ## Quality
 
-- ~580 unit tests (Vitest) for the engine, compilers, runtime, plants, lessons and persistence,
+- ~600 unit tests (Vitest) for the engine, compilers, runtime, plants, lessons and persistence,
   with coverage thresholds enforced in CI (~97 % lines, ~90 % branches on the core).
-- 46 end-to-end tests (Playwright) for the main flows: running the demo, forcing, ST errors,
+- 47 end-to-end tests (Playwright) for the main flows: running the demo, forcing, ST errors,
   undo/redo, lessons, projects and share links.
 - Strict TypeScript, ESLint and Prettier; GitHub Actions runs everything on every push.
 

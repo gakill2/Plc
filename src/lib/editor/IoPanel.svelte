@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '#lib/i18n/i18n.svelte.js';
 	import type { PlcRuntime } from '#lib/runtime/runtime.svelte.js';
 
 	/** `labels`: device names per terminal; wired inputs are driven by their device. */
@@ -23,12 +24,12 @@
 
 <section aria-labelledby="io-title" class="space-y-3">
 	<h2 id="io-title" class="text-xs font-semibold tracking-wider text-slate-400 uppercase">
-		I/O terminals
+		{t('io.title')}
 	</h2>
 
 	<div>
 		<h3 class="mb-1.5 text-[11px] text-slate-500">
-			Inputs — click to toggle, hold ● for a push button
+			{t('io.inputsHint')}
 		</h3>
 		<div class="grid grid-cols-2 gap-1">
 			{#each inputs as t (t.address)}
@@ -84,7 +85,7 @@
 	</div>
 
 	<div>
-		<h3 class="mb-1.5 text-[11px] text-slate-500">Outputs</h3>
+		<h3 class="mb-1.5 text-[11px] text-slate-500">{t('io.outputs')}</h3>
 		<div class="grid grid-cols-4 gap-1">
 			{#each outputs as t (t.address)}
 				{@const lit = isLit(t.byte, t.bit)}
