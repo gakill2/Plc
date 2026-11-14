@@ -6,13 +6,14 @@ A browser-based PLC simulator for learning industrial automation. Build a circui
 controller, push buttons, sensors, lamps and motors, program it in **Ladder Logic** or
 **Structured Text**, then run it and watch the controller execute your program scan by scan.
 
-**Live demo:** _coming soon_ · **Status:** stage 5 — simulated plants (traffic light, tank, sorting conveyor) and 7 auto-graded lessons
+**Live demo:** _coming soon_ · **Status:** stage 6 — Structured Text compiler and editor; lessons can be solved in LAD or ST
 
 ## Planned features
 
 - Realistic scan cycle (read inputs → execute → write outputs) with RUN / STOP / STEP
 - Ladder editor with live power-flow highlighting
-- Structured Text editor with inline compile errors
+- Structured Text: hand-written lexer + recursive-descent parser + code generator (IF/CASE/FOR/WHILE/REPEAT,
+  TON/TOF/TP/CTU/CTD/R_TRIG/F_TRIG, automatic VAR allocation), CodeMirror editor with inline errors
 - IEC timers (TON, TOF, TP) and counters (CTU, CTD, CTUD)
 - Circuit editor: wire devices to I/O terminals, interact with them while running
 - Watch table with forcing, timing diagram of signals
@@ -24,7 +25,9 @@ See [PLAN.md](./PLAN.md) for the full plan and roadmap.
 ## Architecture (short version)
 
 ```
-Ladder / ST  ──compile──▶  shared IR (instruction list)  ──▶  VM in a Web Worker
+Ladder ─┐
+        ├─compile──▶  shared IR (instruction list)  ──▶  VM in a Web Worker
+ST ─────┘
                                                              │
 UI (Svelte 5) ◀──── memory snapshots every frame ────────────┘
 ```

@@ -4,7 +4,9 @@ import { LadderDocument } from '#lib/ladder/document.svelte.js';
 import { checkSymbols, type SymbolEntry } from '#lib/symbols/symbols.js';
 import type { WatchEntry } from '#lib/monitor/watch.js';
 import type { ProcessKind } from '#lib/processes/types.js';
-import type { Project } from './project.js';
+import type { CompiledLadder } from '#lib/ladder/compiler.js';
+import { compileSt, type StCompileResult } from '#lib/st/compiler.js';
+import type { Project, ProgramLanguage } from './project.js';
 
 export type ProblemSource = 'program' | 'circuit' | 'symbols';
 
@@ -26,6 +28,15 @@ export class ProjectState {
 	/** Device symbols first — they are what the user sees on the circuit. */
 	readonly deviceSymbols: SymbolEntry[] = $derived(deviceSymbols(this.circuit));
 	readonly symbols = $derived(checkSymbols([...this.deviceSymbols, ...this.userSymbols]));
+	language: ProgramLanguage = $state('ladder');
+	st: string = $state('');
+
+	/** Structured Text compile result, while ST is the active language. */
+	readonly stResult: StCompileResult | null = $derived(
+		this.language === 'st' ? compileSt(this.st, { symbols: this.symbols.map }) : null
+	);
+	/** The active program in a common shape — this is what gets downloaded and graded. */
+	readonly compiled: CompiledLadder;
 
 	readonly problems: Problem[];
 
@@ -36,8 +47,11 @@ export class ProjectState {
 		this.scenario = project.scenario;
 		this.lesson = project.lesson;
 		this.ladder = new LadderDocument(project.ladder, () => this.symbols);
+		this.language = project.language ?? 'ladder';
+		this.st = project.st ?? '';
+		this.compiled = $derived(this.stResult ? fromSt(this.stResult, this.st) : this.ladder.compiled);
 		this.problems = $derived([
-			...this.ladder.compiled.diagnostics.map((d) => ({ ...d, source: 'program' as const })),
+			...this.compiled.diagnostics.map((d) => ({ ...d, source: 'program' as const })),
 			...this.symbols.issues.map((d) => ({ ...d, source: 'symbols' as const })),
 			...checkCircuit(this.circuit, DEFAULT_MEMORY_CONFIG).map((d) => ({
 				...d,
@@ -54,7 +68,23 @@ export class ProjectState {
 			symbols: $state.snapshot(this.userSymbols),
 			watch: $state.snapshot(this.watch),
 			scenario: this.scenario,
-			lesson: this.lesson
+			lesson: this.lesson,
+			language: this.language,
+			st: this.st
 		};
 	}
+}
+
+/** Adapts an ST compile result to the shape the rest of the app uses for compiled programs. */
+function fromSt(result: StCompileResult, src: string): CompiledLadder {
+	const lineOf = (offset: number) => src.slice(0, offset).split('\n').length;
+	return {
+		program: result.program,
+		taps: new Map(),
+		sourceMap: result.lines.map((l) => (l === null ? null : `L${l}`)),
+		diagnostics: result.diagnostics.map((d) => ({
+			id: `st:${d.from}`,
+			message: `Line ${lineOf(d.from)}: ${d.message}`
+		}))
+	};
 }

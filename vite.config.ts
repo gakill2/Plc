@@ -35,7 +35,10 @@ export default defineConfig({
 				'src/lib/runtime/trace.ts',
 				'src/lib/processes/models.ts',
 				'src/lib/lessons/runner.ts',
-				'src/lib/lessons/lessons.ts'
+				'src/lib/lessons/lessons.ts',
+				'src/lib/st/lexer.ts',
+				'src/lib/st/parser.ts',
+				'src/lib/st/compiler.ts'
 			],
 			exclude: [
 				'**/*.spec.ts',

@@ -2,6 +2,7 @@ import { demoCircuit, type Circuit } from '#lib/circuit/model.js';
 import { demoProgram } from '#lib/ladder/defaults.js';
 import type { LadderProgram } from '#lib/ladder/model.js';
 import { demoWatch, type WatchEntry } from '#lib/monitor/watch.js';
+import { DEMO_ST } from '#lib/st/examples.js';
 import type { SymbolEntry } from '#lib/symbols/symbols.js';
 import { isProcessKind } from '#lib/processes/models.js';
 import type { ProcessKind } from '#lib/processes/types.js';
@@ -18,13 +19,21 @@ export interface Project {
 	scenario?: ProcessKind;
 	/** Lesson this project belongs to. */
 	lesson?: string;
+	/** Which program is active: the ladder diagram or the Structured Text source. */
+	language?: ProgramLanguage;
+	/** Structured Text source (kept even while the ladder program is active). */
+	st?: string;
 }
+
+export type ProgramLanguage = 'ladder' | 'st';
 
 export const demoProject = (): Project => ({
 	version: 2,
 	ladder: demoProgram(),
 	circuit: demoCircuit(),
 	watch: demoWatch(),
+	language: 'ladder',
+	st: DEMO_ST,
 	symbols: [
 		{
 			id: 'sym-motor-starts',
@@ -52,7 +61,9 @@ export function parseProject(raw: unknown): Project | null {
 			symbols: Array.isArray(raw.symbols) ? (raw.symbols as SymbolEntry[]) : [],
 			watch: Array.isArray(raw.watch) ? (raw.watch as WatchEntry[]) : demoWatch(),
 			scenario: isProcessKind(raw.scenario) ? raw.scenario : undefined,
-			lesson: typeof raw.lesson === 'string' ? raw.lesson : undefined
+			lesson: typeof raw.lesson === 'string' ? raw.lesson : undefined,
+			language: raw.language === 'st' ? 'st' : 'ladder',
+			st: typeof raw.st === 'string' ? raw.st : ''
 		};
 	}
 	// stage 2 saved the bare ladder program

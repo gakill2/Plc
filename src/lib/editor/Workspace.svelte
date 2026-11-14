@@ -10,6 +10,11 @@
 	import { getLesson, LESSON_PREFIX } from '#lib/lessons/lessons.js';
 	import ProcessView from '#lib/processes/ProcessView.svelte';
 	import { createProcess } from '#lib/processes/models.js';
+	import type { ProgramLanguage } from '#lib/project/project.js';
+	import type { StVariable } from '#lib/st/compiler.js';
+	import { DEMO_ST, EMPTY_ST } from '#lib/st/examples.js';
+	import StEditor from '#lib/st/StEditor.svelte';
+	import StVariables from '#lib/st/StVariables.svelte';
 	import { ProjectState, type Problem } from '#lib/project/state.svelte.js';
 	import { PlcRuntime } from '#lib/runtime/runtime.svelte.js';
 	import { resolveSymbol } from '#lib/symbols/symbols.js';
@@ -139,7 +144,8 @@
 			flashTimer = setTimeout(() => (flashProblems = false), 1500);
 			return false;
 		}
-		loaded = doc.compiled;
+		loaded = project.compiled;
+		loadedVariables = project.stResult?.variables ?? [];
 		return true;
 	}
 
@@ -159,7 +165,7 @@
 	}
 
 	function onKeydown(e: KeyboardEvent) {
-		if (view !== 'program') return;
+		if (view !== 'program' || project.language !== 'ladder') return;
 		const target = e.target as HTMLElement;
 		if (target.closest('input, select, textarea')) return;
 		if (e.key === 'Escape') doc.select(null);
@@ -167,6 +173,14 @@
 			e.preventDefault();
 			doc.removeSelected();
 		}
+	}
+
+	/** Variables of the ST program that is running (the source may have been edited since). */
+	let loadedVariables = $state.raw<StVariable[]>([]);
+
+	function setLanguage(language: ProgramLanguage) {
+		if (language === 'st' && !project.st.trim()) project.st = lesson ? EMPTY_ST : DEMO_ST;
+		project.language = language;
 	}
 
 	function showSolution() {
@@ -197,6 +211,28 @@
 </script>
 
 <svelte:window onkeydown={onKeydown} />
+
+{#snippet languageSwitch()}
+	<div
+		class="flex shrink-0 gap-0.5 rounded-md border border-slate-800 bg-slate-900 p-0.5"
+		role="group"
+		aria-label="Language"
+	>
+		{#each [{ id: 'ladder', label: 'Ladder (LAD)' }, { id: 'st', label: 'Structured Text' }] as const as l (l.id)}
+			<button
+				class="rounded px-2.5 py-1 text-xs font-medium disabled:cursor-not-allowed {project.language ===
+				l.id
+					? 'bg-sky-600 text-white'
+					: 'text-slate-400 hover:text-white'}"
+				aria-pressed={project.language === l.id}
+				disabled={runtime.online}
+				onclick={() => setLanguage(l.id)}
+			>
+				{l.label}
+			</button>
+		{/each}
+	</div>
+{/snippet}
 
 <div class="flex h-[calc(100dvh-3.5rem)] flex-col">
 	<div
@@ -244,9 +280,40 @@
 	<div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_20rem]">
 		<div class="flex min-h-0 flex-col">
 			<div class="min-h-0 flex-1">
-				{#if view === 'program'}
+				{#if view === 'program' && project.language === 'st'}
 					<div class="flex h-full flex-col">
-						<div class="border-b border-slate-800 px-4 py-2">
+						<div class="flex items-center gap-3 border-b border-slate-800 px-4 py-2">
+							{@render languageSwitch()}
+							<span class="text-[11px] text-slate-500">
+								Ctrl+Space for completions · symbols and VAR names can be used directly
+							</span>
+						</div>
+						<div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_16rem]">
+							<StEditor
+								value={project.st}
+								onChange={(text) => (project.st = text)}
+								diagnostics={project.stResult?.diagnostics ?? []}
+								readOnly={runtime.online}
+								names={() => ({
+									symbols: [...project.deviceSymbols, ...project.userSymbols],
+									variables: project.stResult?.variables ?? []
+								})}
+							/>
+							<div class="overflow-auto border-l border-slate-800 p-3">
+								<StVariables
+									variables={(loaded && runtime.online
+										? loadedVariables
+										: project.stResult?.variables) ?? []}
+									snapshot={runtime.snapshot}
+									online={runtime.online}
+								/>
+							</div>
+						</div>
+					</div>
+				{:else if view === 'program'}
+					<div class="flex h-full flex-col">
+						<div class="flex flex-wrap items-center gap-3 border-b border-slate-800 px-4 py-2">
+							{@render languageSwitch()}
 							<Palette {doc} disabled={runtime.online} />
 						</div>
 						<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -292,7 +359,7 @@
 			{#if lesson}
 				<LessonPanel
 					{lesson}
-					compiled={doc.compiled}
+					compiled={project.compiled}
 					blocked={problems.some((p) => p.source !== 'circuit')}
 					onShowSolution={showSolution}
 					onRestart={restartLesson}
@@ -334,7 +401,7 @@
 			</section>
 
 			<CodeView
-				compiled={loaded && runtime.online ? loaded : doc.compiled}
+				compiled={loaded && runtime.online ? loaded : project.compiled}
 				selectedId={doc.selectedId}
 			/>
 
