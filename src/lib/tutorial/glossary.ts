@@ -229,5 +229,107 @@ export const GLOSSARY: GlossaryEntry[] = [
 		pl: 'sterowanie dwupołożeniowe',
 		en: 'on-off (bang-bang) control',
 		text: 'Włącz poniżej progu, wyłącz powyżej — jak regulacja poziomu w zbiorniku.'
+	},
+	{
+		pl: 'czujnik PNP',
+		en: 'PNP sensor',
+		text: 'Czujnik, który przy wykryciu podaje +24 V na przewód sygnałowy. Współpracuje z wejściem typu sink (1M na 0 V).',
+		chapter: 'elektryka'
+	},
+	{
+		pl: 'czujnik NPN',
+		en: 'NPN sensor',
+		text: 'Czujnik, który przy wykryciu zwiera przewód sygnałowy do 0 V. Wymaga wejścia typu source (1M na +24 V).',
+		chapter: 'elektryka'
+	},
+	{
+		pl: 'wejście sink / source',
+		en: 'sinking / sourcing input',
+		text: 'Sposób podłączenia wspólnego zacisku modułu wejść: do 0 V (sink, dla PNP) albo do +24 V (source, dla NPN).',
+		chapter: 'elektryka'
+	},
+	{
+		pl: 'wyjście przekaźnikowe',
+		en: 'relay output',
+		text: 'Wyjście ze stykiem przekaźnika: przełącza AC i DC, ale wolno i z zużyciem styku.',
+		chapter: 'elektryka'
+	},
+	{
+		pl: 'wyjście tranzystorowe',
+		en: 'transistor output',
+		text: 'Szybkie wyjście 24 V DC bez zużycia, o małym prądzie (zwykle do 0,5 A).',
+		chapter: 'elektryka'
+	},
+	{
+		pl: 'dioda gasząca',
+		en: 'flyback diode',
+		text: 'Dioda równolegle do cewki DC, tłumi przepięcie przy wyłączaniu i chroni wyjście.',
+		chapter: 'elektryka'
+	},
+	{
+		pl: 'sygnał analogowy 4–20 mA',
+		en: '4–20 mA current loop',
+		text: 'Standardowy sygnał pomiarowy; 4 mA = początek zakresu, poniżej ok. 3,6 mA = awaria (żywe zero).',
+		chapter: 'liczby-i-analog'
+	},
+	{
+		pl: 'skalowanie',
+		en: 'scaling',
+		text: 'Przeliczenie surowej wartości z karty analogowej (np. 0…27648) na jednostki fizyczne.',
+		chapter: 'liczby-i-analog'
+	},
+	{
+		pl: 'przepełnienie',
+		en: 'overflow',
+		text: 'Wynik większy niż mieści typ danych — np. INT po 32 767 przechodzi na −32 768.',
+		chapter: 'liczby-i-analog'
+	},
+	{
+		pl: 'wartość zadana (SP)',
+		en: 'setpoint',
+		text: 'Wartość, którą regulator ma utrzymać.',
+		chapter: 'regulacja'
+	},
+	{
+		pl: 'wartość mierzona (PV)',
+		en: 'process value',
+		text: 'Aktualna wartość wielkości regulowanej, zmierzona czujnikiem.',
+		chapter: 'regulacja'
+	},
+	{
+		pl: 'histereza',
+		en: 'hysteresis',
+		text: 'Różnica między progiem włączenia i wyłączenia — zapobiega ciągłemu przełączaniu.',
+		chapter: 'regulacja'
+	},
+	{
+		pl: 'regulator PID',
+		en: 'PID controller',
+		text: 'Regulator z członami proporcjonalnym (P), całkującym (I) i różniczkującym (D).',
+		chapter: 'regulacja'
+	},
+	{
+		pl: 'blok funkcyjny (FB)',
+		en: 'function block',
+		text: 'Blok programu z własną pamięcią; każde użycie to osobna instancja (np. TON).',
+		chapter: 'organizacja'
+	},
+	{
+		pl: 'funkcja (FC)',
+		en: 'function',
+		text: 'Blok programu bez pamięci między wywołaniami.',
+		chapter: 'organizacja'
+	},
+	{
+		pl: 'blok organizacyjny (OB)',
+		en: 'organization block',
+		text: 'Blok wywoływany przez system sterownika, np. OB1 — program cykliczny.',
+		chapter: 'organizacja'
+	},
+	{
+		pl: 'blok danych (DB)',
+		en: 'data block',
+		text: 'Obszar pamięci na dane: instancji FB albo wspólne parametry.',
+		chapter: 'organizacja'
 	}
 ];

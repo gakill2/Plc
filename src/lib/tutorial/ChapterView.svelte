@@ -3,6 +3,9 @@
 	import { onMount } from 'svelte';
 	import { getLesson, lessonProjectId } from '#lib/lessons/lessons.js';
 	import AddressExplorer from './AddressExplorer.svelte';
+	import AnalogDemo from './AnalogDemo.svelte';
+	import ControlDemo from './ControlDemo.svelte';
+	import WiringDemo from './WiringDemo.svelte';
 	import MiniSim from './MiniSim.svelte';
 	import PlcOverview from './PlcOverview.svelte';
 	import { markQuizSolved, solvedQuizzes } from './progress.js';
@@ -89,6 +92,12 @@
 			<AddressExplorer />
 		{:else if block.kind === 'plc-overview'}
 			<PlcOverview />
+		{:else if block.kind === 'wiring'}
+			<WiringDemo />
+		{:else if block.kind === 'analog'}
+			<AnalogDemo />
+		{:else if block.kind === 'control'}
+			<ControlDemo initial={block.initial} />
 		{:else if block.kind === 'lesson'}
 			{@const lesson = getLesson(block.slug)}
 			{#if lesson}

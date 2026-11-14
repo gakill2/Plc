@@ -183,6 +183,121 @@ Bity numeruje się od 0 do 7, więc po \`I0.7\` jest \`I1.0\`, a nie \`I0.8\`.`
 		]
 	},
 
+	/* ------------------------------------------------------------------ elektryka */
+	{
+		slug: 'elektryka',
+		title: 'Podłączenie PLC: zasilanie, czujniki, wyjścia',
+		summary:
+			'24 V DC, czujniki PNP i NPN, wejścia sink/source, wyjścia przekaźnikowe i tranzystorowe.',
+		minutes: 10,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Program to połowa pracy — druga to **okablowanie**. W szafie sterowniczej prawie wszystko pracuje na **24 V DC**:
+
+- **L+** (często czerwony przewód) to +24 V z zasilacza, **M** (niebieski) to 0 V,
+- sterownik ma osobne zaciski zasilania (np. *L+ / M*) i moduły wejść (DI) oraz wyjść (DQ),
+- wejścia mają **wspólny zacisk** (np. *1M*) — od tego, gdzie go podłączysz, zależy, jakie czujniki zadziałają.
+
+Wejście PLC to w środku **transoptor**: dioda, przez którą musi popłynąć prąd (kilka mA). Prąd płynie tylko wtedy, gdy między zaciskiem wejścia (np. *I0.0*) a wspólnym *1M* jest **różnica napięć** 24 V.`
+			},
+			{
+				kind: 'text',
+				text: `Czujniki zbliżeniowe i optyczne mają zwykle **3 przewody**: brązowy **BN** (+24 V), niebieski **BU** (0 V) i czarny **BK** (sygnał). W środku jest tranzystor, który przełącza czarny przewód:
+
+- **PNP** — przy wykryciu podaje na sygnał **+24 V** („daje plus”),
+- **NPN** — przy wykryciu zwiera sygnał do **0 V** („daje minus”).
+
+Sprawdź sam, która kombinacja działa:`
+			},
+			{ kind: 'wiring' },
+			{
+				kind: 'table',
+				head: ['Czujnik', 'Wejście PLC', 'Wspólny zacisk 1M', 'Gdzie spotkasz'],
+				rows: [
+					['PNP (daje +24 V)', 'sink („pobiera” prąd)', 'na 0 V (M)', 'Europa — standard'],
+					[
+						'NPN (daje 0 V)',
+						'source („oddaje” prąd)',
+						'na +24 V (L+)',
+						'Azja, USA, starsze maszyny'
+					]
+				]
+			},
+			{
+				kind: 'callout',
+				tone: 'warn',
+				title: 'Czujnik świeci, a PLC nic nie widzi',
+				text: 'Klasyczny problem przy uruchomieniu: dioda w czujniku się zapala, a wejście PLC nie. Najczęściej to **niepasujący typ** (NPN na wejściu sink) albo brak połączenia wspólnego zacisku 1M. Zawsze sprawdź **diodę wejścia na module** — to ona mówi, co widzi sterownik.'
+			},
+			{
+				kind: 'text',
+				text: `**Wyjścia** są dwóch rodzajów:
+
+- **przekaźnikowe** — w środku jest mały przekaźnik, więc przełączysz prawie wszystko: 24 V DC albo 230 V AC, ale powoli (najwyżej kilka razy na sekundę) i styk się zużywa,
+- **tranzystorowe** — tylko prąd stały 24 V i niewielki prąd (ok. 0,5 A), za to bardzo szybko i bez zużycia.
+
+Wyjście PLC **nie zasila silnika** bezpośrednio. Steruje cewką **stycznika** (albo przekaźnika pośredniczącego), a dopiero styki stycznika załączają silnik 400 V. Między stycznikiem a silnikiem jest jeszcze zabezpieczenie (wyłącznik silnikowy / przekaźnik termiczny).`
+			},
+			{
+				kind: 'table',
+				head: ['Co załączasz', 'Wyjście przekaźnikowe', 'Wyjście tranzystorowe'],
+				rows: [
+					['Lampka 24 V DC', '✓', '✓'],
+					['Cewka stycznika 230 V AC', '✓', '✗ — przez przekaźnik pośredniczący'],
+					['Grzałka sterowana PWM (np. 1 Hz)', '✗ — szybko się zużyje', '✓ (przez przekaźnik SSR)'],
+					['Silnik 3 × 400 V', 'tylko przez stycznik', 'tylko przez stycznik']
+				]
+			},
+			{
+				kind: 'callout',
+				tone: 'tip',
+				title: 'Dioda gasząca',
+				text: 'Cewka przekaźnika lub stycznika to indukcyjność — przy wyłączeniu daje skok napięcia, który niszczy wyjścia tranzystorowe. Dlatego cewki DC mają **diodę gaszącą** (a AC — układ RC lub warystor).'
+			},
+			{
+				kind: 'callout',
+				tone: 'info',
+				title: 'Potwierdzenie z obiektu',
+				text: 'Wyjście = 1 nie znaczy, że silnik się kręci: stycznik może się nie załączyć, a termik zadziałać. Dlatego styk pomocniczy stycznika wraca na **wejście** PLC jako potwierdzenie. W widoku Circuit znajdziesz urządzenie *Contactor + feedback* z przyciskiem *Trip* do symulowania awarii.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Masz czujnik PNP. Gdzie podłączysz wspólny zacisk 1M modułu wejść (typu sink)?',
+				options: ['Do +24 V (L+)', 'Do 0 V (M)', 'Do czarnego przewodu czujnika'],
+				correct: 1,
+				explanation:
+					'PNP podaje +24 V na wejście, więc po drugiej stronie transoptora (1M) musi być **0 V** — wtedy płynie prąd.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Grzałkę 230 V chcesz włączać i wyłączać co sekundę (PWM). Które rozwiązanie jest dobre?',
+				options: [
+					'Wyjście przekaźnikowe PLC bezpośrednio',
+					'Wyjście tranzystorowe PLC → przekaźnik półprzewodnikowy (SSR) → grzałka',
+					'Wyjście tranzystorowe PLC bezpośrednio do grzałki'
+				],
+				correct: 1,
+				explanation:
+					'Przekaźnik mechaniczny zużyje się po kilku dniach takiej pracy, a wyjście tranzystorowe nie przełączy 230 V AC. SSR przełącza szybko, bez styków, a steruje się go z 24 V DC.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Wyjście Q0.0 = 1, lampka na module świeci, a silnik stoi. Co sprawdzisz najpierw?',
+				options: [
+					'Program — na pewno ma błąd',
+					'Obwód za wyjściem: cewkę stycznika, jej zasilanie, zabezpieczenie silnika (termik)',
+					'Wymienisz sterownik'
+				],
+				correct: 1,
+				explanation:
+					'Skoro wyjście jest załączone, program zrobił swoje. Problem jest dalej — dlatego warto mieć styk zwrotny stycznika na wejściu i wykrywać „wysterowany, a brak potwierdzenia”.'
+			}
+		]
+	},
+
 	/* ------------------------------------------------------------------ 4 */
 	{
 		slug: 'styki-i-cewki',
@@ -642,6 +757,177 @@ Wartość licznika to zwykła liczba, więc można ją **porównywać** blokiem 
 		]
 	},
 
+	/* ------------------------------------------------------------------ liczby */
+	{
+		slug: 'liczby-i-analog',
+		title: 'Liczby i sygnały analogowe',
+		summary: 'Typy danych, przepełnienie, 4–20 mA i 0–10 V, skalowanie na stopnie i bary.',
+		minutes: 9,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Do tej pory wszystko było 0 albo 1. Ale temperatura, ciśnienie, prędkość czy liczba sztuk to **liczby** — i każda ma swój **typ danych**, czyli ile miejsca zajmuje w pamięci i jakie wartości mieści.`
+			},
+			{
+				kind: 'table',
+				head: ['Typ', 'Rozmiar', 'Zakres', 'Adres / przykład'],
+				rows: [
+					['BOOL', '1 bit', '0 / 1', 'I0.0, M0.0'],
+					['BYTE', '8 bitów', '0 … 255', 'MB4'],
+					['INT', '16 bitów', '−32 768 … 32 767', 'MW10 — liczniki, wartości analogowe'],
+					['DINT', '32 bity', '±2 147 483 647', 'MD20 — duże liczniki, czas w ms'],
+					['REAL', '32 bity', 'ułamki, ~7 cyfr', 'MD24 — temperatury, wyniki obliczeń'],
+					['TIME', '32 bity', 'T#5s, T#1m30s', 'czasy timerów']
+				]
+			},
+			{
+				kind: 'callout',
+				tone: 'warn',
+				title: 'Przepełnienie',
+				text: 'INT mieści najwyżej 32 767. Dodaj 1 — i dostaniesz **−32 768**, bo liczba „przekręca się” jak licznik w samochodzie. Licznik sztuk, który działa latami, trzymaj w DINT. A przy dzieleniu liczb całkowitych pamiętaj: `7 / 2 = 3` — ułamek ginie, więc do obliczeń z ułamkami używaj REAL.'
+			},
+			{
+				kind: 'text',
+				text: `**Sygnał analogowy** to wartość ciągła, np. z czujnika temperatury albo ciśnienia. W przemyśle najczęściej spotkasz:
+
+- **4–20 mA** — prąd w pętli; 4 mA = początek zakresu, 20 mA = koniec. Odporny na zakłócenia i długie kable,
+- **0–10 V** — napięcie; prostszy, ale wrażliwszy na spadki napięcia na długich przewodach.
+
+Karta wejść analogowych zamienia sygnał na liczbę całkowitą. W sterownikach Siemens pełny zakres to **0 … 27 648** (w innych np. 0 … 32 000 albo 0 … 4095). Tę surową wartość program musi **przeskalować** na jednostki: °C, bary, procenty.`
+			},
+			{ kind: 'analog' },
+			{
+				kind: 'code',
+				title: 'Skalowanie w ST',
+				code: `VAR
+    raw   : INT;    (* surowa wartość z karty, np. IW64 *)
+    temp  : REAL;   (* °C *)
+    alarm : BOOL;
+END_VAR
+
+(* zakres czujnika 0 … 150 °C, karta 0 … 27648 *)
+temp := INT_TO_REAL(raw) / 27648.0 * 150.0;
+
+(* zerwanie przewodu 4–20 mA: karta podaje 32767 *)
+alarm := raw = 32767;`
+			},
+			{
+				kind: 'callout',
+				tone: 'tip',
+				title: 'Dlaczego 4 mA, a nie 0?',
+				text: 'To tzw. **żywe zero**. Przy 4–20 mA prąd zawsze płynie, więc 0 mA oznacza awarię: zerwany przewód albo brak zasilania czujnika — sterownik od razu to wykrywa. Przy 0–10 V zerwany przewód wygląda jak poprawny pomiar „0”.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Czujnik ciśnienia 0–10 bar, sygnał 4–20 mA. Jakie ciśnienie oznacza 12 mA?',
+				options: ['6 bar', '5 bar', '1,2 bar'],
+				correct: 1,
+				explanation:
+					'12 mA to połowa zakresu 4–20 mA ((12 − 4) / 16 = 50 %), więc połowa z 0–10 bar = **5 bar**.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Licznik w MW10 (INT) ma wartość 32 767. Co się stanie po dodaniu 1?',
+				options: ['Zostanie 32 767', 'Będzie −32 768 (przepełnienie)', 'Sterownik się zatrzyma'],
+				correct: 1,
+				explanation:
+					'INT ma 16 bitów — po 32 767 liczba przechodzi na −32 768. Do dużych wartości używaj DINT.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Dlaczego w przemyśle wybiera się 4–20 mA zamiast 0–20 mA?',
+				options: [
+					'Bo jest tańsze',
+					'Bo prąd poniżej 4 mA oznacza awarię (np. zerwany przewód), którą sterownik wykryje',
+					'Bo czujniki nie potrafią podać 0 mA'
+				],
+				correct: 1,
+				explanation:
+					'Żywe zero: każda wartość z zakresu ma przepływ prądu, a jego brak to diagnoza.'
+			}
+		]
+	},
+
+	/* ------------------------------------------------------------------ regulacja */
+	{
+		slug: 'regulacja',
+		title: 'Regulacja: dwustawna i PID',
+		summary: 'Jak utrzymać temperaturę: włącz/wyłącz z histerezą, a potem regulator PID.',
+		minutes: 12,
+		blocks: [
+			{
+				kind: 'text',
+				text: `**Regulacja** to utrzymywanie wielkości (temperatury, poziomu, ciśnienia) na zadanej wartości mimo zakłóceń. Zawsze są te same elementy:
+
+- **SP** (*setpoint*) — wartość zadana, np. 120 °C,
+- **PV** (*process value*) — wartość zmierzona, np. z czujnika przez kartę analogową,
+- **uchyb** e = SP − PV — o ile się mylimy,
+- **wyjście regulatora** — co robimy z obiektem, np. moc grzałki 0–100 %.
+
+Najprostszy sposób to **regulacja dwustawna**: za zimno → grzałka 100 %, za ciepło → 0 %. Żeby grzałka nie przełączała się co cykl, dodaje się **histerezę**: włącz poniżej SP − h/2, wyłącz powyżej SP + h/2. Tak samo działa żelazko i termostat w lodówce — i tak sterowałeś pompą w zbiorniku.`
+			},
+			{ kind: 'control', initial: 'onoff' },
+			{
+				kind: 'callout',
+				tone: 'info',
+				title: 'Zobacz na wykresie',
+				text: 'Temperatura **przestrzeliwuje** granice histerezy, bo grzałka i powietrze mają bezwładność: po wyłączeniu gorąca grzałka dalej grzeje. Zmniejsz histerezę do 0 — grzałka zacznie przełączać się bardzo często (to niszczy styczniki), a wahania i tak nie znikną.'
+			},
+			{
+				kind: 'text',
+				text: `Gdy wahania są niedopuszczalne, stosuje się **regulator PID**. Jego wyjście to suma trzech składników:
+
+- **P** (proporcjonalny) = Kp · e — im większy uchyb, tym mocniej grzeje. Sam P zostawia jednak **uchyb ustalony**: temperatura stanie trochę poniżej SP,
+- **I** (całkujący) — sumuje uchyb w czasie i dokłada mocy tak długo, aż uchyb zniknie. Im mniejszy **Ti**, tym szybciej (ale łatwiej o oscylacje),
+- **D** (różniczkujący) — reaguje na szybkość zmian; hamuje, gdy temperatura szybko rośnie, i zmniejsza przeregulowanie. Mocno wzmacnia szumy, więc używa się go ostrożnie.
+
+Spróbuj: ustaw **Ti = wył.** (sam P) i zobacz uchyb ustalony. Potem włącz Ti = 60 s. Na koniec zmniejsz Ti do 15 s i zwiększ Kp — pojawią się oscylacje.`
+			},
+			{ kind: 'control', initial: 'pid' },
+			{
+				kind: 'callout',
+				tone: 'tip',
+				title: 'Jak stroić w praktyce',
+				text: '1. Zacznij od samego P, zwiększaj Kp, aż odpowiedź będzie szybka, ale bez dużych oscylacji. 2. Dodaj I, żeby usunąć uchyb ustalony — zacznij od dużego Ti i zmniejszaj. 3. D tylko jeśli trzeba ograniczyć przeregulowanie. Wyjście PID 0–100 % na grzałkę z wyjścia cyfrowego zamienia się na **PWM**: np. 30 % = grzałka włączona 3 s z każdych 10 s (przez SSR, patrz rozdział o podłączeniach).'
+			},
+			{
+				kind: 'callout',
+				tone: 'warn',
+				title: 'Anti-windup',
+				text: 'Gdy wyjście jest już na 100 %, a temperatura wciąż za niska (np. przy rozgrzewaniu), część I rosłaby bez końca i potem długo „odwijała się” z dużym przeregulowaniem. Dobre regulatory — także ten na wykresie — zatrzymują wtedy całkowanie.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Regulator P (bez I) utrzymuje 115 °C przy zadanej 120 °C. Co pomoże najbardziej?',
+				options: ['Dodanie członu I (całkującego)', 'Zwiększenie histerezy', 'Dodanie członu D'],
+				correct: 0,
+				explanation:
+					'Sam P potrzebuje uchybu, żeby w ogóle dawać moc — stąd uchyb ustalony. Człon I sumuje uchyb i dokłada mocy, aż uchyb spadnie do zera.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Po co histereza w regulacji dwustawnej?',
+				options: [
+					'Żeby temperatura była dokładniejsza',
+					'Żeby grzałka nie przełączała się bez przerwy wokół wartości zadanej',
+					'Żeby regulator działał szybciej'
+				],
+				correct: 1,
+				explanation:
+					'Bez histerezy szum czujnika i drobne wahania przełączałyby wyjście co chwilę — styczniki i przekaźniki szybko by się zużyły.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Temperatura mocno oscyluje wokół SP. Który ruch najpewniej ją uspokoi?',
+				options: ['Zmniejszenie Ti', 'Zmniejszenie Kp albo zwiększenie Ti', 'Zwiększenie Kp'],
+				correct: 1,
+				explanation:
+					'Oscylacje to zwykle zbyt „agresywny” regulator: za duże Kp albo za mały Ti (za silne całkowanie).'
+			}
+		]
+	},
+
 	/* ------------------------------------------------------------------ 10 */
 	{
 		slug: 'structured-text',
@@ -709,6 +995,143 @@ Gotowe := opoznienie.Q;`,
 				options: ['Y := A OR NOT B;', 'Y := A AND NOT B;', 'Y := NOT A AND B;'],
 				correct: 1,
 				explanation: `Szeregowo to AND, styk rozwierny to NOT: \`Y := A AND NOT B;\`.`
+			}
+		]
+	},
+
+	/* ------------------------------------------------------------------ organizacja */
+	{
+		slug: 'organizacja',
+		title: 'Organizacja programu: bloki i struktura',
+		summary: 'OB, FC, FB, DB, instancje — i jak ułożyć większy program, żeby dało się go utrzymać.',
+		minutes: 9,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Prawdziwa maszyna ma setki wejść i wyjść. Jeden długi program byłby nie do ogarnięcia, dlatego norma IEC 61131-3 (i każdy producent) dzieli program na **bloki**:
+
+- **OB** (*organization block*) — wywołuje je system sterownika. **OB1** to program cykliczny (to, co do tej pory pisałeś), **OB100** wykonuje się raz przy starcie, inne — co zadany czas albo przy przerwaniu,
+- **FC** (*function*) — funkcja **bez pamięci**: dla tych samych wejść zawsze ten sam wynik, np. skalowanie wartości analogowej,
+- **FB** (*function block*) — blok **z pamięcią** (zmienne statyczne). Każde użycie to osobna **instancja** z własnymi danymi, np. sterowanie jednym silnikiem,
+- **DB** (*data block*) — pamięć na dane: instancji FB albo wspólne (receptury, liczniki produkcji).`
+			},
+			{
+				kind: 'table',
+				head: ['Blok', 'Pamięć między cyklami', 'Przykład'],
+				rows: [
+					['OB1', '—', 'Program główny, wywołuje resztę'],
+					['FC', 'nie', 'Skalowanie 4–20 mA → °C, przeliczanie jednostek'],
+					[
+						'FB + instancja (DB)',
+						'tak',
+						'Silnik: start/stop, czas pracy, alarm braku potwierdzenia'
+					],
+					['DB globalny', 'tak', 'Receptury, parametry, statystyki']
+				]
+			},
+			{
+				kind: 'text',
+				text: `Znasz już FB — to **TON**, **CTU**, **R_TRIG**! Kiedy w ST piszesz \`t1 : TON;\` i \`t2 : TON;\`, tworzysz dwie instancje tego samego bloku. Każda ma własne ET i Q, dlatego dwa timery nie przeszkadzają sobie nawzajem:`
+			},
+			{
+				kind: 'sim',
+				title: 'Dwie instancje jednego bloku',
+				st: `VAR
+    t1 : TON;
+    t2 : TON;
+END_VAR
+
+t1(IN := A, PT := T#2s);
+t2(IN := B, PT := T#2s);
+
+LampaA := t1.Q;
+LampaB := t2.Q;`,
+				inputs: [
+					{ address: 'I0.0', label: 'A', kind: 'toggle' },
+					{ address: 'I0.1', label: 'B', kind: 'toggle' }
+				],
+				outputs: [
+					{ address: 'Q0.0', label: 'LampaA', color: 'green' },
+					{ address: 'Q0.1', label: 'LampaB', color: 'amber' }
+				],
+				trace: [{ address: 'A' }, { address: 'LampaA' }, { address: 'B' }, { address: 'LampaB' }],
+				caption: 'Włącz A, a po sekundzie B — każdy timer odlicza swoje 2 s osobno.'
+			},
+			{
+				kind: 'code',
+				title: 'Własny blok FB w ST (np. w TIA Portal, CODESYS)',
+				code: `FUNCTION_BLOCK FB_Silnik
+VAR_INPUT
+    Start, Stop, Potwierdzenie : BOOL;
+END_VAR
+VAR_OUTPUT
+    Stycznik, Awaria : BOOL;
+END_VAR
+VAR
+    brakPotw : TON;          (* pamięć instancji *)
+END_VAR
+
+Stycznik := (Start OR Stycznik) AND NOT Stop AND NOT Awaria;
+brakPotw(IN := Stycznik AND NOT Potwierdzenie, PT := T#2s);
+IF brakPotw.Q THEN Awaria := TRUE; END_IF;
+END_FUNCTION_BLOCK
+
+(* w OB1 — trzy silniki, trzy instancje, jeden kod: *)
+Pompa1(Start := S1, Stop := P1, Potwierdzenie := K1_FB);
+Pompa2(Start := S2, Stop := P2, Potwierdzenie := K2_FB);
+Wentylator(Start := S3, Stop := P3, Potwierdzenie := K3_FB);`
+			},
+			{
+				kind: 'callout',
+				tone: 'info',
+				title: 'W PLC Sim',
+				text: 'Symulator ma jeden program cykliczny (jak OB1) i gotowe bloki TON/TOF/TP/CTU/CTD/R_TRIG/F_TRIG — własnych FB jeszcze nie. Strukturę i tak ćwiczysz: **komentarze networków**, **tablica symboli** i podział programu na części.'
+			},
+			{
+				kind: 'text',
+				text: `Dobre praktyki, które docenisz przy pierwszej awarii o 3 w nocy:
+
+1. **Kolejność w programie**: najpierw odczyt i obróbka wejść (skalowanie, filtry), potem logika i sekwencje, na końcu zapis wyjść — każde wyjście w **jednym** miejscu.
+2. **Symbole zamiast adresów** i spójne nazwy, np. \`M01_Pompa_Start\`, \`B12_Poziom_Max\` — z oznaczeniem urządzenia ze schematu elektrycznego.
+3. **Komentarz do każdego networku**: *po co*, a nie *co* („Stop ma pierwszeństwo — wymóg bezpieczeństwa”).
+4. **Jeden typowy problem = jeden blok**: silnik, zawór, siłownik z krańcówkami. Raz przetestowany blok używasz wiele razy.
+5. **Alarmy i diagnostyka** od początku: brak potwierdzenia, przekroczony czas ruchu, zerwanie przewodu analogowego.`
+			},
+			{
+				kind: 'quiz',
+				question: 'Masz 10 identycznych zaworów z krańcówkami. Co napiszesz?',
+				options: [
+					'10 kopii tej samej logiki z innymi adresami',
+					'Jeden blok FB i 10 jego instancji',
+					'Jedną funkcję FC, bo zawory nie potrzebują pamięci'
+				],
+				correct: 1,
+				explanation:
+					'Zawór ma stan (np. czas ruchu, alarm), więc to FB z pamięcią. 10 instancji = 10 kompletów danych i jeden kod — poprawka w jednym miejscu działa wszędzie.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Czym różni się FC od FB?',
+				options: [
+					'FC jest szybsza',
+					'FB ma pamięć między wywołaniami (instancję), FC nie',
+					'FC można wywołać tylko z OB1'
+				],
+				correct: 1,
+				explanation:
+					'Funkcja (FC) liczy wynik z wejść i niczego nie pamięta. Blok funkcyjny (FB) ma zmienne statyczne zapisane w swojej instancji.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Który komentarz do networku jest najbardziej przydatny?',
+				options: [
+					'„Styk I0.1 NC w szeregu z Q0.0”',
+					'„Stop ma pierwszeństwo — wymóg bezpieczeństwa, nie zmieniać kolejności”',
+					'„Network 3”'
+				],
+				correct: 1,
+				explanation:
+					'Co robi network, widać na schemacie. Komentarz powinien wyjaśniać **dlaczego** — szczególnie rzeczy, których nie wolno „poprawić”.'
 			}
 		]
 	},

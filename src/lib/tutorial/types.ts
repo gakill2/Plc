@@ -43,7 +43,10 @@ export type Block =
 	| { kind: 'scan-cycle' }
 	| { kind: 'address-explorer' }
 	| { kind: 'plc-overview' }
-	| { kind: 'lesson'; slug: string; text: string };
+	| { kind: 'lesson'; slug: string; text: string }
+	| { kind: 'wiring' }
+	| { kind: 'analog' }
+	| { kind: 'control'; initial?: 'onoff' | 'pid' };
 
 export interface Chapter {
 	slug: string;

@@ -19,7 +19,7 @@ test('tutorial: simulator, quiz and progress', async ({ page }) => {
 	await expect(page.getByText('Dobrze!')).toBeVisible();
 
 	await page.goto('/learn/basics', { waitUntil: 'networkidle' });
-	await expect(page.getByText(/ukończone:\s*1 \/ 12/)).toBeVisible();
+	await expect(page.getByText(/ukończone:\s*1 \/ 16/)).toBeVisible();
 });
 
 test('glossary search', async ({ page }) => {
@@ -27,4 +27,26 @@ test('glossary search', async ({ page }) => {
 	await page.getByLabel('Szukaj w słowniczku').fill('rising');
 	await expect(page.getByText('zbocze narastające / opadające')).toBeVisible();
 	await expect(page.getByText('stycznik', { exact: true })).toHaveCount(0);
+});
+
+test('interactive figures: wiring, analog scaling, PID oven', async ({ page }) => {
+	await page.goto('/learn/basics/elektryka', { waitUntil: 'networkidle' });
+	await page.getByRole('button', { name: /brak obiektu/ }).click();
+	await expect(page.getByText('I0.0 = 1')).toBeVisible();
+	await page.getByRole('button', { name: 'NPN' }).click();
+	await expect(page.getByRole('status').filter({ hasText: 'czujnik' })).toContainText(
+		'choć czujnik świeci'
+	);
+	await page.getByRole('button', { name: /source/ }).click();
+	await expect(page.getByText('I0.0 = 1')).toBeVisible();
+
+	await page.goto('/learn/basics/liczby-i-analog', { waitUntil: 'networkidle' });
+	await expect(page.getByText('13824', { exact: true })).toBeVisible();
+	await page.getByLabel('Sygnał analogowy').fill('0');
+	await expect(page.getByText(/ZERWANIE PRZEWODU/)).toBeVisible();
+
+	await page.goto('/learn/basics/regulacja', { waitUntil: 'networkidle' });
+	const oven = page.locator('figure', { hasText: 'Piec z grzałką' }).first();
+	await expect(oven.getByRole('status')).toContainText('PV =');
+	await expect(oven.getByRole('status')).not.toContainText('PV = 20.0 °C', { timeout: 5000 });
 });
