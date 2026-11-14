@@ -28,6 +28,7 @@ export class ProjectState {
 	/** Device symbols first — they are what the user sees on the circuit. */
 	readonly deviceSymbols: SymbolEntry[] = $derived(deviceSymbols(this.circuit));
 	readonly symbols = $derived(checkSymbols([...this.deviceSymbols, ...this.userSymbols]));
+	name: string = $state('');
 	language: ProgramLanguage = $state('ladder');
 	st: string = $state('');
 
@@ -47,6 +48,7 @@ export class ProjectState {
 		this.scenario = project.scenario;
 		this.lesson = project.lesson;
 		this.ladder = new LadderDocument(project.ladder, () => this.symbols);
+		this.name = project.name ?? '';
 		this.language = project.language ?? 'ladder';
 		this.st = project.st ?? '';
 		this.compiled = $derived(this.stResult ? fromSt(this.stResult, this.st) : this.ladder.compiled);
@@ -60,9 +62,21 @@ export class ProjectState {
 		]);
 	}
 
+	/** Puts the editable parts of a snapshot back (undo / redo). Scenario and lesson never change. */
+	restore(p: Project) {
+		this.name = p.name ?? '';
+		this.ladder.program = p.ladder;
+		this.circuit = p.circuit;
+		this.userSymbols = p.symbols;
+		this.watch = p.watch;
+		this.language = p.language ?? 'ladder';
+		this.st = p.st ?? '';
+	}
+
 	toJSON(): Project {
 		return {
 			version: 2,
+			name: this.name || undefined,
 			ladder: $state.snapshot(this.ladder.program),
 			circuit: $state.snapshot(this.circuit),
 			symbols: $state.snapshot(this.userSymbols),

@@ -25,7 +25,9 @@
 <div class="flex flex-wrap items-center gap-2" role="toolbar" aria-label="PLC controls">
 	<div class="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-900 px-2.5 py-1">
 		<StatusLed on={led.on} color={led.color} label={status} />
-		<span class="w-14 font-mono text-xs font-semibold">{status}</span>
+		<span class="w-14 font-mono text-xs font-semibold" role="status" aria-label="PLC status"
+			>{status}</span
+		>
 		<span class="font-mono text-[11px] text-slate-500" title="Simulated time · scan count">
 			{((snapshot?.timeMs ?? 0) / 1000).toFixed(2)} s · #{snapshot?.scanCount ?? 0}
 		</span>

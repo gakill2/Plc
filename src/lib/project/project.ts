@@ -10,6 +10,9 @@ import type { ProcessKind } from '#lib/processes/types.js';
 /** Everything that is saved: the program, the wiring and the user's symbols. */
 export interface Project {
 	version: 2;
+	name?: string;
+	/** Last save, ms since epoch. */
+	updatedAt?: number;
 	ladder: LadderProgram;
 	circuit: Circuit;
 	symbols: SymbolEntry[];
@@ -29,6 +32,7 @@ export type ProgramLanguage = 'ladder' | 'st';
 
 export const demoProject = (): Project => ({
 	version: 2,
+	name: 'Motor demo',
 	ladder: demoProgram(),
 	circuit: demoCircuit(),
 	watch: demoWatch(),
@@ -56,6 +60,8 @@ export function parseProject(raw: unknown): Project | null {
 	if (isObject(raw) && raw.version === 2 && isLadder(raw.ladder) && isCircuit(raw.circuit)) {
 		return {
 			version: 2,
+			name: typeof raw.name === 'string' ? raw.name : undefined,
+			updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : undefined,
 			ladder: raw.ladder,
 			circuit: raw.circuit,
 			symbols: Array.isArray(raw.symbols) ? (raw.symbols as SymbolEntry[]) : [],

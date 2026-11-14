@@ -5,7 +5,11 @@
 	import { CircuitSim } from '#lib/circuit/sim.svelte.js';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
 	import { createMonitor } from '#lib/ladder/monitor.js';
-	import { demoProject, loadProject, projectKey } from '#lib/project/project.js';
+	import { demoProject, loadProject, parseProject } from '#lib/project/project.js';
+	import { History } from '#lib/project/history.js';
+	import { encodeProject } from '#lib/project/share.js';
+	import { saveProject } from '#lib/project/storage.js';
+	import { resolve } from '$app/paths';
 	import LessonPanel from '#lib/lessons/LessonPanel.svelte';
 	import { getLesson, LESSON_PREFIX } from '#lib/lessons/lessons.js';
 	import ProcessView from '#lib/processes/ProcessView.svelte';
@@ -37,7 +41,7 @@
 	let showTrend = $state(true);
 
 	// The workspace is re-created ({#key}) when the project changes, so reading the id once is fine.
-	const key = projectKey(untrack(() => projectId));
+	const id = untrack(() => projectId);
 	/** Lesson projects start from the lesson's starter when nothing is saved yet. */
 	const startLesson = untrack(() =>
 		projectId.startsWith(LESSON_PREFIX) ? getLesson(projectId.slice(LESSON_PREFIX.length)) : null
@@ -72,9 +76,60 @@
 
 	let view = $state<View>('program');
 
+	/* ---------- saving and undo / redo ---------- */
+
+	const history = new History<string>();
+	let canUndo = $state(false);
+	let canRedo = $state(false);
+	const syncHistory = () => ([canUndo, canRedo] = [history.canUndo, history.canRedo]);
+
 	$effect(() => {
-		localStorage.setItem(key, JSON.stringify(project.toJSON()));
+		const snapshot = project.toJSON();
+		const json = JSON.stringify(snapshot);
+		untrack(() => {
+			saveProject(localStorage, id, snapshot);
+			if (history.record(json)) syncHistory();
+		});
 	});
+
+	function travel(direction: 'undo' | 'redo') {
+		if (runtime.online) return;
+		const json = direction === 'undo' ? history.undo() : history.redo();
+		const snapshot = json ? parseProject(JSON.parse(json)) : null;
+		if (snapshot) {
+			project.restore(snapshot);
+			project.ladder.select(null);
+		}
+		syncHistory();
+	}
+
+	/* ---------- sharing ---------- */
+
+	let shareUrl = $state<string | null>(null);
+	let copied = $state(false);
+
+	async function share() {
+		const hash = await encodeProject(project.toJSON());
+		shareUrl = `${location.origin}${resolve('/share')}#${hash}`;
+		copied = false;
+		try {
+			await navigator.clipboard.writeText(shareUrl);
+			copied = true;
+		} catch {
+			// clipboard not available — the link is shown for manual copying
+		}
+	}
+
+	function exportFile() {
+		const blob = new Blob([JSON.stringify(project.toJSON(), null, 2)], {
+			type: 'application/json'
+		});
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = `${(project.name || 'project').replace(/[^\w-]+/g, '_')}.plcsim.json`;
+		a.click();
+		URL.revokeObjectURL(a.href);
+	}
 
 	// Devices drive the input terminals they are wired to.
 	let sent = new Map<string, boolean>();
@@ -165,9 +220,20 @@
 	}
 
 	function onKeydown(e: KeyboardEvent) {
-		if (view !== 'program' || project.language !== 'ladder') return;
 		const target = e.target as HTMLElement;
-		if (target.closest('input, select, textarea')) return;
+		if (target.closest('input, select, textarea, .cm-editor')) return;
+		const mod = e.ctrlKey || e.metaKey;
+		if (mod && e.key.toLowerCase() === 'z') {
+			e.preventDefault();
+			travel(e.shiftKey ? 'redo' : 'undo');
+			return;
+		}
+		if (mod && e.key.toLowerCase() === 'y') {
+			e.preventDefault();
+			travel('redo');
+			return;
+		}
+		if (view !== 'program' || project.language !== 'ladder') return;
 		if (e.key === 'Escape') doc.select(null);
 		if ((e.key === 'Delete' || e.key === 'Backspace') && !runtime.online) {
 			e.preventDefault();
@@ -234,10 +300,47 @@
 	</div>
 {/snippet}
 
-<div class="flex h-[calc(100dvh-3.5rem)] flex-col">
+<div class="p-8 text-center text-sm text-slate-400 lg:hidden">
+	The editor needs a wider screen (at least 1024 px). Try a laptop or desktop — or rotate your
+	tablet.
+</div>
+
+<div class="hidden h-[calc(100dvh-3.5rem)] flex-col lg:flex">
 	<div
 		class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-2"
 	>
+		<div class="flex items-center gap-2">
+			<input
+				class="w-56 rounded border border-transparent bg-transparent px-2 py-1 text-sm font-semibold text-white outline-none hover:border-slate-700 focus:border-emerald-500 disabled:opacity-70"
+				placeholder={lesson ? lesson.title : 'Untitled project'}
+				bind:value={project.name}
+				disabled={!!lesson}
+				aria-label="Project name"
+			/>
+			<div class="flex gap-0.5">
+				<button
+					class="rounded px-2 py-1 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+					title="Undo (Ctrl+Z)"
+					aria-label="Undo"
+					disabled={!canUndo || runtime.online}
+					onclick={() => travel('undo')}>↶</button
+				>
+				<button
+					class="rounded px-2 py-1 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+					title="Redo (Ctrl+Shift+Z)"
+					aria-label="Redo"
+					disabled={!canRedo || runtime.online}
+					onclick={() => travel('redo')}>↷</button
+				>
+				<button class="rounded px-2 py-1 text-xs text-slate-300 hover:bg-slate-800" onclick={share}
+					>Share</button
+				>
+				<button
+					class="rounded px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+					onclick={exportFile}>Export</button
+				>
+			</div>
+		</div>
 		<nav
 			class="flex gap-0.5 rounded-md border border-slate-800 bg-slate-900 p-0.5"
 			aria-label="Views"
@@ -415,3 +518,34 @@
 		</aside>
 	</div>
 </div>
+
+{#if shareUrl}
+	<div class="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4" role="presentation">
+		<div
+			class="w-full max-w-lg space-y-3 rounded-lg border border-slate-700 bg-slate-900 p-5 shadow-2xl"
+			role="dialog"
+			aria-label="Share project"
+		>
+			<h2 class="font-semibold text-white">Share this project</h2>
+			<p class="text-sm text-slate-400">
+				{copied ? 'Link copied to the clipboard.' : 'Copy the link below.'} The whole project is inside
+				the link — nothing is uploaded. Whoever opens it gets their own copy.
+			</p>
+			<input
+				class="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-xs text-slate-200"
+				readonly
+				value={shareUrl}
+				aria-label="Share link"
+				onfocus={(e) => e.currentTarget.select()}
+			/>
+			<div class="text-right">
+				<button
+					class="rounded-md bg-slate-700 px-3 py-1.5 text-sm hover:bg-slate-600"
+					onclick={() => (shareUrl = null)}
+				>
+					Close
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

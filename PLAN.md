@@ -236,3 +236,12 @@ Każdy etap kończy się działającą, wdrożoną wersją.
 | Rozjazd czasu symulacji i UI            | czas symulacji liczony w workerze, UI tylko czyta snapshoty          |
 | Parser ST to duży temat                 | dopiero w etapie 6, gdy IR jest stabilne; zacząć od podzbioru języka |
 | Za szeroki zakres                       | etapy 1–4 to pełnoprawne MVP do portfolio; reszta to rozszerzenia    |
+
+---
+
+## 7. Status
+
+Wszystkie etapy 0–7 zrealizowane (listopad 2026). Poza pierwotnym planem: modele instalacji
+działają w workerze po każdym cyklu, a lekcje mają rozwiązania wzorcowe sprawdzane w CI.
+Nie zrobione z „później / opcjonalnie”: konta i chmura, analog + PID, FBD, eksport PLCopen XML,
+i18n (interfejs jest po angielsku), połączenie z fizycznym DIY PLC przez WebSerial.

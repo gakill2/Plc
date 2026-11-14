@@ -32,10 +32,10 @@
 
 	<div class="mt-8 flex flex-wrap gap-3">
 		<a
-			href={resolve('/editor/[id]', { id: 'new' })}
+			href={resolve('/editor/[id]', { id: 'demo' })}
 			class="rounded-md bg-emerald-500 px-5 py-2.5 font-medium text-slate-950 hover:bg-emerald-400"
 		>
-			Open editor
+			Open the demo
 		</a>
 		<a
 			href={resolve('/learn')}
