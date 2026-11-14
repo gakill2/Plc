@@ -1,5 +1,7 @@
 import { parseAddress, Plc, ProgramError, type Address, type NumType } from '#lib/engine/index.js';
 import { createProcess } from '#lib/processes/models.js';
+import { FieldLayer, type SignalFault } from '#lib/processes/field.js';
+import { plantInfo } from '#lib/processes/plants.js';
 import type { ProcessIO, ProcessKind, ProcessModel } from '#lib/processes/types.js';
 import type {
 	RuntimeCommand,
@@ -34,12 +36,14 @@ export class RuntimeCore {
 
 	#processKind: ProcessKind | null = null;
 	#process: ProcessModel | null = null;
-	readonly #io: ProcessIO = {
+	/** sensors between the plant and the PLC: noise and injected faults */
+	#field = new FieldLayer(1);
+	readonly #io: ProcessIO = this.#field.wrap({
 		output: (t) => this.plc.getOutput(t),
 		input: (t, v) => this.plc.setInput(t, v),
 		word: (a) => this.plc.memory.readNumber(parseAddress(a)),
 		setWord: (a, v) => this.plc.setInputNumber(a, v)
-	};
+	});
 
 	get status(): RuntimeStatus {
 		const mode = this.plc.mode;
@@ -116,11 +120,23 @@ export class RuntimeCore {
 				this.plc.modify(cmd.address, cmd.value, cmd.numType);
 				return null;
 			case 'setProcess':
+				if (cmd.kind !== this.#processKind) {
+					// another plant: its faults do not carry over
+					for (const a of [...this.#field.faults.keys()]) this.#field.setFault(a, null);
+					this.#field.plantFaults.clear();
+				}
 				this.#processKind = cmd.kind;
 				this.#restartProcess();
 				return null;
 			case 'processCommand':
-				this.#process?.command(cmd.name, cmd.value);
+				if (cmd.name === 'field:realism') this.#field.realism = Boolean(cmd.value);
+				else if (cmd.name === 'field:fault') {
+					const v = cmd.value as { address: string; fault: SignalFault | null };
+					this.#field.setFault(v.address, v.fault);
+				} else if (cmd.name === 'field:plant') {
+					const v = cmd.value as { id: string; on: boolean };
+					this.#field.setPlantFault(this.#process, v.id, v.on);
+				} else this.#process?.command(cmd.name, cmd.value);
 				this.#process?.step(0, this.#io); // sensors follow the change at once
 				return null;
 			case 'setTrace':
@@ -164,12 +180,14 @@ export class RuntimeCore {
 			speed: this.#speed,
 			scanMs: SCAN_MS,
 			trace: { epoch: this.#traceEpoch, samples },
-			process: this.#process?.state() ?? null
+			process: this.#process?.state() ?? null,
+			field: this.#field.settings
 		};
 	}
 
 	/** The plant reacts to the outputs of the scan that just ran, then the trace is sampled. */
 	#afterScan(dt = SCAN_MS) {
+		this.#field.tick(dt);
 		this.#process?.step(dt, this.#io);
 		this.#sample();
 	}
@@ -177,6 +195,12 @@ export class RuntimeCore {
 	/** A fresh plant (on load, reset or a new scenario); its sensors are applied immediately. */
 	#restartProcess() {
 		this.#process = this.#processKind ? createProcess(this.#processKind) : null;
+		this.#field.noise = Object.fromEntries(
+			(plantInfo(this.#processKind)?.io ?? [])
+				.filter((io) => io.noise)
+				.map((io) => [io.address, io.noise!])
+		);
+		this.#field.applyPlantFaults(this.#process);
 		this.#process?.step(0, this.#io);
 	}
 

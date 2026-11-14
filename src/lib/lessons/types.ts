@@ -5,6 +5,7 @@ import type { Circuit } from '#lib/circuit/model.js';
 import type { Hmi } from '#lib/hmi/model.js';
 import type { Sfc } from '#lib/sfc/sfc.js';
 import type { Fbd } from '#lib/fbd/fbd.js';
+import type { SignalFault } from '#lib/processes/field.js';
 import type { ProcessKind, ProcessModel } from '#lib/processes/types.js';
 
 export interface TestContext {
@@ -33,6 +34,10 @@ export interface LessonStep {
 	hmi?: Record<string, number>;
 	/** Commissioning lessons: expected state of devices by label (lamp lit, contactor pulled in …). */
 	expectDevices?: Record<string, boolean>;
+	/** Inject (or clear, with null) faults of sensors between the plant and the PLC. */
+	fieldFaults?: Record<string, SignalFault | null>;
+	/** Switch faults of the plant itself on or off, e.g. `{ jam: true }`. */
+	plantFaults?: Record<string, boolean>;
 	/** Restart the CPU first (Stop → Run: a new download) — retentive variables must survive it. */
 	restart?: boolean;
 	/** Commands to the process model (e.g. feed boxes). */
@@ -74,6 +79,8 @@ export interface Lesson {
 	solutionSt?: string;
 	/** SFC lessons: the reference chart. */
 	solutionSfc?: () => Sfc;
+	/** Analog noise and range limits on the plant's sensors. */
+	realism?: boolean;
 	/** FBD lessons: the reference diagram */
 	solutionFbd?: () => Fbd;
 	tests: LessonTest[];

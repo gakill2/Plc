@@ -1,4 +1,4 @@
-import type { OvenState, ProcessIO, ProcessModel } from './types.js';
+import { faultCommand, type OvenState, type ProcessIO, type ProcessModel } from './types.js';
 
 /**
  * Electric oven — a first-order thermal process with dead time, the textbook plant for a PID loop.
@@ -35,6 +35,8 @@ export class OvenProcess implements ProcessModel {
 	/** power that reaches the heating elements, 0 … 1 */
 	power = 0;
 	#delay: { t: number; p: number }[] = [];
+	/** plant faults: half of the heating elements burnt out */
+	readonly broken = new Set<string>();
 	#time = 0;
 
 	step(dtMs: number, io: ProcessIO): void {
@@ -43,6 +45,7 @@ export class OvenProcess implements ProcessModel {
 		this.heater = io.output('Q0.0');
 		this.demand = Math.min(1, Math.max(0, io.word('QW4') / 27648));
 		this.power = this.heater && this.doorClosed && !this.overTemp ? this.demand : 0;
+		if (this.broken.has('heaterHalf')) this.power /= 2;
 
 		// dead time: the elements and the oven walls need a moment
 		this.#delay.push({ t: this.#time, p: this.power });
@@ -65,6 +68,11 @@ export class OvenProcess implements ProcessModel {
 	}
 
 	command(name: string, value?: unknown): void {
+		const f = name === 'fault' ? faultCommand(value) : null;
+		if (f) {
+			if (f.on) this.broken.add(f.id);
+			else this.broken.delete(f.id);
+		}
 		if (name === 'door') this.doorClosed = !value;
 		// a cold batch goes in: the temperature drops
 		if (name === 'load') this.temp = Math.max(OvenProcess.AMBIENT, this.temp - 25);

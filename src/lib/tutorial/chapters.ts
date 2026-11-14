@@ -1597,6 +1597,26 @@ Dzięki temu w każdej chwili aktywny jest dokładnie jeden krok, a każdą akcj
 				kind: 'lesson',
 				slug: 'sfc-drilling',
 				text: 'Ta sama stacja wiercenia jako diagram SFC / GRAFCET: kroki, akcje N i przejścia z czasem kroku.'
+			},
+			{
+				kind: 'text',
+				text: `**Pneumatyka** to chleb powszedni automatyka: siłowniki dociskają, przesuwają, wypychają. Sterownik nie steruje siłownikiem, tylko **zaworem**:
+
+- **5/2 monostabilny** — cewka załączona = wysuw, wyłączona = sprężyna wraca zawór i siłownik się chowa. Zanik zasilania = siłownik wraca (dobre dla prasy, złe dla docisku trzymającego detal).
+- **5/2 bistabilny** — dwie cewki, zawór pamięta ostatnie położenie. Po zaniku zasilania siłownik zostaje, gdzie był.
+- **Kontaktrony** na cylindrze (magnes w tłoku) potwierdzają krańcowe położenia. Krok sekwencji czeka na kontaktron, a nie na czas — i każdy ruch ma **nadzór czasu**: jeśli kontaktron nie przyjdzie w 2 s, coś jest nie tak (brak powietrza, zablokowany siłownik, przesunięty kontaktron).
+
+W notacji pneumatycznej sekwencję zapisuje się jako **A+ B+ B− A−** (+ wysuw, − powrót).`
+			},
+			{
+				kind: 'lesson',
+				slug: 'pneumatic-press',
+				text: 'Prasa z dociskiem: sekwencja A+ B+ B− A− w CASE, nadzór ruchu i krok błędu.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'mixer-batch',
+				text: 'Mieszalnik wsadowy w SFC: dozowanie po poziomie, grzanie, blokady i zerwany przewód 4–20 mA.'
 			}
 		]
 	},

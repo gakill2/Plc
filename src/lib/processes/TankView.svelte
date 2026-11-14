@@ -22,13 +22,29 @@
 		role="img"
 		aria-label="Tank at {state.level.toFixed(0)} %"
 	>
+		<defs>
+			<linearGradient id="tank-water" x1="0" x2="0" y1="0" y2="1">
+				<stop offset="0" stop-color="#38bdf8" />
+				<stop offset="1" stop-color="#0369a1" />
+			</linearGradient>
+			<linearGradient id="tank-wall" x1="0" x2="1" y1="0" y2="0">
+				<stop offset="0" stop-color="#1e293b" />
+				<stop offset="0.5" stop-color="#0f172a" />
+				<stop offset="1" stop-color="#1e293b" />
+			</linearGradient>
+		</defs>
 		<!-- inlet pipe and pump -->
-		<path
-			d="M10 20 H150 V40"
-			fill="none"
-			stroke={state.pump ? '#38bdf8' : '#475569'}
-			stroke-width="8"
-		/>
+		<path d="M10 20 H150 V40" fill="none" stroke="#334155" stroke-width="10" />
+		{#if state.pump}
+			<path
+				d="M10 20 H150 V{levelY}"
+				fill="none"
+				stroke="#7dd3fc"
+				stroke-width="4"
+				stroke-dasharray="6 8"
+				class="flow"
+			/>
+		{/if}
 		<circle
 			cx="60"
 			cy="20"
@@ -37,21 +53,45 @@
 			stroke={state.pump ? '#34d399' : '#64748b'}
 			stroke-width="3"
 		/>
-		<text x="60" y="25" text-anchor="middle" font-size="12" font-weight="bold" fill="#e2e8f0"
-			>P</text
-		>
+		<g transform="translate(60 20)">
+			<g class={state.pump ? 'spin' : ''}>
+				<path d="M0 -10 L4 0 L0 10 L-4 0 Z" fill="#e2e8f0" />
+				<path d="M-10 0 L0 4 L10 0 L0 -4 Z" fill="#94a3b8" />
+			</g>
+		</g>
 		<text x="60" y="52" text-anchor="middle" font-size="10" fill="#94a3b8">Pump Q0.0</text>
 
 		<!-- tank -->
-		<rect x="100" y={TOP} width="160" height={H} fill="#0f172a" stroke="#64748b" stroke-width="3" />
 		<rect
-			x="101.5"
-			y={levelY}
-			width="157"
-			height={TOP + H - levelY}
-			fill="#0ea5e9"
-			opacity="0.75"
+			x="100"
+			y={TOP}
+			width="160"
+			height={H}
+			rx="4"
+			fill="url(#tank-wall)"
+			stroke="#64748b"
+			stroke-width="3"
 		/>
+		<clipPath id="tank-inside">
+			<rect x="101.5" y={TOP} width="157" height={H - 1.5} rx="3" />
+		</clipPath>
+		<g clip-path="url(#tank-inside)">
+			<rect
+				x="100"
+				y={levelY}
+				width="160"
+				height={TOP + H - levelY}
+				fill="url(#tank-water)"
+				opacity="0.85"
+			/>
+			<!-- the surface moves a little -->
+			<path
+				d="M60 {levelY} q 20 -5 40 0 t 40 0 t 40 0 t 40 0 t 40 0 t 40 0 V {levelY + 6} H60 Z"
+				fill="#7dd3fc"
+				opacity="0.6"
+				class="wave"
+			/>
+		</g>
 		<text
 			x="180"
 			y={TOP + H / 2}
@@ -78,12 +118,17 @@
 		{/each}
 
 		<!-- outlet -->
-		<path
-			d="M180 {TOP + H} V310 H350"
-			fill="none"
-			stroke={state.drain ? '#38bdf8' : '#475569'}
-			stroke-width="8"
-		/>
+		<path d="M180 {TOP + H} V310 H350" fill="none" stroke="#334155" stroke-width="10" />
+		{#if state.drain && state.level > 0.5}
+			<path
+				d="M180 {TOP + H} V310 H350"
+				fill="none"
+				stroke="#7dd3fc"
+				stroke-width="4"
+				stroke-dasharray="6 8"
+				class="flow"
+			/>
+		{/if}
 		<text x="300" y="300" text-anchor="middle" font-size="10" fill="#94a3b8">consumer</text>
 
 		{#if state.overflowed}
@@ -126,3 +171,30 @@
 		{#if !online}<p class="text-slate-500">The plant runs while the PLC is in RUN.</p>{/if}
 	</div>
 </div>
+
+<style>
+	.flow {
+		animation: flow 0.5s linear infinite;
+	}
+	@keyframes flow {
+		to {
+			stroke-dashoffset: -14;
+		}
+	}
+	.spin {
+		animation: spin 0.6s linear infinite;
+	}
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	.wave {
+		animation: wave 2.4s ease-in-out infinite alternate;
+	}
+	@keyframes wave {
+		to {
+			transform: translateX(-40px);
+		}
+	}
+</style>

@@ -7,11 +7,14 @@ import type {
 	TankState,
 	TrafficState
 } from './types.js';
+import { faultCommand } from './types.js';
 import { LineProcess } from './line.js';
 import { CraneProcess } from './crane.js';
 import { OvenProcess } from './oven.js';
 import { RemoteProcess } from './remote.js';
 import { DriveProcess } from './driveplant.js';
+import { PneumaticProcess } from './pneumatic.js';
+import { MixerProcess } from './mixer.js';
 
 /** Traffic light: no physics, the lamps simply show Q0.0 red, Q0.1 yellow, Q0.2 green. */
 export class TrafficProcess implements ProcessModel {
@@ -49,6 +52,8 @@ export class TankProcess implements ProcessModel {
 	pumpStarts = 0;
 	minLevel = 50;
 	maxLevel = 50;
+	/** plant faults: worn pump (a third of the flow), blocked drain, high sensor stuck in the float */
+	readonly broken = new Set<string>();
 
 	step(dtMs: number, io: ProcessIO): void {
 		const pump = io.output('Q0.0');
@@ -56,7 +61,9 @@ export class TankProcess implements ProcessModel {
 		this.pump = pump;
 
 		const s = dtMs / 1000;
-		this.level += (pump ? TankProcess.FILL : 0) * s - (this.drain ? TankProcess.DRAIN : 0) * s;
+		const fill = this.broken.has('pumpWorn') ? TankProcess.FILL / 3 : TankProcess.FILL;
+		const drain = this.drain && !this.broken.has('drainBlocked') ? TankProcess.DRAIN : 0;
+		this.level += (pump ? fill : 0) * s - drain * s;
 		if (this.level >= 100) this.overflowed = true;
 		this.level = Math.min(100, Math.max(0, this.level));
 		this.minLevel = Math.min(this.minLevel, this.level);
@@ -67,6 +74,11 @@ export class TankProcess implements ProcessModel {
 	}
 
 	command(name: string, value?: unknown): void {
+		const f = name === 'fault' ? faultCommand(value) : null;
+		if (f) {
+			if (f.on) this.broken.add(f.id);
+			else this.broken.delete(f.id);
+		}
 		if (name === 'drain') this.drain = Boolean(value);
 		if (name === 'level' && typeof value === 'number') {
 			this.level = Math.min(100, Math.max(0, value));
@@ -118,6 +130,8 @@ export class ConveyorProcess implements ProcessModel {
 	#queue: boolean[] = [];
 	#interval = 4000;
 	#feedTimer = 0;
+	/** plant faults: jammed belt (motor runs, nothing moves), pusher without air */
+	readonly broken = new Set<string>();
 
 	step(dtMs: number, io: ProcessIO): void {
 		const C = ConveyorProcess;
@@ -134,8 +148,13 @@ export class ConveyorProcess implements ProcessModel {
 			}
 		}
 
-		this.pusher = Math.min(1, Math.max(0, this.pusher + ((push ? 1 : -1) * dtMs) / C.PUSHER_MS));
-		if (this.belt) for (const b of this.boxes) b.x += (C.SPEED * dtMs) / 1000;
+		const air = !this.broken.has('noAir');
+		this.pusher = Math.min(
+			1,
+			Math.max(0, this.pusher + ((push && air ? 1 : -1) * dtMs) / C.PUSHER_MS)
+		);
+		if (this.belt && !this.broken.has('jam'))
+			for (const b of this.boxes) b.x += (C.SPEED * dtMs) / 1000;
 
 		const inZone = (b: Box, [from, to]: readonly [number, number]) => b.x >= from && b.x < to;
 		this.boxes = this.boxes.filter((b) => {
@@ -167,6 +186,11 @@ export class ConveyorProcess implements ProcessModel {
 	}
 
 	command(name: string, value?: unknown): void {
+		const f = name === 'fault' ? faultCommand(value) : null;
+		if (f) {
+			if (f.on) this.broken.add(f.id);
+			else this.broken.delete(f.id);
+		}
 		if (name === 'spawn') this.#queue.push(Boolean((value as { tall?: boolean })?.tall));
 		if (name === 'feed') {
 			const v = value as { pattern: boolean[]; interval?: number };
@@ -228,6 +252,10 @@ export function createProcess(kind: ProcessKind): ProcessModel {
 			return new RemoteProcess();
 		case 'drive':
 			return new DriveProcess();
+		case 'pneumatic':
+			return new PneumaticProcess();
+		case 'mixer':
+			return new MixerProcess();
 	}
 }
 
@@ -239,4 +267,6 @@ export const isProcessKind = (v: unknown): v is ProcessKind =>
 	v === 'oven' ||
 	v === 'crane' ||
 	v === 'remote' ||
-	v === 'drive';
+	v === 'drive' ||
+	v === 'pneumatic' ||
+	v === 'mixer';

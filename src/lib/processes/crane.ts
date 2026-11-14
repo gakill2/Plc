@@ -1,4 +1,4 @@
-import type { CraneState, ProcessIO, ProcessModel } from './types.js';
+import { faultCommand, type CraneState, type ProcessIO, type ProcessModel } from './types.js';
 
 /**
  * Overhead crane trolley on a 10 m runway, with a hoist.
@@ -38,6 +38,8 @@ export class CraneProcess implements ProcessModel {
 	lastFault: string | null = null;
 	#cmd = { left: false, right: false, fast: false, up: false, down: false };
 	#both = false;
+	/** plant faults: worn brake (four times longer stopping distance) */
+	readonly broken = new Set<string>();
 	#swinging = false;
 
 	step(dtMs: number, io: ProcessIO): void {
@@ -60,7 +62,12 @@ export class CraneProcess implements ProcessModel {
 
 		const dir = both ? 0 : cmd.right ? 1 : cmd.left ? -1 : 0;
 		const target = dir * (cmd.fast ? CraneProcess.FAST : CraneProcess.SLOW);
-		const dv = CraneProcess.ACCEL * s;
+		// a worn brake: the trolley stops much more slowly
+		const accel =
+			this.broken.has('brakeWorn') && Math.abs(target) < Math.abs(this.v)
+				? CraneProcess.ACCEL / 4
+				: CraneProcess.ACCEL;
+		const dv = accel * s;
 		this.v = Math.abs(target - this.v) <= dv ? target : this.v + Math.sign(target - this.v) * dv;
 		this.x += this.v * s;
 
@@ -91,6 +98,11 @@ export class CraneProcess implements ProcessModel {
 	}
 
 	command(name: string, value?: unknown): void {
+		const f = name === 'fault' ? faultCommand(value) : null;
+		if (f) {
+			if (f.on) this.broken.add(f.id);
+			else this.broken.delete(f.id);
+		}
 		if (name === 'position' && typeof value === 'number') {
 			this.x = Math.min(CraneProcess.LENGTH, Math.max(0, value));
 			this.v = 0;

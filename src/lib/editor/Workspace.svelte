@@ -109,6 +109,10 @@
 
 	// The simulated plant runs in the worker next to the PLC.
 	$effect(() => runtime.setProcess(project.scenario ?? null));
+	// lessons about noisy signals switch the realistic sensors on
+	$effect(() => {
+		if (lesson?.realism) runtime.processCommand('field:realism', true);
+	});
 	/** Input terminals driven by the plant (shown read-only in the I/O panel). */
 	const processSensors = $derived(project.scenario ? createProcess(project.scenario).sensors : []);
 	const doc = $derived(project.ladder);

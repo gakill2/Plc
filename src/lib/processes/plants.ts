@@ -1,11 +1,13 @@
-import type { ProcessKind } from './types.js';
+import type { PlantFault, ProcessKind } from './types.js';
 
 /** What a simulated plant is and how it is wired to the PLC — for choosing one in any project. */
 export interface PlantInfo {
 	kind: ProcessKind;
 	name: string;
 	description: string;
-	io: { address: string; name: string; comment: string }[];
+	io: { address: string; name: string; comment: string; noise?: number }[];
+	/** faults of the plant itself (signal faults work on every input) */
+	faults?: PlantFault[];
 }
 
 export const PLANTS: readonly PlantInfo[] = [
@@ -27,6 +29,10 @@ export const PLANTS: readonly PlantInfo[] = [
 			{ address: 'I0.0', name: 'Low', comment: 'Level ≥ 20 %' },
 			{ address: 'I0.1', name: 'High', comment: 'Level ≥ 80 %' },
 			{ address: 'Q0.0', name: 'Pump', comment: 'Fills the tank' }
+		],
+		faults: [
+			{ id: 'pumpWorn', label: 'Zużyta pompa (⅓ wydajności)' },
+			{ id: 'drainBlocked', label: 'Zatkany odpływ' }
 		]
 	},
 	{
@@ -39,6 +45,10 @@ export const PLANTS: readonly PlantInfo[] = [
 			{ address: 'I0.2', name: 'TallBox', comment: 'Tall box in front of the pusher' },
 			{ address: 'Q0.0', name: 'Belt', comment: 'Belt motor' },
 			{ address: 'Q0.1', name: 'Pusher', comment: 'Pushes boxes off the belt' }
+		],
+		faults: [
+			{ id: 'jam', label: 'Zakleszczona taśma (silnik kręci, nic nie jedzie)' },
+			{ id: 'noAir', label: 'Brak powietrza w spychaczu' }
 		]
 	},
 	{
@@ -80,10 +90,16 @@ export const PLANTS: readonly PlantInfo[] = [
 		io: [
 			{ address: 'I0.0', name: 'DoorClosed', comment: 'Door switch (1 = closed)' },
 			{ address: 'I0.1', name: 'OverTemp', comment: 'Safety thermostat, > 280 °C' },
-			{ address: 'IW4', name: 'Temperature', comment: 'Thermocouple, °C × 10 (200.0 °C = 2000)' },
+			{
+				address: 'IW4',
+				name: 'Temperature',
+				comment: 'Thermocouple, °C × 10 (200.0 °C = 2000)',
+				noise: 4
+			},
 			{ address: 'Q0.0', name: 'Heater', comment: 'Heater contactor' },
 			{ address: 'QW4', name: 'HeaterPower', comment: 'Power 0 … 27648 = 0 … 100 %' }
-		]
+		],
+		faults: [{ id: 'heaterHalf', label: 'Spalona połowa grzałek' }]
 	},
 	{
 		kind: 'crane',
@@ -101,7 +117,8 @@ export const PLANTS: readonly PlantInfo[] = [
 			{ address: 'Q0.2', name: 'Fast', comment: 'Fast travel 1 m/s (off = 0.2 m/s)' },
 			{ address: 'Q0.3', name: 'HookUp', comment: 'Hoist up' },
 			{ address: 'Q0.4', name: 'HookDown', comment: 'Hoist down' }
-		]
+		],
+		faults: [{ id: 'brakeWorn', label: 'Zużyty hamulec (4× dłuższa droga hamowania)' }]
 	},
 	{
 		kind: 'remote',
@@ -127,6 +144,52 @@ export const PLANTS: readonly PlantInfo[] = [
 			{ address: 'IW6', name: 'NIST_A', comment: 'Actual speed, 16#4000 = 100 % = 50 Hz' },
 			{ address: 'QW4', name: 'STW1', comment: 'Control word to the drive' },
 			{ address: 'QW6', name: 'NSOLL_A', comment: 'Speed setpoint, 16#4000 = 100 % = 50 Hz' }
+		]
+	},
+	{
+		kind: 'pneumatic',
+		name: 'Pneumatic press',
+		description:
+			'A clamp cylinder A and a press cylinder B with monostable 5/2 valves and reed switches. The classic sequence A+ B+ B− A−, with motion time monitoring.',
+		io: [
+			{ address: 'I0.0', name: 'A_Retracted', comment: '1B1 — clamp A retracted' },
+			{ address: 'I0.1', name: 'A_Extended', comment: '1B2 — clamp A extended (part clamped)' },
+			{ address: 'I0.2', name: 'B_Retracted', comment: '2B1 — press B at the top' },
+			{ address: 'I0.3', name: 'B_Extended', comment: '2B2 — press B at the bottom (pressed)' },
+			{ address: 'I0.4', name: 'PartPresent', comment: 'A part in the fixture' },
+			{ address: 'I0.5', name: 'AirOk', comment: 'Pressure switch, ≥ 4 bar' },
+			{ address: 'Q0.0', name: 'Clamp', comment: '1Y1 — valve of A (on = extend)' },
+			{ address: 'Q0.1', name: 'Press', comment: '2Y1 — valve of B (on = extend)' }
+		],
+		faults: [
+			{ id: 'noAir', label: 'Brak sprężonego powietrza' },
+			{ id: 'leakB', label: 'Nieszczelny siłownik B (3× wolniej)' }
+		]
+	},
+	{
+		kind: 'mixer',
+		name: 'Batch mixer',
+		description:
+			'Two components dosed by level, stirred and heated to 50 °C, then drained. Analog level and temperature transmitters — a classic for SFC.',
+		io: [
+			{ address: 'I0.0', name: 'LevelOk', comment: 'High-high level switch, NC (1 = below 95 %)' },
+			{
+				address: 'IW4',
+				name: 'Level',
+				comment: 'Level 0 … 27648 = 0 … 100 % (4–20 mA)',
+				noise: 40
+			},
+			{ address: 'IW6', name: 'Temperature', comment: 'PT100, °C × 10', noise: 3 },
+			{ address: 'Q0.0', name: 'ValveA', comment: 'Inlet of component A' },
+			{ address: 'Q0.1', name: 'ValveB', comment: 'Inlet of component B' },
+			{ address: 'Q0.2', name: 'Stirrer', comment: 'Stirrer motor' },
+			{ address: 'Q0.3', name: 'Heater', comment: 'Heater (only with the elements covered!)' },
+			{ address: 'Q0.4', name: 'Outlet', comment: 'Outlet valve' }
+		],
+		faults: [
+			{ id: 'leakA', label: 'Zawór A nie domyka (przeciek)' },
+			{ id: 'heaterDead', label: 'Uszkodzona grzałka' },
+			{ id: 'stirrerTrip', label: 'Zadziałało zabezpieczenie silnika mieszadła' }
 		]
 	}
 ];

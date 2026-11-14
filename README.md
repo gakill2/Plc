@@ -33,7 +33,7 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
   pusher, each with simple physics; connect one to any project.
-- **28 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
+- **30 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
   to a crane with an encoder, a PID-tuned oven, a remote I/O station and two-hand control. Your
   program runs against test cases in a headless PLC (or through the wired circuit); every lesson
   ships a reference solution that the test suite proves passes, plus a live step-by-step guide.
@@ -56,7 +56,13 @@ it and watch the controller execute your program scan by scan — or let it driv
   trend, watch table and I/O check; downtime and wrong repairs are scored. Every fault is proven by
   a test to cause a visible symptom.
 - **More plants** — overhead crane (encoder, inertia, limit switches, hoist interlock), electric
-  oven (first order + dead time, thermostat) and a remote I/O station on a fieldbus with a heartbeat.
+  oven (first order + dead time, thermostat), a remote I/O station on a fieldbus with a heartbeat, a
+  pneumatic press (two cylinders on 5/2 valves with reed switches) and a batch mixer (dosing by an
+  analog level, heating, stirring — graded per batch).
+- **Imperfect field** — optional realistic signals (analog noise, S7 overflow codes) and injectable
+  faults: sensors stuck at 0 / 1, dirty or slow sensors, a broken 4–20 mA wire, a frozen or offset
+  value, and plant faults (jammed belt, worn pump, no compressed air, burnt heater, worn brake …).
+  Lessons test that the program detects them.
 - **Infrastructure track** — fieldbus and Modbus TCP frame builder, OT networking (subnet
   calculator and a „network doctor” game with seven real-world faults), SCADA / OPC UA / MQTT with a
   live topic broker, OT security zones with a firewall exercise, control cabinet (24 V supply
@@ -125,9 +131,9 @@ Design decisions are recorded as ADRs:
 
 ## Quality
 
-- ~570 unit tests (Vitest) for the engine, compilers, runtime, plants, lessons and persistence,
+- ~580 unit tests (Vitest) for the engine, compilers, runtime, plants, lessons and persistence,
   with coverage thresholds enforced in CI (~97 % lines, ~90 % branches on the core).
-- 44 end-to-end tests (Playwright) for the main flows: running the demo, forcing, ST errors,
+- 46 end-to-end tests (Playwright) for the main flows: running the demo, forcing, ST errors,
   undo/redo, lessons, projects and share links.
 - Strict TypeScript, ESLint and Prettier; GitHub Actions runs everything on every push.
 

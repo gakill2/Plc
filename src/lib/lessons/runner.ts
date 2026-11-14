@@ -15,6 +15,8 @@ import {
 	type Fault
 } from '#lib/circuit/model.js';
 import { createProcess } from '#lib/processes/models.js';
+import { FieldLayer } from '#lib/processes/field.js';
+import { plantInfo } from '#lib/processes/plants.js';
 import type { Lesson, TestContext, TestResult } from './types.js';
 
 const SCAN_MS = 10;
@@ -42,12 +44,19 @@ export function runLessonTests(
 		plc.run();
 
 		const process = lesson.scenario ? createProcess(lesson.scenario) : null;
-		const io = {
+		const sensors = new FieldLayer(1);
+		sensors.realism = !!lesson.realism;
+		sensors.noise = Object.fromEntries(
+			(plantInfo(lesson.scenario)?.io ?? [])
+				.filter((x) => x.noise)
+				.map((x) => [x.address, x.noise!])
+		);
+		const io = sensors.wrap({
 			output: (t: string) => plc.getOutput(t),
 			input: (t: string, v: boolean) => plc.setInput(t, v),
 			word: (a: string) => plc.memory.readNumber(parseAddress(a)),
 			setWord: (a: string, v: number) => plc.setInputNumber(a, v)
-		};
+		});
 		process?.step(0, io); // initial sensor values
 		const devices = field ? new FieldSim(field, plc) : null;
 		if (devices) devices.faults = faults;
@@ -71,6 +80,10 @@ export function runLessonTests(
 			}
 			for (const [terminal, value] of Object.entries(step.set ?? {})) plc.setInput(terminal, value);
 			for (const [name, value] of step.commands ?? []) process?.command(name, value);
+			for (const [address, fault] of Object.entries(step.fieldFaults ?? {}))
+				sensors.setFault(address, fault);
+			for (const [id, on] of Object.entries(step.plantFaults ?? {}))
+				sensors.setPlantFault(process, id, on);
 			for (const [address, value] of Object.entries(step.hmi ?? {})) plc.modify(address, value);
 			devices?.actuate(step.actuate ?? {});
 			devices?.apply();
@@ -82,6 +95,7 @@ export function runLessonTests(
 				t += dt;
 				devices?.step(dt);
 				if (plc.mode === 'FAULT') return fail(`Błąd PLC: ${plc.fault?.message}`);
+				sensors.tick(dt);
 				process?.step(dt, io);
 				const problem = test.always?.(ctx);
 				if (problem) return fail(problem);

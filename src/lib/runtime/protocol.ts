@@ -1,5 +1,6 @@
 import type { Instr, LoadOptions, NumType, PlcSnapshot, ProgramIssue } from '#lib/engine/index.js';
 import type { ProcessKind, ProcessState } from '#lib/processes/types.js';
+import type { FieldSettings } from '#lib/processes/field.js';
 
 /** A signal recorded for the timing diagram. `bit` reads Q of timers/counters, `number` reads ET/CV. */
 export interface TraceSignal {
@@ -43,6 +44,8 @@ export interface RuntimeSnapshot extends PlcSnapshot {
 	trace: { epoch: number; samples: TraceSample[] };
 	/** State of the simulated plant, if the project has one. */
 	process: ProcessState | null;
+	/** Signal realism and injected faults between the plant and the PLC. */
+	field: FieldSettings;
 }
 
 /** Messages from the PLC worker to the UI. */

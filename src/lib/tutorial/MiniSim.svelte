@@ -75,7 +75,8 @@
 			speed: slow ? 0.1 : 1,
 			scanMs: 10,
 			trace: { epoch, samples: [] },
-			process: null
+			process: null,
+			field: { realism: false, faults: {}, plantFaults: [] }
 		};
 	}
 

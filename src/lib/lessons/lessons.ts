@@ -25,6 +25,8 @@ import type {
 	CraneState,
 	DrivePlantState,
 	LineState,
+	MixerState,
+	PneumaticState,
 	OvenState,
 	ProcessKind,
 	TankState
@@ -223,6 +225,135 @@ const setpointIs =
 	({ plc }) => {
 		const s = plc.memory.readNumber(parseAddress('MW12'));
 		return s === v ? null : `Setpoint (MW12) = ${s}, a powinno być ${v}`;
+	};
+
+/* ---------- pneumatic press and batch mixer ---------- */
+
+const PRESS_HEAD = `(* Prasa: docisk A (Clamp, Q0.0) i prasa B (Press, Q0.1), zawory 5/2 monostabilne.
+   Sekwencja A+ B+ B− A−. Krok: 0 czeka, 10 A+, 20 B+, 30 B−, 40 A−, 99 błąd. *)
+VAR
+  step : INT;
+  lastStep : INT;
+  moveTime : TON;
+  startEdge : R_TRIG;
+END_VAR
+startEdge(CLK := Start);
+`;
+
+const PRESS_STARTER = `${PRESS_HEAD}
+// TODO: nadzór ruchu — każdy krok 10 … 40 ma najwyżej 2 s, brak powietrza w cyklu = błąd (krok 99)
+
+CASE step OF
+  0:  IF startEdge.Q AND PartPresent AND AirOk AND A_Retracted AND B_Retracted THEN
+        step := 10;
+      END_IF;
+  10: IF A_Extended THEN step := 20; END_IF;
+  // TODO: 20 B+, 30 B−, 40 A−, 99 błąd (Ack i powietrze → 30)
+END_CASE;
+
+Clamp := step = 10 OR step = 20;
+Press := step = 20;
+Alarm := FALSE;
+`;
+
+const PRESS_SOLUTION = `${PRESS_HEAD}
+// nadzór ruchu: licznik czasu startuje od nowa w każdym kroku
+moveTime(IN := step >= 10 AND step <= 40 AND step = lastStep, PT := T#2s);
+lastStep := step;
+IF step >= 10 AND step <= 40 AND (moveTime.Q OR NOT AirOk) THEN
+  step := 99;
+END_IF;
+
+CASE step OF
+  0:  IF (startEdge.Q OR Auto) AND PartPresent AND AirOk AND A_Retracted AND B_Retracted THEN
+        step := 10;
+      END_IF;
+  10: IF A_Extended THEN step := 20; END_IF;    // detal dociśnięty
+  20: IF B_Extended THEN step := 30; END_IF;    // wytłoczony
+  30: IF B_Retracted THEN step := 40; END_IF;   // prasa w górze
+  40: IF A_Retracted THEN step := 0; END_IF;    // docisk zwolniony
+  99: IF Ack AND AirOk THEN step := 30; END_IF; // po kwitowaniu: prasa w górę, potem docisk
+END_CASE;
+
+// docisk trzyma, dopóki prasa nie wróci — także w błędzie
+Clamp := step = 10 OR step = 20 OR step = 30 OR (step = 99 AND Clamp);
+Press := step = 20;
+Alarm := step = 99;
+`;
+
+const pressCounts =
+	(good: number, atLeast = false): Check =>
+	({ process }) => {
+		const s = process?.state() as PneumaticState;
+		if (s.scrap) return `${s.scrap} detal(e) zniszczone — ${s.lastFault ?? ''}`;
+		if (s.emptyStrokes) return 'pusty skok prasy — brak detalu';
+		const ok = atLeast ? s.good >= good : s.good === good;
+		return ok
+			? null
+			: `dobrych detali: ${s.good}, a powinno być ${atLeast ? 'co najmniej ' : ''}${good}`;
+	};
+
+const L40 = 11059;
+const L80 = 22118;
+
+function mixerSfc(full: boolean): Sfc {
+	const steps = [
+		sfcStep('Idle', true),
+		sfcStep('FillA', false, [['N', 'ValveA']]),
+		sfcStep('FillB', false, [['N', 'ValveB']])
+	];
+	const transitions = [
+		sfcTransition('Idle', 'FillA', 'Start AND NOT Alarm'),
+		sfcTransition('FillA', 'FillB', `Level >= ${L40}`)
+	];
+	if (full) {
+		steps.push(
+			sfcStep('Heat', false, [
+				['N', 'Stirrer'],
+				['N', 'Heater']
+			]),
+			sfcStep('Mix', false, [['N', 'Stirrer']]),
+			sfcStep('Drain', false, [['N', 'Outlet']])
+		);
+		transitions.push(
+			sfcTransition('FillB', 'Heat', `Level >= ${L80}`),
+			sfcTransition('Heat', 'Mix', 'Temperature >= 500'),
+			sfcTransition('Mix', 'Drain', 'Mix.T >= T#5s'),
+			sfcTransition('Drain', 'Idle', 'Level <= 276')
+		);
+	}
+	return {
+		steps,
+		transitions,
+		logic: full
+			? `// 32767 = przepełnienie / zerwany przewód 4–20 mA: pomiar nie jest wiarygodny
+IF Level >= 32767 OR NOT LevelOk THEN
+  Alarm := TRUE;
+END_IF;
+IF Ack AND Level < 32767 AND LevelOk THEN
+  Alarm := FALSE;
+END_IF;
+// blokady mają pierwszeństwo przed diagramem
+IF Alarm THEN
+  ValveA := FALSE;
+  ValveB := FALSE;
+  Heater := FALSE;
+END_IF;
+IF Level < 4147 THEN
+  Heater := FALSE;                 // grzałka tylko zanurzona (> 15 %)
+END_IF;`
+			: '// TODO: alarm przy złym pomiarze poziomu i blokady (logika stała działa po diagramie)'
+	};
+}
+
+const mixerOk =
+	(good: number): Check =>
+	({ process }) => {
+		const s = process?.state() as MixerState;
+		if (s.overflows) return 'zbiornik się przelał';
+		if (s.dryHeating) return 'grzałka pracowała na sucho';
+		if (s.bad) return s.lastBatch ?? 'zła partia';
+		return s.good >= good ? null : `dobrych partii: ${s.good}, a powinno być ${good}`;
 	};
 
 /** The filtered value in MW20 is close to the real temperature. */
@@ -2769,6 +2900,167 @@ export const LESSONS: Lesson[] = [
 				)
 			),
 		tests: []
+	},
+	{
+		slug: 'pneumatic-press',
+		title: 'Prasa pneumatyczna: sekwencja A+ B+ B− A− z nadzorem ruchu',
+		level: 'process',
+		scenario: 'pneumatic',
+		summary:
+			'Klasyczne zadanie z pneumatyki: docisk i prasa na zaworach 5/2, krokowy program w CASE i alarm, gdy siłownik nie dojedzie.',
+		instructions: [
+			'Stanowisko ma dwa siłowniki na **monostabilnych zaworach 5/2**: cewka załączona = wysuw, wyłączona = sprężyna przestawia zawór i siłownik się chowa. Na obu krańcach każdego siłownika są **kontaktrony** (1B1/1B2, 2B1/2B2).',
+			'Po `Start` (albo stale przy przełączniku `Auto`), gdy detal leży, jest powietrze i oba siłowniki są schowane: **A+** (docisk), **B+** (prasa), **B−**, **A−**. Każdy krok czeka na kontaktron — nie na czas.',
+			'**Nadzór ruchu:** jeśli ruch nie skończy się w 2 s albo w trakcie cyklu zniknie powietrze (`AirOk`), przejdź do kroku błędu 99 i zapal `Alarm`. Docisk ma wtedy trzymać detal, a prasa wracać. Po `Ack` (i z powrotem powietrzu) program kończy cykl: prasa w górę, potem docisk.',
+			'Usterki wywołasz sam w widoku Process → „Czujniki i usterki” (brak powietrza, nieszczelny siłownik, kontaktron stale 0).'
+		],
+		hints: [
+			'Licznik czasu kroku: `moveTime(IN := step >= 10 AND step <= 40 AND step = lastStep, PT := T#2s); lastStep := step;` — przy zmianie kroku IN na jeden cykl spada i timer liczy od nowa.',
+			'`IF step >= 10 AND step <= 40 AND (moveTime.Q OR NOT AirOk) THEN step := 99; END_IF;`',
+			'Wyjścia licz z kroku po CASE: `Clamp := step = 10 OR step = 20 OR step = 30 OR (step = 99 AND Clamp);`'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'pneumatic-press',
+			scenario: 'pneumatic',
+			language: 'st',
+			st: PRESS_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+				['switch', 'Auto', 'I1.1'],
+				['pushbutton', 'Ack', 'I1.2'],
+				['lamp', 'Alarm', 'Q1.0', { color: 'red' }]
+			]),
+			symbols: (plantInfo('pneumatic')?.io ?? []).map((io) =>
+				symbol(io.name, io.address, io.comment)
+			),
+			watch: ['A_Extended', 'B_Extended', 'Clamp', 'Press', 'Alarm'].map((w) =>
+				watchEntry(w, undefined, true)
+			)
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: PRESS_SOLUTION,
+		tests: [
+			{
+				name: 'Start: jeden cykl, detal dobry',
+				steps: [
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'puść, 4 s', set: { 'I1.0': false }, wait: 4000, check: pressCounts(1) }
+				]
+			},
+			{
+				name: 'Auto: detal za detalem',
+				steps: [
+					{ label: 'Auto, 15 s', set: { 'I1.1': true }, wait: 15_000, check: pressCounts(4, true) }
+				]
+			},
+			{
+				name: 'Brak powietrza w cyklu: alarm, docisk trzyma, po Ack cykl kończy się bez złomu',
+				steps: [
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{
+						label: 'docisk w ruchu — znika powietrze',
+						set: { 'I1.0': false },
+						plantFaults: { noAir: true },
+						wait: 2500,
+						expect: { 'Q1.0': true, 'Q0.1': false }
+					},
+					{
+						label: 'powietrze wraca',
+						plantFaults: { noAir: false },
+						wait: 500,
+						expect: { 'Q1.0': true }
+					},
+					{ label: 'Ack', set: { 'I1.2': true }, wait: 100 },
+					{
+						label: 'puść Ack, 2 s',
+						set: { 'I1.2': false },
+						wait: 2000,
+						expect: { 'Q1.0': false, 'Q0.0': false },
+						check: pressCounts(0)
+					},
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'puść, 4 s', set: { 'I1.0': false }, wait: 4000, check: pressCounts(1) }
+				]
+			},
+			{
+				name: 'Nieszczelny siłownik: B nie dojeżdża w 2 s → alarm',
+				steps: [
+					{
+						label: 'nieszczelny B, Start',
+						plantFaults: { leakB: true },
+						set: { 'I1.0': true },
+						wait: 100
+					},
+					{ label: 'puść, 3 s', set: { 'I1.0': false }, wait: 3000, expect: { 'Q1.0': true } }
+				]
+			}
+		]
+	},
+	{
+		slug: 'mixer-batch',
+		title: 'Mieszalnik wsadowy w SFC: dozowanie, grzanie i blokady',
+		level: 'process',
+		scenario: 'mixer',
+		realism: true,
+		summary:
+			'Partia: 40 % składnika A, do 80 % składnik B, grzanie z mieszaniem do 50 °C, 5 s mieszania, spust. Pomiar poziomu z szumem — i co, gdy przewód 4–20 mA się zerwie.',
+		instructions: [
+			'Mieszalnik ma przetwornik poziomu `Level` (`IW4`, 0 … 27648 = 0 … 100 %, sygnał 4–20 mA) i temperatury `Temperature` (`IW6`, °C × 10). Pomiary **szumią** — jak prawdziwe.',
+			'Dokończ diagram SFC: po `FillB` krok `Heat` (mieszadło i grzałka) do **50 °C** (500), krok `Mix` (samo mieszadło) przez **5 s** i `Drain` (zawór spustowy) aż poziom spadnie do 1 % (276). Potem znowu `Idle`. Progi: 40 % = 11059, 80 % = 22118.',
+			'**Blokady w logice stałej** (działa po diagramie, więc ma ostatnie słowo): przy złym pomiarze poziomu — wartość **32767** (zerwany przewód / przepełnienie) albo zadziałany wyłącznik `LevelOk` — zapal `Alarm` i zamknij zawory A, B oraz wyłącz grzałkę. `Ack` kasuje alarm, gdy pomiar wrócił. Grzałka nigdy poniżej 15 % (4147) — inaczej pracuje na sucho.',
+			'Spróbuj bez blokady: zerwij przewód `IW4` w widoku Process → „Czujniki i usterki” w trakcie napełniania. 32767 spełnia warunek „≥ 40 %” i „≥ 80 %” — diagram przeskoczy do grzania z prawie pustym zbiornikiem.'
+		],
+		hints: [
+			'Przejście `Mix → Drain`: `Mix.T >= T#5s` (czas aktywności kroku).',
+			'`IF Alarm THEN ValveA := FALSE; ValveB := FALSE; Heater := FALSE; END_IF;` — logika stała nadpisuje akcje kroków.',
+			'Alarm zapamiętaj: ustawiaj przy `Level >= 32767 OR NOT LevelOk`, kasuj tylko `Ack` przy dobrym pomiarze.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'mixer-batch',
+			scenario: 'mixer',
+			language: 'sfc',
+			sfc: mixerSfc(false),
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+				['pushbutton', 'Ack', 'I1.1'],
+				['lamp', 'Alarm', 'Q1.0', { color: 'red' }]
+			]),
+			symbols: (plantInfo('mixer')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+			watch: [
+				watchEntry('Level', 'DEC', true),
+				watchEntry('Temperature', 'DEC', true),
+				watchEntry('Alarm', undefined, true)
+			]
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSfc: () => mixerSfc(true),
+		tests: [
+			{
+				name: 'Jedna dobra partia',
+				steps: [
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'puść, 90 s', set: { 'I1.0': false }, wait: 90_000, check: mixerOk(1) }
+				]
+			},
+			{
+				name: 'Zerwany przewód poziomu przy napełnianiu: alarm, zawory zamknięte, grzałka nie rusza',
+				steps: [
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'napełnianie A, 3 s', set: { 'I1.0': false }, wait: 3000 },
+					{
+						label: 'przewód IW4 zerwany, 20 s',
+						fieldFaults: { IW4: 'wireBreak' },
+						wait: 20_000,
+						expect: { 'Q1.0': true, 'Q0.0': false, 'Q0.1': false, 'Q0.3': false },
+						check: mixerOk(0)
+					}
+				]
+			}
+		]
 	},
 	/* ---------- FBD ---------- */
 	{

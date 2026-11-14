@@ -6,7 +6,16 @@ import type { DriveParams, DriveState } from '#lib/drive/drive.js';
  */
 
 export type ProcessKind =
-	'traffic' | 'tank' | 'conveyor' | 'line' | 'oven' | 'crane' | 'remote' | 'drive';
+	| 'traffic'
+	| 'tank'
+	| 'conveyor'
+	| 'line'
+	| 'oven'
+	| 'crane'
+	| 'remote'
+	| 'drive'
+	| 'pneumatic'
+	| 'mixer';
 
 export interface ProcessIO {
 	output(terminal: string): boolean;
@@ -162,7 +171,54 @@ export interface DrivePlantState {
 	params: DriveParams;
 }
 
+export interface PneumaticState {
+	kind: 'pneumatic';
+	/** cylinder positions, 0 = retracted, 1 = extended */
+	a: number;
+	b: number;
+	aCmd: boolean;
+	bCmd: boolean;
+	part: { pressed: boolean; damaged: boolean } | null;
+	good: number;
+	scrap: number;
+	emptyStrokes: number;
+	strokes: number;
+	autoFeed: boolean;
+	lastFault: string | null;
+	sensors: {
+		aIn: boolean;
+		aOut: boolean;
+		bIn: boolean;
+		bOut: boolean;
+		part: boolean;
+		air: boolean;
+	};
+}
+
+export interface MixerState {
+	kind: 'mixer';
+	/** % */
+	level: number;
+	/** share of component A in the tank, 0 … 1 */
+	ratioA: number;
+	/** °C */
+	temp: number;
+	valveA: boolean;
+	valveB: boolean;
+	stirrer: boolean;
+	heater: boolean;
+	outlet: boolean;
+	good: number;
+	bad: number;
+	overflows: number;
+	dryHeating: number;
+	lastFault: string | null;
+	lastBatch: string | null;
+}
+
 export type ProcessState =
+	| PneumaticState
+	| MixerState
 	| TrafficState
 	| TankState
 	| ConveyorState
@@ -171,6 +227,18 @@ export type ProcessState =
 	| CraneState
 	| RemoteState
 	| DrivePlantState;
+
+/** Faults of a plant that can be switched on in the Process view, lessons and on call. */
+export interface PlantFault {
+	id: string;
+	label: string;
+}
+
+/** Parses the value of the `fault` command: `{ id, on }`. */
+export const faultCommand = (value: unknown): { id: string; on: boolean } | null => {
+	const v = value as { id?: unknown; on?: unknown } | null;
+	return v && typeof v.id === 'string' ? { id: v.id, on: Boolean(v.on) } : null;
+};
 
 export interface ProcessModel {
 	readonly kind: ProcessKind;

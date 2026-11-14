@@ -875,6 +875,69 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		checkIt
 	],
 
+	'pneumatic-press': [
+		{
+			text: 'Dokończ kroki: `20` czeka na `B_Extended`, `30` na `B_Retracted`, `40` na `A_Retracted`.',
+			done: (c) =>
+				/20\s*:\s*IF\s+B_Extended/i.test(c.st ?? '') &&
+				/30\s*:\s*IF\s+B_Retracted/i.test(c.st ?? '') &&
+				/40\s*:\s*IF\s+A_Retracted/i.test(c.st ?? '')
+		},
+		{
+			text: 'Nadzór ruchu: timer `moveTime` z `PT := T#2s`, restartowany przy zmianie kroku.',
+			done: (c) => /moveTime\s*\(/i.test(c.st ?? '') && /PT\s*:=\s*T#2s/i.test(c.st ?? '')
+		},
+		{
+			text: 'Krok błędu `99`: alarm, a po `Ack` i z powietrzem powrót do `30`.',
+			done: (c) =>
+				/step\s*:=\s*99/i.test(c.st ?? '') &&
+				/99\s*:\s*IF[^;]*Ack/i.test(c.st ?? '') &&
+				/Alarm\s*:=\s*step\s*=\s*99/i.test(c.st ?? '')
+		},
+		{
+			text: 'Tryb `Auto`: start także bez przycisku — `(startEdge.Q OR Auto) AND …`.',
+			done: (c) => /OR\s+Auto\b/i.test(c.st ?? '')
+		},
+		runIt(
+			'w widoku Process włącz Auto, potem w „Czujniki i usterki” wyłącz powietrze w trakcie cyklu.'
+		),
+		checkIt
+	],
+
+	'mixer-batch': [
+		{
+			text: 'Krok `Heat` z akcjami N `Stirrer` i N `Heater`, przejście z `FillB` przy `Level >= 22118`.',
+			done: (c) => {
+				const h = c.sfc?.steps.find((s) => s.name.toUpperCase() === 'HEAT');
+				const ops = h?.actions.map((a) => a.operand.toUpperCase()) ?? [];
+				return ops.includes('STIRRER') && ops.includes('HEATER');
+			}
+		},
+		{
+			text: 'Krok `Mix` (N `Stirrer`), przejście `Heat → Mix` przy `Temperature >= 500`, a dalej `Mix.T >= T#5s`.',
+			done: (c) =>
+				!!c.sfc?.transitions.some((t) => /Temperature\s*>=\s*500/i.test(t.condition)) &&
+				!!c.sfc?.transitions.some((t) => /Mix\.T\s*>=\s*T#5s/i.test(t.condition))
+		},
+		{
+			text: 'Krok `Drain` (N `Outlet`) i powrót do `Idle` przy `Level <= 276`.',
+			done: (c) =>
+				!!c.sfc?.steps.some(
+					(s) =>
+						s.name.toUpperCase() === 'DRAIN' && s.actions.some((a) => /Outlet/i.test(a.operand))
+				) && !!c.sfc?.transitions.some((t) => t.to.some((n) => /Idle/i.test(n)))
+		},
+		{
+			text: 'Logika stała: alarm przy `Level >= 32767`, a przy alarmie zamknięte zawory i wyłączona grzałka.',
+			done: (c) =>
+				/32767/.test(c.sfc?.logic ?? '') &&
+				/ValveA\s*:=\s*FALSE/i.test(c.sfc?.logic ?? '') &&
+				/Heater\s*:=\s*FALSE/i.test(c.sfc?.logic ?? '')
+		},
+		runIt('zrób partię, a przy następnej zerwij przewód IW4 w „Czujniki i usterki”.'),
+		checkIt
+	],
+
 	'recipe-index': [
 		{
 			text: 'Sprawdź zakres przed indeksem: `IF RecipeNo >= 1 AND RecipeNo <= 3 THEN …`',
