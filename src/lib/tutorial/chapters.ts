@@ -1022,6 +1022,11 @@ Spróbuj: ustaw **Ti = wył.** (sam P) i zobacz uchyb ustalony. Potem włącz Ti
 				kind: 'lesson',
 				slug: 'oven-pid',
 				text: 'Dostrój prawdziwy regulator PI pieca w Structured Text: Kp, Ti, anti-windup i blokada drzwi.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'oven-pid-lad',
+				text: 'Ten sam piec w drabince — gotowy blok PID z biblioteki, jak PID_Compact w TIA Portal.'
 			}
 		]
 	},
@@ -1230,6 +1235,36 @@ Wentylator(Start := S3, Stop := P3, Potwierdzenie := K3_FB);`
 				correct: 1,
 				explanation:
 					'Co robi network, widać na schemacie. Komentarz powinien wyjaśniać **dlaczego** — szczególnie rzeczy, których nie wolno „poprawić”.'
+			},
+			{
+				kind: 'code',
+				title: 'FUNCTION_BLOCK w Structured Text — tak piszesz go w tym symulatorze',
+				code: `FUNCTION_BLOCK Motor
+VAR_INPUT
+  Start, Stop : BOOL;
+END_VAR
+VAR_OUTPUT
+  Run : BOOL;
+END_VAR
+Run := (Start OR Run) AND Stop;
+END_FUNCTION_BLOCK
+
+VAR
+  m1 : Motor;           // instancja = własna pamięć
+  m2 : Motor;
+END_VAR
+m1(Start := S1, Stop := S2, Run => K1);
+m2(Start := S3, Stop := S4);
+K2 := m2.Run;           // wyjście czytasz też przez kropkę`
+			},
+			{
+				kind: 'text',
+				text: 'Działają też `FUNCTION Nazwa : TYP` (wynik przypisujesz do nazwy funkcji, wywołujesz w wyrażeniu) i typy `TYPE … : STRUCT … END_STRUCT END_TYPE`. Wewnętrzne zmienne bloku (VAR) są niewidoczne z zewnątrz, a wyjść (VAR_OUTPUT) nie da się zapisać spoza bloku — kompilator to sprawdza.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'fb-motor',
+				text: 'Napisz blok silnika z kontrolą styku zwrotnego i użyj go w trzech instancjach.'
 			}
 		]
 	},

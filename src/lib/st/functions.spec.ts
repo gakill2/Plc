@@ -101,7 +101,7 @@ describe('Structured Text standard functions', () => {
 
 	it('folds constant calls', () => {
 		const r = compileSt('VAR x : INT; END_VAR x := MAX(2, 9) + ABS(-1);');
-		expect(disassemble(r.program).filter((l) => l.startsWith('MOVE'))).toEqual(['MOVE 10, MW130']);
+		expect(disassemble(r.program).filter((l) => l.startsWith('MOVE'))).toEqual(['MOVE 10, MW258']);
 	});
 
 	it('reports wrong calls clearly', () => {

@@ -4,8 +4,10 @@ import type {
 	CaseLabel,
 	Expr,
 	Span,
+	Pou,
 	Stmt,
 	StProgram,
+	StructType,
 	Target,
 	VarDecl
 } from './ast.js';
@@ -26,7 +28,11 @@ const BLOCK_END = new Set([
 	'END_WHILE',
 	'UNTIL',
 	'END_REPEAT',
-	'END_PROGRAM'
+	'END_PROGRAM',
+	'END_FUNCTION_BLOCK',
+	'END_FUNCTION',
+	'CYCLIC_INTERRUPT',
+	'END_CYCLIC_INTERRUPT'
 ]);
 
 /**
@@ -116,6 +122,7 @@ export function parse(src: string): ParseResult {
 					const close = expectOp(')');
 					return { kind: 'fcall', name: t.text.toUpperCase(), args, from: t.from, to: close.to };
 				}
+				if (isOp('[')) return indexed(t);
 				if (isOp('.')) {
 					next();
 					const member = expectIdent('a member name like Q or ET');
@@ -180,8 +187,35 @@ export function parse(src: string): ParseResult {
 		return list;
 	}
 
+	/** `a[i]` or `a[i].member`, with the name token already read */
+	function indexed(t: Token): Extract<Expr, { kind: 'index' }> {
+		next(); // [
+		const index = expression();
+		if (isOp(',')) fail('Only one-dimensional arrays are supported — use an array of a STRUCT');
+		let close = expectOp(']');
+		let member: string | undefined;
+		if (isOp('.')) {
+			next();
+			close = expectIdent('a member name');
+			member = close.text.toUpperCase();
+		}
+		return { kind: 'index', array: t.text, index, member, from: t.from, to: close.to };
+	}
+
 	function target(): Target {
 		const t = next();
+		if (t.kind === 'ident' && isOp('[')) return indexed(t);
+		if (t.kind === 'ident' && isOp('.')) {
+			next();
+			const member = expectIdent('a member name');
+			return {
+				kind: 'member',
+				object: t.text,
+				member: member.text.toUpperCase(),
+				from: t.from,
+				to: member.to
+			};
+		}
 		if (t.kind === 'ident') return { kind: 'name', name: t.text, from: t.from, to: t.to };
 		if (t.kind === 'address') return { kind: 'address', text: t.text, from: t.from, to: t.to };
 		return fail(`Expected a variable, found ${describe(t)}`, t);
@@ -238,19 +272,44 @@ export function parse(src: string): ParseResult {
 					expectOp(';');
 					return { kind: t.text === 'EXIT' ? 'exit' : 'return', ...span(from) };
 				case 'VAR':
+				case 'VAR_INPUT':
+				case 'VAR_OUTPUT':
 					return fail('VAR blocks must come before the first statement');
+				case 'CYCLIC_INTERRUPT':
+				case 'END_CYCLIC_INTERRUPT':
+					return fail('CYCLIC_INTERRUPT goes after the main program, at the end of the source');
 			}
 			return fail(`Unexpected ${describe(t)}`);
 		}
 
-		// function block call: name(arg := value, …);
-		if (t.kind === 'ident' && isOp('(', peek(1))) {
+		// function block call: name(arg := value, …);  or  name[i](…);
+		let callIndex: Expr | undefined;
+		if (t.kind === 'ident' && isOp('[', peek(1))) {
+			const save = pos;
 			next();
+			const el = indexed(t);
+			if (isOp('(') && !el.member) callIndex = el.index;
+			else pos = save;
+		}
+		if (t.kind === 'ident' && (callIndex || isOp('(', peek(1)))) {
+			if (!callIndex) next();
 			next();
 			const args: Arg[] = [];
 			if (!isOp(')')) {
 				do {
 					const name = expectIdent('a parameter name like IN or PT');
+					if (isOp('=>')) {
+						next();
+						const value = target();
+						args.push({
+							name: name.text.toUpperCase(),
+							value,
+							output: true,
+							from: name.from,
+							to: value.to
+						});
+						continue;
+					}
 					expectOp(':=');
 					const value = expression();
 					args.push({ name: name.text.toUpperCase(), value, from: name.from, to: value.to });
@@ -263,6 +322,7 @@ export function parse(src: string): ParseResult {
 				name: t.text,
 				nameSpan: { from: t.from, to: t.to },
 				args,
+				...(callIndex ? { index: callIndex } : {}),
 				...span(from)
 			};
 		}
@@ -270,7 +330,9 @@ export function parse(src: string): ParseResult {
 		// assignment
 		const variable = target();
 		if (!isOp(':='))
-			fail(`Expected ":=" after ${variable.kind === 'name' ? variable.name : variable.text}`);
+			fail(
+				`Expected ":=" after ${variable.kind === 'name' ? variable.name : variable.kind === 'member' ? `${variable.object}.${variable.member}` : variable.kind === 'index' ? `${variable.array}[…]` : variable.text}`
+			);
 		next();
 		const value = expression();
 		expectOp(';');
@@ -371,14 +433,87 @@ export function parse(src: string): ParseResult {
 
 	/* ---------- declarations ---------- */
 
-	function varBlocks(): VarDecl[] {
-		const vars: VarDecl[] = [];
-		while (isKw('VAR')) {
-			next();
+	type Section = 'VAR' | 'VAR_INPUT' | 'VAR_OUTPUT';
+
+	const arrayBound = (): number => {
+		const negative = isOp('-') ? (next(), true) : false;
+		const t = next();
+		if (t.kind !== 'int') fail('Array bounds are whole numbers, e.g. ARRAY[1..10] OF INT', t);
+		return negative ? -t.value! : t.value!;
+	};
+
+	/** `INT` or `ARRAY[1..10] OF INT`; the returned token is the element type */
+	function typeSpec(what: string): { type: Token; dims?: { low: number; high: number } } {
+		if (!isKw('ARRAY')) return { type: expectIdent(what) };
+		const head = next();
+		expectOp('[');
+		const low = arrayBound();
+		expectOp('..');
+		const high = arrayBound();
+		if (isOp(',')) fail('Only one-dimensional arrays are supported — use an array of a STRUCT');
+		expectOp(']');
+		expectKw('OF');
+		if (isKw('ARRAY')) fail('An array of arrays is not supported — use an array of a STRUCT');
+		const type = expectIdent('the element type, e.g. INT');
+		if (high < low) fail(`The upper bound ${high} is below the lower bound ${low}`, head);
+		return { type, dims: { low, high } };
+	}
+
+	/** `:= value`, or `:= [1, 2, 3]` for an array */
+	function initial(array: boolean): { init: Expr | null; initList?: Expr[] } {
+		if (!isOp(':=')) return { init: null };
+		next();
+		if (!isOp('[')) {
+			const init = expression();
+			if (array) fail('Initialise an array with a list in brackets, e.g. := [1, 2, 3]', peek(-1));
+			return { init };
+		}
+		const open = next();
+		if (!array) fail('A list in brackets initialises an ARRAY', open);
+		const initList: Expr[] = [];
+		if (!isOp(']')) {
+			do initList.push(expression());
+			while (isOp(',') && next());
+		}
+		expectOp(']');
+		return { init: null, initList };
+	}
+	function varBlocks(allowed: Section[] = ['VAR']): (VarDecl & { section: Section })[] {
+		const vars: (VarDecl & { section: Section })[] = [];
+		while (isKw('VAR') || isKw('VAR_INPUT') || isKw('VAR_OUTPUT')) {
+			const head = next();
+			const section = head.text as Section;
+			let retain = false;
+			if (isKw('RETAIN')) {
+				const r = next();
+				retain = true;
+				if (section !== 'VAR' || allowed.length > 1)
+					errors.push(
+						new StSyntaxError(
+							'RETAIN is only allowed in the VAR block of the program — an instance is retentive when it is declared there',
+							r.from,
+							r.to
+						)
+					);
+			}
+			if (!allowed.includes(section))
+				errors.push(
+					new StSyntaxError(
+						`${section} is only allowed in a FUNCTION_BLOCK or FUNCTION`,
+						head.from,
+						head.to
+					)
+				);
 			while (!isKw('END_VAR') && peek().kind !== 'eof') {
 				const start = pos;
 				try {
 					const name = expectIdent('a variable name');
+					// a, b, c : BOOL;  — several names share one declaration
+					const more: Token[] = [];
+					while (isOp(',')) {
+						next();
+						more.push(expectIdent('a variable name'));
+					}
 					let at: string | null = null;
 					if (isKw('AT')) {
 						next();
@@ -389,18 +524,25 @@ export function parse(src: string): ParseResult {
 						at = a.text;
 					}
 					expectOp(':');
-					const type = expectIdent('a type like BOOL, INT, REAL or TON');
-					const init = isOp(':=') ? (next(), expression()) : null;
+					const { type, dims } = typeSpec('a type like BOOL, INT, REAL or TON');
+					const { init, initList } = initial(!!dims);
 					expectOp(';');
-					vars.push({
-						name: name.text,
-						type: type.text.toUpperCase(),
-						typeSpan: { from: type.from, to: type.to },
-						at,
-						init,
-						from: name.from,
-						to: type.to
-					});
+					if (at && more.length) fail('AT needs a single variable');
+					if (at && dims) fail('An ARRAY cannot have an AT address');
+					for (const n of [name, ...more])
+						vars.push({
+							name: n.text,
+							type: type.text.toUpperCase(),
+							typeSpan: { from: type.from, to: type.to },
+							at,
+							init,
+							...(dims ? { dims } : {}),
+							...(initList ? { initList } : {}),
+							...(retain ? { retain } : {}),
+							section,
+							from: n.from,
+							to: type.to
+						});
 				} catch (e) {
 					if (!(e instanceof StSyntaxError)) throw e;
 					errors.push(e);
@@ -419,6 +561,117 @@ export function parse(src: string): ParseResult {
 		return vars;
 	}
 
+	/* ---------- user types and POUs ---------- */
+
+	const recover = (e: unknown) => {
+		if (!(e instanceof StSyntaxError)) throw e;
+		errors.push(e);
+	};
+
+	function typeBlock(): StructType[] {
+		next(); // TYPE
+		const out: StructType[] = [];
+		while (peek().kind === 'ident') {
+			const name = next();
+			try {
+				expectOp(':');
+				expectKw('STRUCT');
+				const fields: VarDecl[] = [];
+				while (!isKw('END_STRUCT') && peek().kind !== 'eof') {
+					const f = expectIdent('a field name');
+					expectOp(':');
+					const { type, dims } = typeSpec('a field type');
+					const { init, initList } = initial(!!dims);
+					expectOp(';');
+					fields.push({
+						name: f.text,
+						type: type.text.toUpperCase(),
+						typeSpan: { from: type.from, to: type.to },
+						at: null,
+						init,
+						...(dims ? { dims } : {}),
+						...(initList ? { initList } : {}),
+						from: f.from,
+						to: type.to
+					});
+				}
+				expectKw('END_STRUCT');
+				optionalSemicolon();
+				out.push({ name: name.text, fields, from: name.from, to: name.to });
+			} catch (e) {
+				recover(e);
+				while (peek().kind !== 'eof' && !isKw('END_STRUCT') && !isKw('END_TYPE')) next();
+				if (isKw('END_STRUCT')) next();
+				optionalSemicolon();
+			}
+		}
+		try {
+			expectKw('END_TYPE');
+			optionalSemicolon();
+		} catch (e) {
+			recover(e);
+		}
+		return out;
+	}
+
+	function pou(): Pou {
+		const head = next();
+		const kind = head.text === 'FUNCTION_BLOCK' ? 'fb' : 'function';
+		const name = expectIdent(kind === 'fb' ? 'a function block name' : 'a function name');
+		let returnType: string | null = null;
+		if (kind === 'function') {
+			expectOp(':');
+			returnType = expectIdent('a result type like INT or REAL').text.toUpperCase();
+		}
+		const decls = varBlocks(['VAR', 'VAR_INPUT', 'VAR_OUTPUT']);
+		if (kind === 'function' && decls.some((d) => d.section === 'VAR_OUTPUT'))
+			errors.push(
+				new StSyntaxError(
+					'A FUNCTION returns one value — use a FUNCTION_BLOCK for several outputs',
+					name.from,
+					name.to
+				)
+			);
+		const body = statements();
+		const end = kind === 'fb' ? 'END_FUNCTION_BLOCK' : 'END_FUNCTION';
+		try {
+			expectKw(end);
+			optionalSemicolon();
+		} catch (e) {
+			recover(e);
+			while (peek().kind !== 'eof' && !isKw(end)) next();
+			if (isKw(end)) next();
+		}
+		const strip = (d: VarDecl & { section: Section }): VarDecl => {
+			const out: VarDecl & { section?: Section } = { ...d };
+			delete out.section;
+			return out;
+		};
+		return {
+			kind,
+			name: name.text,
+			returnType,
+			inputs: decls.filter((d) => d.section === 'VAR_INPUT').map(strip),
+			outputs: decls.filter((d) => d.section === 'VAR_OUTPUT').map(strip),
+			locals: decls.filter((d) => d.section === 'VAR').map(strip),
+			body,
+			from: head.from,
+			to: name.to
+		};
+	}
+
+	const types: StructType[] = [];
+	const pous: Pou[] = [];
+	while (isKw('TYPE') || isKw('FUNCTION_BLOCK') || isKw('FUNCTION')) {
+		try {
+			if (isKw('TYPE')) types.push(...typeBlock());
+			else pous.push(pou());
+		} catch (e) {
+			recover(e);
+			next();
+		}
+	}
+
 	/* ---------- program ---------- */
 
 	let wrapped = false;
@@ -427,8 +680,32 @@ export function parse(src: string): ParseResult {
 		if (peek().kind === 'ident') next();
 		wrapped = true;
 	}
-	const vars = varBlocks();
+	const vars = varBlocks().map((d) => {
+		const out: VarDecl & { section?: string } = { ...d };
+		delete out.section;
+		return out as VarDecl;
+	});
 	const body = statements();
+	let cyclic: StProgram['cyclic'];
+	if (isKw('CYCLIC_INTERRUPT')) {
+		const head = next();
+		try {
+			const t = next();
+			if (t.kind !== 'time')
+				fail('CYCLIC_INTERRUPT needs its interval, e.g. CYCLIC_INTERRUPT T#100ms', t);
+			const ms = t.value!;
+			if (ms < 10 || ms % 10 !== 0)
+				fail('The interval must be a multiple of the 10 ms scan, e.g. T#100ms', t);
+			const cbody = statements();
+			expectKw('END_CYCLIC_INTERRUPT');
+			optionalSemicolon();
+			cyclic = { intervalMs: ms, body: cbody, from: head.from, to: head.to };
+		} catch (e) {
+			recover(e);
+			while (peek().kind !== 'eof' && !isKw('END_CYCLIC_INTERRUPT')) next();
+			if (isKw('END_CYCLIC_INTERRUPT')) next();
+		}
+	}
 	if (wrapped) {
 		try {
 			expectKw('END_PROGRAM');
@@ -445,5 +722,5 @@ export function parse(src: string): ParseResult {
 		body.push(...statements());
 	}
 
-	return { program: { vars, body }, errors };
+	return { program: { vars, body, types, pous, ...(cyclic ? { cyclic } : {}) }, errors };
 }

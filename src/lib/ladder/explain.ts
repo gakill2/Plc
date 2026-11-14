@@ -111,6 +111,9 @@ export function explainRung(rung: Rung, name: NameOf): RungExplanation {
 						`liczy ${name(el.dst)} := ${name(el.a)} ${MATH_WORDS[el.fn] ?? el.fn} ${name(el.b)}`
 					);
 					break;
+				case 'block':
+					actions.push(`wywołuje blok ${el.type} (instancja ${el.instance})`);
+					break;
 			}
 		}
 		return acc;
@@ -201,5 +204,7 @@ function why(el: Exclude<Element, { kind: 'parallel' }>, m: Monitor, name: NameO
 			return `${el.fn}: błąd obliczenia (np. dzielenie przez zero) — ENO = 0`;
 		case 'move':
 			return 'MOVE nie przepuścił zasilania';
+		case 'block':
+			return `${el.type} ${el.instance} nie przepuścił zasilania`;
 	}
 }

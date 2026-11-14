@@ -2,6 +2,7 @@ import { sfcStep, sfcTransition, type Sfc } from '#lib/sfc/sfc.js';
 import { widget } from '#lib/hmi/model.js';
 import { device, DEVICES, type Circuit, type Device, type DeviceType } from '#lib/circuit/model.js';
 import {
+	blockBox,
 	coil,
 	compare,
 	contact,
@@ -270,6 +271,61 @@ END_IF;
 
 LampRun := (ZSW1 AND 16#0004) <> 0;     // ZSW1 bit 2: praca
 LampFault := Fault;
+`;
+
+/* ---------- function block lesson ---------- */
+
+const FB_MOTOR_HEAD = `(* Blok funkcyjny silnika z kontrolą styku zwrotnego stycznika.
+   Każda instancja (m1, m2, m3) ma własne podtrzymanie, timer i błąd. *)
+FUNCTION_BLOCK Motor
+VAR_INPUT
+  Start    : BOOL;   // przycisk Start
+  Stop     : BOOL;   // przycisk Stop (NC: puszczony = TRUE)
+  Feedback : BOOL;   // styk zwrotny stycznika
+END_VAR
+VAR_OUTPUT
+  Run   : BOOL;      // cewka stycznika
+  Fault : BOOL;      // brak potwierdzenia
+END_VAR
+VAR
+  check : TON;
+END_VAR
+`;
+
+const FB_MOTOR_STARTER = `${FB_MOTOR_HEAD}
+Run := (Start OR Run) AND Stop;
+// TODO: kontrola styku zwrotnego (1 s), Fault zatrzymuje silnik, Stop kasuje Fault
+END_FUNCTION_BLOCK
+
+VAR
+  m1 : Motor;
+END_VAR
+
+m1(Start := Start1, Stop := Stop1, Feedback := Fb1, Run => K1, Fault => H1);
+// TODO: m2 i m3 dla taśm 2 i 3
+`;
+
+const FB_MOTOR_SOLUTION = `${FB_MOTOR_HEAD}
+IF NOT Stop THEN
+  Fault := FALSE;                         // Stop kasuje błąd
+END_IF;
+Run := (Start OR Run) AND Stop AND NOT Fault;
+check(IN := Run AND NOT Feedback, PT := T#1s);
+IF check.Q THEN
+  Fault := TRUE;                          // stycznik nie potwierdził w 1 s
+  Run := FALSE;
+END_IF;
+END_FUNCTION_BLOCK
+
+VAR
+  m1 : Motor;
+  m2 : Motor;
+  m3 : Motor;
+END_VAR
+
+m1(Start := Start1, Stop := Stop1, Feedback := Fb1, Run => K1, Fault => H1);
+m2(Start := Start2, Stop := Stop2, Feedback := Fb2, Run => K2, Fault => H2);
+m3(Start := Start3, Stop := Stop3, Feedback := Fb3, Run => K3, Fault => H3);
 `;
 
 /** Mistakes on the production line fail a test immediately. */
@@ -2242,6 +2298,186 @@ export const LESSONS: Lesson[] = [
 			}
 		]
 	},
+	{
+		slug: 'fb-motor',
+		title: 'Blok funkcyjny: jeden silnik, trzy taśmy',
+		level: 'process',
+		summary:
+			'Napisz FUNCTION_BLOCK silnika z kontrolą styku zwrotnego i użyj go w trzech instancjach.',
+		instructions: [
+			'Trzy taśmy mają identyczne sterowanie: Start, Stop (NC), stycznik `K` i jego styk zwrotny `Fb`. Zamiast kopiować kod trzy razy, piszesz go **raz** jako blok funkcyjny `Motor` i tworzysz trzy **instancje** — każda ma własną pamięć (podtrzymanie, timer, błąd).',
+			'Interfejs bloku jest gotowy: wejścia `Start`, `Stop`, `Feedback`, wyjścia `Run`, `Fault`, zmienna wewnętrzna `check : TON`. Uzupełnij ciało: jeśli `Run` jest włączony, a `Feedback` nie przyszedł w ciągu **1 s** — ustaw `Fault` i zatrzymaj silnik. `Stop` kasuje błąd.',
+			'W programie głównym dodaj instancje `m2` i `m3` i wywołaj je dla taśm 2 i 3 (`Start2`/`Stop2`/`Fb2` → `K2`, `H2` itd.), tak jak `m1`.'
+		],
+		hints: [
+			'`check(IN := Run AND NOT Feedback, PT := T#1s);` a potem `IF check.Q THEN Fault := TRUE; END_IF;`',
+			'`Run := (Start OR Run) AND Stop AND NOT Fault;` i `IF NOT Stop THEN Fault := FALSE; END_IF;`',
+			'`m2(Start := Start2, Stop := Stop2, Feedback := Fb2, Run => K2, Fault => H2);`'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'fb-motor',
+			language: 'st',
+			st: FB_MOTOR_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['pushbutton', 'Start1', 'I0.0', { color: 'green' }],
+				['pushbutton', 'Stop1', 'I0.1', { color: 'red', nc: true }],
+				['pushbutton', 'Start2', 'I0.2', { color: 'green' }],
+				['pushbutton', 'Stop2', 'I0.3', { color: 'red', nc: true }],
+				['pushbutton', 'Start3', 'I0.4', { color: 'green' }],
+				['pushbutton', 'Stop3', 'I0.5', { color: 'red', nc: true }],
+				['switch', 'Fb1', 'I1.0'],
+				['switch', 'Fb2', 'I1.1'],
+				['switch', 'Fb3', 'I1.2'],
+				['lamp', 'K1', 'Q0.0', { color: 'green' }],
+				['lamp', 'K2', 'Q0.1', { color: 'green' }],
+				['lamp', 'K3', 'Q0.2', { color: 'green' }],
+				['lamp', 'H1', 'Q1.0', { color: 'red' }],
+				['lamp', 'H2', 'Q1.1', { color: 'red' }],
+				['lamp', 'H3', 'Q1.2', { color: 'red' }]
+			]),
+			symbols: [],
+			watch: ['K1', 'K2', 'K3', 'H1', 'H2', 'H3'].map((w) => watchEntry(w, 'BOOL', true))
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: FB_MOTOR_SOLUTION,
+		tests: [
+			{
+				name: 'Taśma 1 pracuje, gdy przychodzi styk zwrotny',
+				steps: [
+					settle(
+						'Stopy puszczone',
+						{ 'I0.1': true, 'I0.3': true, 'I0.5': true },
+						{ 'Q0.0': false }
+					),
+					{ label: 'Start1', set: { 'I0.0': true }, wait: 100 },
+					{
+						label: 'puść, styk zwrotny',
+						set: { 'I0.0': false, 'I1.0': true },
+						wait: 2000,
+						expect: { 'Q0.0': true, 'Q1.0': false, 'Q0.1': false }
+					}
+				]
+			},
+			{
+				name: 'Taśma 2 bez styku zwrotnego: błąd po 1 s, inne taśmy bez zmian',
+				steps: [
+					settle(
+						'Stopy puszczone',
+						{ 'I0.1': true, 'I0.3': true, 'I0.5': true },
+						{ 'Q0.1': false }
+					),
+					{
+						label: 'Start1 i Start2',
+						set: { 'I0.0': true, 'I0.2': true, 'I1.0': true },
+						wait: 100
+					},
+					{
+						label: 'puść, 0,5 s',
+						set: { 'I0.0': false, 'I0.2': false },
+						wait: 500,
+						expect: { 'Q0.1': true, 'Q1.1': false }
+					},
+					{
+						label: 'po 1,5 s',
+						wait: 1000,
+						expect: { 'Q0.1': false, 'Q1.1': true, 'Q0.0': true, 'Q1.0': false }
+					},
+					{
+						label: 'Stop2 kasuje błąd',
+						set: { 'I0.3': false },
+						wait: 100,
+						expect: { 'Q1.1': false }
+					}
+				]
+			},
+			{
+				name: 'Trzy instancje działają niezależnie',
+				steps: [
+					settle(
+						'Stopy puszczone',
+						{ 'I0.1': true, 'I0.3': true, 'I0.5': true, 'I1.0': true, 'I1.1': true, 'I1.2': true },
+						{ 'Q0.2': false }
+					),
+					{ label: 'Start3', set: { 'I0.4': true }, wait: 100 },
+					{
+						label: 'puść',
+						set: { 'I0.4': false },
+						wait: 500,
+						expect: { 'Q0.2': true, 'Q0.0': false, 'Q0.1': false }
+					},
+					{ label: 'Start1', set: { 'I0.0': true }, wait: 100 },
+					{
+						label: 'Stop3',
+						set: { 'I0.0': false, 'I0.5': false },
+						wait: 100,
+						expect: { 'Q0.0': true, 'Q0.2': false }
+					}
+				]
+			}
+		]
+	},
+	{
+		slug: 'oven-pid-lad',
+		title: 'Piec w drabince: blok PID',
+		level: 'process',
+		scenario: 'oven',
+		summary:
+			'Ten sam piec, ale w LAD: wstaw gotowy blok PID z biblioteki, podłącz piny i dobierz nastawy.',
+		instructions: [
+			'W drabince nie piszesz regulatora sam — bierzesz **gotowy blok** z biblioteki (paleta „Blocks → FB…” → **PID**), jak PID_Compact w TIA Portal. Każdy blok ma **instancję** (np. `PID_1`) z własną pamięcią.',
+			'Podłącz piny: `SP` = `1800` (180,0 °C, bo temperatura przychodzi w °C × 10), `PV` = `Temperature`, `OUT_HI` = `27648.0` (pełna moc), wyjście `OUT ⇒` `HeaterPower`.',
+			'Nastawy w jednostkach sygnałów: `KP` ≈ **80** (3 % mocy na 1 °C to 3 · 276,48 / 10 na jednostkę PV), `TI` ≈ **12** s. Wymagania jak w lekcji ST: 180 °C w minutę, przestrzał do 8 °C, ±1,5 °C po zimnym wsadzie.',
+			'Network z blokiem potrzebuje cewki (np. `PidOn`, `M0.0`). Stycznik grzałek z blokadą drzwi już jest.'
+		],
+		hints: [
+			'Blok PID wstawisz z listy „FB…” na palecie. Puste piny mają wartości domyślne (szare podpowiedzi w polach).',
+			'KP za duże (np. 300) — oscylacje; za małe (np. 10) — powolne dochodzenie. TI 12 s to dobry start.'
+		],
+		starter: starter('oven-pid-lad', [], {
+			scenario: 'oven',
+			symbols: [
+				symbol('DoorClosed', 'I0.0', 'Wyłącznik drzwi (1 = zamknięte)'),
+				symbol('OverTemp', 'I0.1', 'Termostat bezpieczeństwa > 280 °C'),
+				symbol('Temperature', 'IW4', 'Termopara, °C × 10'),
+				symbol('Heater', 'Q0.0', 'Stycznik grzałek'),
+				symbol('HeaterPower', 'QW4', 'Moc grzałek 0 … 27648'),
+				symbol('PidOn', 'M0.0', 'Regulator pracuje')
+			],
+			watch: ['Temperature', 'HeaterPower', 'Heater'],
+			ladder: program(
+				rung(
+					[contact('NO', 'DoorClosed'), contact('NC', 'OverTemp')],
+					[coil('COIL', 'Heater')],
+					'Stycznik grzałek z blokadą drzwi i termostatu'
+				)
+			)
+		}),
+		solution: () =>
+			program(
+				rung(
+					[contact('NO', 'DoorClosed'), contact('NC', 'OverTemp')],
+					[coil('COIL', 'Heater')],
+					'Stycznik grzałek z blokadą drzwi i termostatu'
+				),
+				rung(
+					[
+						blockBox('PID', 'PID_1', {
+							SP: '1800',
+							PV: 'Temperature',
+							KP: '80.0',
+							TI: '12.0',
+							OUT_HI: '27648.0',
+							'>OUT': 'HeaterPower'
+						})
+					],
+					[coil('COIL', 'PidOn')],
+					'Regulator temperatury'
+				)
+			),
+		tests: []
+	},
 	/* ---------- SFC ---------- */
 	{
 		slug: 'sfc-drilling',
@@ -2286,6 +2522,10 @@ export const LESSONS: Lesson[] = [
 	}
 ];
 
+// the ladder oven is accepted by the same tests as the ST one
+LESSONS.find((l) => l.slug === 'oven-pid-lad')!.tests = LESSONS.find(
+	(l) => l.slug === 'oven-pid'
+)!.tests;
 // the SFC drilling station is accepted by the same tests as the ladder one
 LESSONS.find((l) => l.slug === 'sfc-drilling')!.tests = LESSONS.find(
 	(l) => l.slug === 'drilling-station'

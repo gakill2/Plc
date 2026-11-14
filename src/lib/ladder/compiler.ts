@@ -11,7 +11,9 @@ import {
 	type Operand
 } from '#lib/engine/index.js';
 import { resolveSymbol, type SymbolMap } from '#lib/symbols/symbols.js';
-import type { Element, LadderProgram, Rung, Series } from './model.js';
+import { compileSt } from '#lib/st/compiler.js';
+import { STDLIB } from '#lib/st/stdlib.js';
+import type { BlockBox, Element, LadderProgram, Rung, Series } from './model.js';
 
 export interface Diagnostic {
 	/** Id of the element, coil or rung the problem belongs to. */
@@ -47,6 +49,8 @@ export interface CompileOptions {
 	config?: MemoryConfig;
 	/** Symbol name (upper case) → address. Operands may use these names instead of addresses. */
 	symbols?: SymbolMap;
+	/** The user's library of function blocks (ST source), next to the standard one. */
+	library?: string;
 }
 
 export function compileLadder(ladder: LadderProgram, options: CompileOptions = {}): CompiledLadder {
@@ -183,6 +187,20 @@ export function compileLadder(ladder: LadderProgram, options: CompileOptions = {
 				if (dst) emit({ op: 'MATH', fn: el.fn, a, b, dst });
 				return true;
 			}
+			case 'block': {
+				powered(started);
+				const seg = blocks.segments.get(el.id);
+				if (!seg) return true;
+				emit({ op: 'ST', addr: seg.en });
+				const base = program.length;
+				for (const ins of seg.code)
+					emit(
+						'target' in ins && ins.op.startsWith('JMP')
+							? { ...ins, target: ins.target + base }
+							: ins
+					);
+				return true;
+			}
 			case 'parallel': {
 				powered(started);
 				const input = inputTap(el.id);
@@ -230,6 +248,11 @@ export function compileLadder(ladder: LadderProgram, options: CompileOptions = {
 		emit({ op: 'POP' });
 	}
 
+	const blocks = compileBlocks(ladder, options, report);
+	if (blocks.prologue.length) {
+		owner = ladder.rungs[0]?.id ?? null;
+		for (const ins of blocks.prologue) emit(ins);
+	}
 	ladder.rungs.forEach(rung);
 
 	// Engine-level checks (ranges, writable areas …), mapped back to the node that caused them.
@@ -238,6 +261,131 @@ export function compileLadder(ladder: LadderProgram, options: CompileOptions = {
 	}
 
 	return { program, taps, sourceMap, diagnostics: dedupe(diagnostics) };
+}
+
+/* ---------- function blocks ---------- */
+
+function allBlocks(ladder: LadderProgram): BlockBox[] {
+	const out: BlockBox[] = [];
+	const walk = (items: Element[]) => {
+		for (const e of items) {
+			if (e.kind === 'block') out.push(e);
+			if (e.kind === 'parallel') for (const b of e.branches) walk(b.items);
+		}
+	};
+	for (const r of ladder.rungs) walk(r.logic.items);
+	return out;
+}
+
+const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Function blocks are written in ST, so the ladder's block calls are compiled by the ST compiler
+ * as one program — one `IF enable THEN instance(...); END_IF;` per box, separated by marker
+ * assignments — and the code between the markers is spliced into the rung where the box sits.
+ * Jump targets inside a piece are made relative to it.
+ */
+function compileBlocks(
+	ladder: LadderProgram,
+	options: CompileOptions,
+	report: (id: string, message: string) => void
+): { prologue: Instr[]; segments: Map<string, { en: Address; code: Instr[] }> } {
+	const empty = { prologue: [], segments: new Map() };
+	const blocks = allBlocks(ladder);
+	if (!blocks.length) return empty;
+
+	const instances = new Map<string, string>();
+	const valid: BlockBox[] = [];
+	for (const b of blocks) {
+		let addressLike = false;
+		try {
+			parseAddress(b.instance);
+			addressLike = true;
+		} catch {
+			/* a proper name */
+		}
+		if (!IDENT.test(b.instance) || addressLike) {
+			report(b.id, `Instance name "${b.instance}" must be a name like PID_1 (not an address)`);
+			continue;
+		}
+		const prev = instances.get(b.instance.toUpperCase());
+		if (prev && prev !== b.type.toUpperCase()) {
+			report(b.id, `Instance ${b.instance} is already a ${prev}`);
+			continue;
+		}
+		instances.set(b.instance.toUpperCase(), b.type.toUpperCase());
+		valid.push(b);
+	}
+	if (!valid.length) return empty;
+
+	// the source, remembering where each box's text is
+	let src = 'VAR\n';
+	const declAt = new Map<string, [number, number]>();
+	const seen = new Set<string>();
+	for (const b of valid) {
+		if (seen.has(b.instance.toUpperCase())) continue;
+		seen.add(b.instance.toUpperCase());
+		const from = src.length;
+		src += `  ${b.instance} : ${b.type};\n`;
+		declAt.set(b.id, [from, src.length]);
+	}
+	valid.forEach((_, k) => (src += `  LAD_EN${k} : BOOL;\n  LAD_M${k} : BOOL;\n`));
+	src += '  LAD_MEND : BOOL;\nEND_VAR\n';
+	const callAt: [number, number][] = [];
+	valid.forEach((b, k) => {
+		const args = Object.entries(b.pins)
+			.filter(([, v]) => v.trim())
+			.map(([pin, v]) =>
+				pin.startsWith('>') ? `${pin.slice(1)} => ${v.trim()}` : `${pin} := ${v.trim()}`
+			);
+		src += `LAD_M${k} := TRUE;\n`;
+		const from = src.length;
+		src += `IF LAD_EN${k} THEN\n  ${b.instance}(${args.join(', ')});\nEND_IF;\n`;
+		callAt.push([from, src.length]);
+	});
+	src += 'LAD_MEND := TRUE;\n';
+
+	const r = compileSt(src, {
+		symbols: options.symbols,
+		config: options.config,
+		prelude: options.library ? `${STDLIB}\n${options.library}` : STDLIB
+	});
+	for (const d of r.diagnostics) {
+		const k = callAt.findIndex(([a, b]) => d.from >= a && d.from < b);
+		const decl = [...declAt.entries()].find(([, [a, b]]) => d.from >= a && d.from < b);
+		const id = k >= 0 ? valid[k].id : decl ? decl[0] : valid[0].id;
+		report(id, d.message.replace(/LAD_\w+/g, 'EN'));
+	}
+	if (r.diagnostics.length) return empty;
+
+	const addrOf = (name: string): Address | null => {
+		const v = r.variables.find((x) => x.name === name);
+		return v ? parseAddress(v.reads[0].address) : null;
+	};
+	const markerAt = (name: string) => {
+		const a = addrOf(name);
+		const i = r.program.findIndex(
+			(ins) => ins.op === 'ST' && a && formatAddress(ins.addr) === formatAddress(a)
+		);
+		// LDC TRUE · ST marker · POP
+		return { start: i - 1, end: i + 2 };
+	};
+	const marks = valid.map((_, k) => markerAt(`LAD_M${k}`));
+	const endMark = markerAt('LAD_MEND');
+	const piece = (from: number, to: number): Instr[] =>
+		r.program
+			.slice(from, to)
+			.map((ins) =>
+				'target' in ins && ins.op.startsWith('JMP') ? { ...ins, target: ins.target - from } : ins
+			);
+
+	const segments = new Map<string, { en: Address; code: Instr[] }>();
+	valid.forEach((b, k) => {
+		const from = marks[k].end;
+		const to = k + 1 < marks.length ? marks[k + 1].start : endMark.start;
+		segments.set(b.id, { en: addrOf(`LAD_EN${k}`)!, code: piece(from, to) });
+	});
+	return { prologue: piece(0, marks[0].start), segments };
 }
 
 function dedupe(diagnostics: Diagnostic[]): Diagnostic[] {

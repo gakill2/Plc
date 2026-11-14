@@ -146,7 +146,7 @@ describe('compiler — less common paths', () => {
 	});
 
 	it('runs out of variable space gracefully', () => {
-		const decls = Array.from({ length: 30 }, (_, i) => `v${i} : DINT;`).join(' ');
+		const decls = Array.from({ length: 200 }, (_, i) => `v${i} : DINT;`).join(' ');
 		expect(compileErrors(`VAR ${decls} END_VAR`)).toEqual(
 			expect.arrayContaining([expect.stringMatching(/marker area .* is full/)])
 		);

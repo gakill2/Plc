@@ -32,6 +32,8 @@ export interface Project {
 	hmi?: Hmi;
 	/** Sequential function chart (when the SFC language is active). */
 	sfc?: Sfc;
+	/** The project's own function blocks (ST source), usable from LAD, ST and SFC. */
+	library?: string;
 }
 
 export type ProgramLanguage = 'ladder' | 'st' | 'sfc';
@@ -78,7 +80,8 @@ export function parseProject(raw: unknown): Project | null {
 			language: raw.language === 'st' || raw.language === 'sfc' ? raw.language : 'ladder',
 			st: typeof raw.st === 'string' ? raw.st : '',
 			hmi: isHmi(raw.hmi) ? raw.hmi : undefined,
-			sfc: isSfc(raw.sfc) ? raw.sfc : undefined
+			sfc: isSfc(raw.sfc) ? raw.sfc : undefined,
+			library: typeof raw.library === 'string' ? raw.library : undefined
 		};
 	}
 	// stage 2 saved the bare ladder program

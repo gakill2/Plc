@@ -3,6 +3,7 @@
 	import { getLadderView } from '#lib/ladder/context.js';
 	import type { Series } from '#lib/ladder/model.js';
 	import BoxEl from './BoxEl.svelte';
+	import BlockEl from './BlockEl.svelte';
 	import ContactEl from './ContactEl.svelte';
 	import SeriesView from './SeriesView.svelte';
 	import Vertical from './Vertical.svelte';
@@ -34,6 +35,8 @@
 			</div>
 		{:else if el.kind === 'contact'}
 			<ContactEl {el} inId={feed} />
+		{:else if el.kind === 'block'}
+			<BlockEl {el} inId={feed} />
 		{:else}
 			<BoxEl {el} inId={feed} />
 		{/if}

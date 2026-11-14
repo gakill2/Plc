@@ -1,3 +1,4 @@
+import { STDLIB } from '#lib/st/stdlib.js';
 import { checkSfc, emptySfc, sfcToSt, type GeneratedSt, type Sfc } from '#lib/sfc/sfc.js';
 import { emptyHmi, WRITES, type Hmi } from '#lib/hmi/model.js';
 import { formatAddress, parseAddress } from '#lib/engine/index.js';
@@ -46,15 +47,18 @@ export class ProjectState {
 	hmi: Hmi = $state(emptyHmi());
 	st: string = $state('');
 	sfc: Sfc = $state(emptySfc());
+	/** The project's own function blocks, in ST. */
+	library: string = $state('');
+	readonly prelude: string = $derived(this.library.trim() ? `${STDLIB}\n${this.library}` : STDLIB);
 	/** The chart translated to ST, while SFC is the active language. */
 	readonly sfcSt: GeneratedSt | null = $derived(this.language === 'sfc' ? sfcToSt(this.sfc) : null);
 
 	/** Structured Text compile result, while ST is the active language. */
 	readonly stResult: StCompileResult | null = $derived(
 		this.language === 'st'
-			? compileSt(this.st, { symbols: this.symbols.map })
+			? compileSt(this.st, { symbols: this.symbols.map, prelude: this.prelude })
 			: this.sfcSt
-				? compileSt(this.sfcSt.source, { symbols: this.symbols.map })
+				? compileSt(this.sfcSt.source, { symbols: this.symbols.map, prelude: this.prelude })
 				: null
 	);
 	/** The active program in a common shape — this is what gets downloaded and graded. */
@@ -72,7 +76,12 @@ export class ProjectState {
 		this.watch = fixWatchFormats(project.watch, project.symbols);
 		this.scenario = project.scenario;
 		this.lesson = project.lesson;
-		this.ladder = new LadderDocument(project.ladder, () => this.symbols);
+		this.library = project.library ?? '';
+		this.ladder = new LadderDocument(
+			project.ladder,
+			() => this.symbols,
+			() => this.library
+		);
 		this.name = project.name ?? '';
 		this.language = project.language ?? 'ladder';
 		this.st = project.st ?? '';
@@ -191,6 +200,7 @@ export class ProjectState {
 			lesson: this.lesson,
 			language: this.language,
 			st: this.st,
+			library: this.library || undefined,
 			sfc:
 				this.language === 'sfc' || this.sfc.steps.length > 1
 					? $state.snapshot(this.sfc)
@@ -214,7 +224,7 @@ function fromSfc(sfc: Sfc, result: StCompileResult, gen: GeneratedSt): CompiledL
 				? []
 				: result.diagnostics.map((d) => ({
 						id: `sfc:st:${d.from}`,
-						message: `${gen.origin[lineOf(d.from)] ?? 'SFC'}: ${d.message}`
+						message: d.library ? d.message : `${gen.origin[lineOf(d.from)] ?? 'SFC'}: ${d.message}`
 					})))
 		]
 	};
@@ -229,7 +239,7 @@ function fromSt(result: StCompileResult, src: string): CompiledLadder {
 		sourceMap: result.lines.map((l) => (l === null ? null : `L${l}`)),
 		diagnostics: result.diagnostics.map((d) => ({
 			id: `st:${d.from}`,
-			message: `Line ${lineOf(d.from)}: ${d.message}`
+			message: d.library ? d.message : `Line ${lineOf(d.from)}: ${d.message}`
 		}))
 	};
 }

@@ -27,6 +27,8 @@
 	import type { StVariable } from '#lib/st/compiler.js';
 	import { DEMO_ST, EMPTY_ST } from '#lib/st/examples.js';
 	import StEditor from '#lib/st/StEditor.svelte';
+	import LibraryView from './LibraryView.svelte';
+	import { exportPlcOpen, exportScl, programSource, type ExportInput } from '#lib/export/export.js';
 	import StVariables from '#lib/st/StVariables.svelte';
 	import { ProjectState, type Problem } from '#lib/project/state.svelte.js';
 	import { PlcRuntime } from '#lib/runtime/runtime.svelte.js';
@@ -54,7 +56,16 @@
 	type Props = { projectId: string };
 	let { projectId }: Props = $props();
 
-	type View = 'program' | 'process' | 'circuit' | 'symbols' | 'watch' | 'debug' | 'hmi' | 'iocheck';
+	type View =
+		| 'program'
+		| 'library'
+		| 'process'
+		| 'circuit'
+		| 'symbols'
+		| 'watch'
+		| 'debug'
+		| 'hmi'
+		| 'iocheck';
 
 	let showTrend = $state(true);
 
@@ -79,6 +90,7 @@
 
 	const VIEWS: { id: View; label: string }[] = $derived([
 		{ id: 'program', label: 'Program' },
+		{ id: 'library', label: 'Blocks' },
 		...(project.scenario ? [{ id: 'process' as const, label: 'Process' }] : []),
 		{ id: 'circuit', label: 'Circuit' },
 		...(lesson?.kind === 'commissioning' || machine
@@ -155,15 +167,48 @@
 		}
 	}
 
-	function exportFile() {
-		const blob = new Blob([JSON.stringify(project.toJSON(), null, 2)], {
-			type: 'application/json'
-		});
+	function saveFile(text: string, name: string, type: string) {
+		const blob = new Blob([text], { type });
 		const a = document.createElement('a');
 		a.href = URL.createObjectURL(blob);
-		a.download = `${(project.name || 'project').replace(/[^\w-]+/g, '_')}.plcsim.json`;
+		a.download = name;
 		a.click();
 		URL.revokeObjectURL(a.href);
+	}
+
+	/** Export the project: as a project file, or as source for TIA Portal / CODESYS. */
+	function exportFile(format: string) {
+		const base = (project.name || 'project').replace(/[^\w-]+/g, '_');
+		if (format === 'json') {
+			saveFile(
+				JSON.stringify(project.toJSON(), null, 2),
+				`${base}.plcsim.json`,
+				'application/json'
+			);
+			return;
+		}
+		const input: ExportInput = {
+			name: project.name,
+			language: project.language,
+			ladder: $state.snapshot(project.ladder.program),
+			st: project.st,
+			sfc: $state.snapshot(project.sfc),
+			library: project.library,
+			symbols: [...project.deviceSymbols, ...project.userSymbols].map((s) => ({
+				name: s.name,
+				address: s.address,
+				comment: s.comment
+			}))
+		};
+		if (format === 'scl') {
+			const { scl, tags } = exportScl(input);
+			saveFile(scl, `${base}.scl`, 'text/plain');
+			saveFile(tags, `${base}_tags.csv`, 'text/csv');
+		} else if (format === 'xml') {
+			saveFile(exportPlcOpen(input).xml, `${base}.xml`, 'application/xml');
+		} else if (format === 'st') {
+			saveFile(programSource(input), `${base}.st`, 'text/plain');
+		}
 	}
 
 	// Devices drive the input terminals they are wired to.
@@ -476,10 +521,22 @@
 				<button class="rounded px-2 py-1 text-xs text-slate-300 hover:bg-slate-800" onclick={share}
 					>Share</button
 				>
-				<button
-					class="rounded px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
-					onclick={exportFile}>Export</button
+				<select
+					class="rounded bg-transparent px-1 py-1 text-xs text-slate-300 hover:bg-slate-800"
+					aria-label="Export"
+					value=""
+					onchange={(e) => {
+						const f = e.currentTarget.value;
+						e.currentTarget.value = '';
+						if (f) exportFile(f);
+					}}
 				>
+					<option value="">Export</option>
+					<option value="json">Project file (.json)</option>
+					<option value="scl">TIA Portal: SCL source + tags (.scl, .csv)</option>
+					<option value="xml">CODESYS: PLCopen XML (.xml)</option>
+					<option value="st">Structured Text (.st)</option>
+				</select>
 				<a
 					class="rounded px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
 					href={resolve('/editor/[id]/report', { id })}
@@ -600,6 +657,14 @@
 					</div>
 				{:else if view === 'circuit'}
 					<CircuitEditor {project} {sim} snapshot={runtime.snapshot} locked={runtime.online} />
+				{:else if view === 'library'}
+					<LibraryView
+						library={project.library}
+						onChange={(text) => (project.library = text)}
+						readOnly={runtime.online}
+						symbols={project.symbols.map}
+						symbolList={[...project.deviceSymbols, ...project.userSymbols]}
+					/>
 				{:else if view === 'symbols'}
 					<div class="h-full overflow-auto">
 						<SymbolTable {project} locked={runtime.online} />

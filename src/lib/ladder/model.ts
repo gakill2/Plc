@@ -79,7 +79,23 @@ export interface MathBox {
 	dst: string;
 }
 
-export type Element = Contact | Compare | TimerBox | CounterBox | MoveBox | MathBox | Parallel;
+/**
+ * A function block from the library (SCALE, PID, or the user's own): an instance with input and
+ * output pins wired to operands. It runs while powered (EN); ENO follows EN.
+ */
+export interface BlockBox {
+	id: string;
+	kind: 'block';
+	/** function block type, e.g. PID */
+	type: string;
+	/** instance name — each instance has its own memory */
+	instance: string;
+	/** pin name → operand (empty = not connected / default) */
+	pins: Record<string, string>;
+}
+
+export type Element =
+	Contact | Compare | TimerBox | CounterBox | MoveBox | MathBox | BlockBox | Parallel;
 
 export interface Coil {
 	id: string;
@@ -129,6 +145,18 @@ export const moveBox = (src = '0', dst = 'MW0'): MoveBox => ({
 	kind: 'move',
 	src,
 	dst
+});
+
+export const blockBox = (
+	type: string,
+	instance: string,
+	pins: Record<string, string> = {}
+): BlockBox => ({
+	id: newId('e'),
+	kind: 'block',
+	type,
+	instance,
+	pins
 });
 
 export const mathBox = (fn: MathFn = 'ADD', a = 'MW0', b = '1', dst = 'MW0'): MathBox => ({

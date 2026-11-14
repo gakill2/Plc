@@ -16,6 +16,7 @@ import {
 import type { SymbolMap } from '#lib/symbols/symbols.js';
 import type { BinaryOp, Expr, Span, Stmt, Target, VarDecl } from './ast.js';
 import { parse } from './parser.js';
+import { expandPous } from './pou.js';
 
 /*
  * Structured Text → IR.
@@ -24,13 +25,15 @@ import { parse } from './parser.js';
  * evaluated memory-to-memory with MATH, using scratch double words as temporaries. Control flow
  * becomes conditional jumps. Declared variables are placed in the marker area automatically:
  *
- *   M128 … M223   VAR variables (BOOL bits first, then words / double words)
- *   MD224 … MD252 expression temporaries
+ *   M256 … M991   VAR variables (BOOL bits first, then words / double words)
+ *   MD992 … MD1020 expression temporaries
  *   T32 …, C32 …  timer / counter instances
  */
 
 export interface StDiagnostic extends Span {
 	message: string;
+	/** the problem is in the library (prelude), not in this source */
+	library?: boolean;
 }
 
 /** A value of a declared variable, for the live variable view. */
@@ -46,6 +49,8 @@ export interface StCompileResult {
 	variables: StVariable[];
 	/** Instruction index → 1-based source line. */
 	lines: (number | null)[];
+	/** How the CPU runs the program: retentive memory and the cyclic interrupt. */
+	load?: LoadOptions;
 }
 
 type ValType = 'BOOL' | 'BYTE' | 'INT' | 'DINT' | 'REAL' | 'TIME';
@@ -80,8 +85,8 @@ const FB_PARAMS: Record<FbType, { name: string; bool: boolean; required: boolean
 	F_TRIG: [{ name: 'CLK', bool: true, required: true }]
 };
 
-export const VAR_AREA = { start: 128, end: 224 };
-const TEMP_START = 224;
+export const VAR_AREA = { start: 256, end: 992 };
+const TEMP_START = 992;
 const TEMP_COUNT = 8;
 const FIRST_INSTANCE = 32;
 
@@ -145,22 +150,34 @@ const describeExpr = (e: Expr) =>
 
 export function compileSt(
 	src: string,
-	options: { symbols?: SymbolMap; config?: MemoryConfig } = {}
+	options: {
+		symbols?: SymbolMap;
+		config?: MemoryConfig;
+		/** Library source compiled before the program (function blocks, types); errors in it are reported apart. */
+		prelude?: string;
+	} = {}
 ): StCompileResult {
+	const pre = options.prelude ? `${options.prelude}\n` : '';
+	const preLines = pre ? pre.split('\n').length - 1 : 0;
+	const fullSrc = pre + src;
 	const config = options.config ?? DEFAULT_MEMORY_CONFIG;
 	const symbols = options.symbols ?? new Map<string, string>();
-	const { program: ast, errors } = parse(src);
+	const { program: parsed, errors } = parse(fullSrc);
 
-	const diagnostics: StDiagnostic[] = errors.map((e) => ({
-		from: e.from,
-		to: e.to,
-		message: e.message
-	}));
+	const diagnostics: StDiagnostic[] = [];
+	/** Positions are made relative to the user's source; problems in the library are marked. */
 	const report = (message: string, span: Span) =>
-		diagnostics.push({ message, from: span.from, to: span.to });
+		diagnostics.push(
+			span.from >= pre.length || !pre
+				? { message, from: span.from - pre.length, to: span.to - pre.length }
+				: { message: `Library: ${message}`, from: 0, to: 0, library: true }
+		);
+	for (const e of errors) report(e.message, e);
+	// user FUNCTION_BLOCKs, FUNCTIONs and STRUCTs become flat variables and inlined code
+	const ast = expandPous(parsed, report);
 
 	const lineStarts = [0];
-	for (let i = 0; i < src.length; i++) if (src[i] === '\n') lineStarts.push(i + 1);
+	for (let i = 0; i < fullSrc.length; i++) if (fullSrc[i] === '\n') lineStarts.push(i + 1);
 	const lineOf = (offset: number) => {
 		let lo = 0;
 		let hi = lineStarts.length - 1;
@@ -200,22 +217,28 @@ export function compileSt(
 	let timers = FIRST_INSTANCE;
 	let counters = FIRST_INSTANCE;
 
-	const boolCount = ast.vars.filter(
-		(v) => !v.at && (v.type === 'BOOL' || v.type === 'R_TRIG' || v.type === 'F_TRIG')
-	).length;
-	byteCursor += Math.ceil((boolCount + 1) / 8); // +1: the hidden "initialised" flag
+	const isBit = (v: VarDecl) =>
+		!v.at && (v.type === 'BOOL' || v.type === 'R_TRIG' || v.type === 'F_TRIG');
+	// VAR RETAIN first, in a block of its own that a restart keeps
+	const retained = ast.vars.filter((v) => v.retain && !v.at);
+	const fresh = ast.vars.filter((v) => !retained.includes(v));
+	const startBlock = (bits: number) => {
+		byteCursor = Math.ceil(byteCursor / 4) * 4;
+		bitCursor = byteCursor * 8;
+		byteCursor += Math.ceil((bits + 1) / 8); // +1: the hidden "initialised" flag
+	};
 
 	const allocBit = (span: Span): Address => {
 		const byte = Math.floor(bitCursor / 8);
 		if (byte >= VAR_AREA.end)
-			throw new CompileError('Too many variables (marker area M128–M223 is full)', span);
+			throw new CompileError('Too many variables (marker area M256–M991 is full)', span);
 		return memAddress('M', 'X', byte, bitCursor++ % 8);
 	};
 	const allocBytes = (size: 'B' | 'W' | 'D', span: Span): Address => {
 		const width = size === 'D' ? 4 : size === 'W' ? 2 : 1;
 		byteCursor = Math.ceil(byteCursor / width) * width;
 		if (byteCursor + width > VAR_AREA.end) {
-			throw new CompileError('Too many variables (marker area M128–M223 is full)', span);
+			throw new CompileError('Too many variables (marker area M256–M991 is full)', span);
 		}
 		const a = memAddress('M', size, byteCursor);
 		byteCursor += width;
@@ -236,6 +259,16 @@ export function compileSt(
 		}
 	};
 
+	let retainInitFlag: Address | null = null;
+	let retainEnd = VAR_AREA.start;
+	if (retained.length) {
+		startBlock(retained.filter(isBit).length);
+		retainInitFlag = allocBit({ from: 0, to: 0 });
+		declareAll(retained);
+		retainEnd = Math.ceil(byteCursor / 4) * 4;
+		byteCursor = retainEnd;
+	}
+	startBlock(fresh.filter(isBit).length);
 	const initFlag = allocBit({ from: 0, to: 0 });
 
 	function declare(v: VarDecl) {
@@ -318,12 +351,21 @@ export function compileSt(
 		});
 	}
 
-	for (const v of ast.vars) {
-		try {
-			declare(v);
-		} catch (e) {
-			if (!(e instanceof CompileError)) throw e;
-			report(e.message, e.span);
+	declareAll(fresh);
+	// the variable view lists them in declaration order
+	const order = new Map(ast.vars.map((v, i) => [v.name.toUpperCase(), i]));
+	variables.sort(
+		(a, b) => (order.get(a.name.toUpperCase()) ?? 0) - (order.get(b.name.toUpperCase()) ?? 0)
+	);
+
+	function declareAll(list: VarDecl[]) {
+		for (const v of list) {
+			try {
+				declare(v);
+			} catch (e) {
+				if (!(e instanceof CompileError)) throw e;
+				report(e.message, e.span);
+			}
 		}
 	}
 
@@ -392,6 +434,7 @@ export function compileSt(
 			case 'fcall':
 				return callType(e);
 		}
+		throw new CompileError('Unsupported expression', e);
 	}
 
 	function callType(e: Extract<Expr, { kind: 'fcall' }>): ValType {
@@ -595,6 +638,7 @@ export function compileSt(
 				return op(fn, a, b, real, e, target);
 			}
 		}
+		throw new CompileError('Unsupported expression', e);
 	}
 
 	/** Evaluates a BOOL expression onto the logic stack. */
@@ -771,7 +815,7 @@ export function compileSt(
 	}
 
 	const loops: Label[] = [];
-	const returnLabel = newLabel();
+	let returnLabel = newLabel();
 
 	function block(list: Stmt[]) {
 		for (const s of list) {
@@ -928,12 +972,25 @@ export function compileSt(
 
 	/* ---------- program ---------- */
 
-	// initial values, once after every download / cold restart
-	const inits = ast.vars.filter((v) => v.init && vars.get(v.name.toUpperCase())?.kind === 'value');
-	if (inits.length > 0) {
+	// initial values, once after every download / cold restart (retentive ones: only the first time)
+	const withInit = ast.vars.filter(
+		(v) => v.init && vars.get(v.name.toUpperCase())?.kind === 'value'
+	);
+	initialise(
+		withInit.filter((v) => !retained.includes(v)),
+		initFlag
+	);
+	if (retainInitFlag)
+		initialise(
+			withInit.filter((v) => retained.includes(v)),
+			retainInitFlag
+		);
+
+	function initialise(inits: VarDecl[], flag: Address) {
+		if (inits.length === 0) return;
 		const skip = newLabel();
 		line = lineOf(inits[0].from);
-		emit({ op: 'LD', addr: initFlag });
+		emit({ op: 'LD', addr: flag });
 		jump('JMPC', skip);
 		for (const v of inits) {
 			line = lineOf(v.from);
@@ -947,13 +1004,33 @@ export function compileSt(
 			}
 		}
 		emit({ op: 'LDC', value: true });
-		emit({ op: 'ST', addr: initFlag });
+		emit({ op: 'ST', addr: flag });
 		emit({ op: 'POP' });
 		place(skip);
 	}
 
 	block(ast.body);
 	place(returnLabel);
+
+	// the cyclic interrupt: its own entry point after the main program, which jumps over it
+	let cyclic: LoadOptions['cyclic'];
+	if (ast.cyclic) {
+		const end = newLabel();
+		line = lineOf(ast.cyclic.from);
+		jump('JMP', end);
+		cyclic = { entry: program.length, intervalMs: ast.cyclic.intervalMs };
+		returnLabel = end;
+		block(ast.cyclic.body);
+		place(end);
+	}
+	const load: LoadOptions = {};
+	if (cyclic) load.cyclic = cyclic;
+	if (retained.length)
+		load.retain = {
+			from: VAR_AREA.start,
+			to: retainEnd,
+			signature: retained.map((v) => `${v.name.toUpperCase()}:${v.type}`).join(';')
+		};
 
 	// resolve jump targets
 	for (const label of labels) {
@@ -972,7 +1049,15 @@ export function compileSt(
 		}
 	}
 
-	return { program, diagnostics: dedupe(diagnostics), variables, lines };
+	return {
+		program,
+		diagnostics: dedupe(diagnostics),
+		// hidden helpers (function results) are not shown
+		variables: variables.filter((v) => !v.name.includes('#')),
+		// lines in the library are not lines of this source
+		lines: lines.map((l) => (l === null || l - preLines <= 0 ? null : l - preLines)),
+		...(load.cyclic || load.retain ? { load } : {})
+	};
 }
 
 function dedupe(list: StDiagnostic[]): StDiagnostic[] {

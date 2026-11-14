@@ -230,6 +230,14 @@ const transitionIs = (c: GuideContext, from: string, to: string, cond: RegExp) =
 			cond.test(t.condition)
 	);
 
+/** The first PID box in the program. */
+const pidBlock = (c: GuideContext) => {
+	for (const r of c.ladder.rungs)
+		for (const e of deep(r.logic))
+			if (e.kind === 'block' && e.type.toUpperCase() === 'PID') return e;
+	return null;
+};
+
 /** How many coils of a type write this operand in the whole program. */
 const coils = (c: GuideContext, type: CoilType, op: string) =>
 	c.ladder.rungs
@@ -792,6 +800,63 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		runIt(
 			'w widoku Process obserwuj stan S1 → S2 → S3 → S4 i bity STW1 / ZSW1; wywołaj błąd i skwituj go.'
 		),
+		checkIt
+	],
+
+	'fb-motor': [
+		{
+			text: 'W bloku: timer kontroli `check(IN := Run AND NOT Feedback, PT := T#1s);`',
+			done: (c) => /check\s*\(\s*IN\s*:=\s*Run\s+AND\s+NOT\s+Feedback/i.test(c.st ?? '')
+		},
+		{
+			text: 'Po czasie ustaw błąd: `IF check.Q THEN Fault := TRUE; … END_IF;`',
+			done: (c) => /check\.Q\s+THEN[^]*?Fault\s*:=\s*TRUE/i.test(c.st ?? '')
+		},
+		{
+			text: 'Błąd zatrzymuje (`AND NOT Fault` w podtrzymaniu), a `Stop` go kasuje (`Fault := FALSE`).',
+			done: (c) =>
+				/Run\s*:=[^;]*NOT\s+Fault/i.test(c.st ?? '') && /Fault\s*:=\s*FALSE/i.test(c.st ?? '')
+		},
+		{
+			text: 'Program główny: zadeklaruj `m2 : Motor;` i `m3 : Motor;` i wywołaj je dla taśm 2 i 3.',
+			done: (c) =>
+				/m2\s*:\s*Motor/i.test(c.st ?? '') &&
+				/m3\s*:\s*Motor/i.test(c.st ?? '') &&
+				/m2\s*\(/i.test(c.st ?? '') &&
+				/m3\s*\(/i.test(c.st ?? '')
+		},
+		runIt(
+			'w Watch podejrzyj m1.Run, m2.Fault… — każda instancja ma swoje zmienne. Wyłącz Fb2 i uruchom taśmę 2.'
+		),
+		checkIt
+	],
+
+	'oven-pid-lad': [
+		{
+			text: 'Wstaw blok **PID** (paleta „Blocks → FB…”) w nowym networku z cewką, np. `PidOn`.',
+			done: (c) => !!pidBlock(c)
+		},
+		{
+			text: 'Piny procesu: `PV` = `Temperature`, `OUT ⇒` `HeaterPower`, `SP` = `1800`, `OUT_HI` = `27648.0`.',
+			done: (c) => {
+				const b = pidBlock(c);
+				return (
+					!!b &&
+					sameAddr(c, b.pins.PV ?? '', 'IW4') &&
+					sameAddr(c, b.pins['>OUT'] ?? '', 'QW4') &&
+					Number(b.pins.SP) === 1800 &&
+					Number(b.pins.OUT_HI) === 27648
+				);
+			}
+		},
+		{
+			text: 'Nastawy: `KP` między 40 a 170, `TI` między 4 a 20 s.',
+			done: (c) => {
+				const b = pidBlock(c);
+				return !!b && inRange(Number(b.pins.KP), 40, 170) && inRange(Number(b.pins.TI), 4, 20);
+			}
+		},
+		runIt('w widoku Process obserwuj temperaturę i trend; włóż zimny wsad.'),
 		checkIt
 	],
 

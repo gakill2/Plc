@@ -1,3 +1,4 @@
+import { blockCatalog, type BlockInfo } from '#lib/st/stdlib.js';
 import { aliasOf, type SymbolMap } from '#lib/symbols/symbols.js';
 import { compileLadder, type CompiledLadder, type Diagnostic } from './compiler.js';
 import {
@@ -37,9 +38,10 @@ export class LadderDocument {
 	clipboard: Node | null = $state.raw(null);
 
 	#symbols: SymbolsGetter = () => NO_SYMBOLS;
+	#library: () => string = () => '';
 
 	readonly compiled: CompiledLadder = $derived(
-		compileLadder(this.program, { symbols: this.#symbols().map })
+		compileLadder(this.program, { symbols: this.#symbols().map, library: this.#library() })
 	);
 	readonly diagnostics: Map<string, Diagnostic[]> = $derived.by(() => {
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local, rebuilt on every change
@@ -54,9 +56,29 @@ export class LadderDocument {
 		this.selectedId ? findNode(this.program, this.selectedId) : null
 	);
 
-	constructor(program: LadderProgram, symbols?: SymbolsGetter) {
+	/** Function blocks a box can call: the standard library and the project's own. */
+	readonly catalog: BlockInfo[] = $derived(blockCatalog(this.#library()));
+
+	constructor(program: LadderProgram, symbols?: SymbolsGetter, library?: () => string) {
 		this.program = program;
 		if (symbols) this.#symbols = symbols;
+		if (library) this.#library = library;
+	}
+
+	/** A free instance name for a new box, e.g. PID_2. */
+	freeInstance(type: string): string {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local, rebuilt on every call
+		const used = new Set<string>();
+		const walk = (items: Element[]) => {
+			for (const e of items) {
+				if (e.kind === 'block') used.add(e.instance.toUpperCase());
+				if (e.kind === 'parallel') for (const b of e.branches) walk(b.items);
+			}
+		};
+		for (const r of this.program.rungs) walk(r.logic.items);
+		let n = 1;
+		while (used.has(`${type}_${n}`.toUpperCase())) n++;
+		return `${type}_${n}`;
 	}
 
 	/** [address, name] pairs of all symbols — for operand autocomplete. */

@@ -5,6 +5,7 @@
 		compare,
 		contact,
 		counterBox,
+		blockBox,
 		mathBox,
 		moveBox,
 		timer
@@ -115,6 +116,26 @@
 			{/each}
 		</div>
 	{/each}
+
+	<label class="flex items-center gap-1 rounded-md border border-slate-800 bg-slate-900 p-0.5">
+		<span class="px-1.5 text-[10px] tracking-wider text-slate-500 uppercase">Blocks</span>
+		<select
+			class="rounded bg-slate-900 px-1 py-1 font-mono text-xs text-violet-200 disabled:opacity-40"
+			aria-label="Insert a function block"
+			{disabled}
+			value=""
+			onchange={(e) => {
+				const type = e.currentTarget.value;
+				e.currentTarget.value = '';
+				if (type) doc.insert(blockBox(type, doc.freeInstance(type)));
+			}}
+		>
+			<option value="">FB…</option>
+			{#each doc.catalog as b (b.name)}<option value={b.name}
+					>{b.name}{b.standard ? '' : ' (own)'}</option
+				>{/each}
+		</select>
+	</label>
 
 	<div class="flex items-center gap-0.5 rounded-md border border-slate-800 bg-slate-900 p-0.5">
 		<button
