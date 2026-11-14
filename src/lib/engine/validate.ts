@@ -110,6 +110,8 @@ export function validateProgram(program: Program, config: MemoryConfig): Program
 					report(`Jump target ${ins.target} is outside the program`);
 				}
 				return;
+			case 'ERR':
+				return;
 			case 'TAP':
 			case 'LDT':
 				if (!Number.isInteger(ins.slot) || ins.slot < 0 || ins.slot > MAX_TAPS) {

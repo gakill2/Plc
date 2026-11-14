@@ -284,6 +284,8 @@ export function describeFrame(
 			return 'Sonda: zapamiętaj RLO, żeby edytor pokazał przepływ zasilania (nic nie zmienia).';
 		case 'LDT':
 			return 'Wczytaj zapamiętaną sondę — zasilanie z punktu rozgałęzienia.';
+		case 'ERR':
+			return `Błąd programowania: ${ins.message} — wywołanie OB121 albo STOP CPU.`;
 	}
 }
 

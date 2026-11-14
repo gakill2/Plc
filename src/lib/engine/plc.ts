@@ -9,7 +9,7 @@ import {
 	type TimerState
 } from './memory.js';
 import { validateProgram, type ProgramIssue } from './validate.js';
-import { DEFAULT_MAX_STEPS, execute, PlcFault, VmState } from './vm.js';
+import { execute, PlcFault, VmState } from './vm.js';
 import type { Address, MemAddress, NumType } from './types.js';
 
 export type PlcMode = 'STOP' | 'RUN' | 'FAULT';
@@ -23,6 +23,41 @@ export interface LoadOptions {
 	retain?: { from: number; to: number; signature: string };
 	/** Cyclic interrupt (like OB30): the code at `entry` runs every `intervalMs`, besides the main scan. */
 	cyclic?: { entry: number; intervalMs: number };
+	/** Startup (OB100): runs once before the first cycle after a download or restart. */
+	startup?: number;
+	/** Programming error (OB121): runs when an instruction fails, e.g. an array index out of range. */
+	programmingError?: number;
+	/** Time error (OB80): runs when a cycle takes longer than the maximum cycle time. */
+	timeError?: number;
+}
+
+/** One line of the diagnostic buffer, like in TIA Portal's "Diagnostics buffer". */
+export interface DiagEntry {
+	/** running number since the CPU was created */
+	n: number;
+	/** simulated time of the event, ms */
+	timeMs: number;
+	kind: 'info' | 'warning' | 'error';
+	text: string;
+}
+
+/**
+ * Simulated execution speed: about one microsecond per IR instruction (an older S7-300 class CPU
+ * on mixed bit and word instructions), plus the operating system's share of every cycle.
+ */
+export const US_PER_INSTRUCTION = 1;
+export const CYCLE_OVERHEAD_MS = 0.1;
+/** Maximum cycle time (watchdog), like the CPU parameter in TIA Portal. */
+export const MAX_CYCLE_MS = 150;
+const DIAG_SIZE = 50;
+
+export interface CycleStats {
+	/** time between the start of the last two cycles: the minimum cycle time or longer */
+	lastMs: number;
+	minMs: number;
+	maxMs: number;
+	/** how long the program itself ran in the last cycle (instructions × speed) */
+	execMs: number;
 }
 
 export class ProgramError extends Error {
@@ -41,6 +76,9 @@ export interface PlcSnapshot {
 	scanCount: number;
 	timeMs: number;
 	lastScanSteps: number;
+	cycle: CycleStats;
+	/** the diagnostic buffer, oldest first */
+	diagnostics: DiagEntry[];
 	/** runs of the cyclic interrupt since the restart */
 	cyclicCount: number;
 	fault: { message: string; pc: number } | null;
@@ -71,7 +109,8 @@ export interface PlcSnapshot {
 export class Plc {
 	readonly config: MemoryConfig;
 	readonly memory: Memory;
-	maxStepsPerScan = DEFAULT_MAX_STEPS;
+	/** Instructions that fit in the maximum cycle time. */
+	maxStepsPerScan = Math.round((MAX_CYCLE_MS * 1000) / US_PER_INSTRUCTION);
 
 	#program: Program = [];
 	#tapCount = 0;
@@ -87,6 +126,9 @@ export class Plc {
 	#options: LoadOptions = {};
 	#cyclicDueMs = 0;
 	#cyclicCount = 0;
+	#cycle: CycleStats = { lastMs: 0, minMs: 0, maxMs: 0, execMs: 0 };
+	#diag: DiagEntry[] = [];
+	#diagCount = 0;
 
 	constructor(config: Partial<MemoryConfig> = {}) {
 		this.config = { ...DEFAULT_MEMORY_CONFIG, ...config };
@@ -127,6 +169,10 @@ export class Plc {
 				? this.memory.M.slice(r.from, r.to)
 				: null;
 		this.#options = options;
+		this.#log(
+			'info',
+			`Program wgrany do CPU (${program.length} instrukcji)${keep ? ', dane RETAIN zachowane' : ''}`
+		);
 		this.#program = [...program];
 		this.#tapCount = program.reduce(
 			(max, ins) => (ins.op === 'TAP' || ins.op === 'LDT' ? Math.max(max, ins.slot + 1) : max),
@@ -144,12 +190,35 @@ export class Plc {
 	/** Switches to RUN. Returns false when the CPU is in FAULT (call reset first). */
 	run(): boolean {
 		if (this.#mode === 'FAULT') return false;
+		if (this.#mode !== 'RUN') this.#log('info', 'Zmiana trybu: STOP → RUN');
 		this.#mode = 'RUN';
 		return true;
 	}
 
+	/** The diagnostic buffer, oldest first. */
+	get diagnostics(): DiagEntry[] {
+		return this.#diag;
+	}
+
+	get cycle(): CycleStats {
+		return this.#cycle;
+	}
+
+	#log(kind: DiagEntry['kind'], text: string) {
+		this.#diag.push({ n: ++this.#diagCount, timeMs: this.#timeMs, kind, text });
+		if (this.#diag.length > DIAG_SIZE) this.#diag.shift();
+	}
+
+	#halt(e: PlcFault, text: string) {
+		this.#fault = e;
+		this.#mode = 'FAULT';
+		this.#outputs.fill(0);
+		this.#log('error', text);
+	}
+
 	/** Switches to STOP. Outputs go off, memory is kept (warm restart on next run). */
 	stop(): void {
+		if (this.#mode === 'RUN') this.#log('info', 'Zmiana trybu: RUN → STOP');
 		if (this.#mode !== 'FAULT') this.#mode = 'STOP';
 		this.#outputs.fill(0);
 	}
@@ -166,6 +235,7 @@ export class Plc {
 		this.#mode = 'STOP';
 		this.#cyclicDueMs = this.#options.cyclic?.intervalMs ?? 0;
 		this.#cyclicCount = 0;
+		this.#cycle = { lastMs: 0, minMs: 0, maxMs: 0, execMs: 0 };
 	}
 
 	/** Sets a physical input terminal. The program sees it on the next scan. */
@@ -205,51 +275,120 @@ export class Plc {
 		return ((this.#outputs[addr.byte] >> addr.bit) & 1) === 1;
 	}
 
-	/** Runs one scan cycle if the CPU is in RUN. Returns true when a scan was executed. */
+	/**
+	 * Runs one scan cycle if the CPU is in RUN. `dtMs` is the minimum cycle time: when the previous
+	 * cycle ran longer, this one starts later and its timers see the longer time — like a real CPU.
+	 * Returns true when a scan was executed.
+	 */
 	scan(dtMs: number): boolean {
 		if (!(dtMs >= 0) || !Number.isFinite(dtMs)) throw new RangeError(`Invalid scan time ${dtMs}`);
 		if (this.#mode !== 'RUN') return false;
 
-		this.memory.I.set(this.#inputs);
-		this.#applyForces(true);
-		try {
-			// the cyclic interrupt interrupts the main program each time its interval elapses
-			const cyclic = this.#options.cyclic;
-			if (cyclic) {
-				while (this.#timeMs + dtMs >= this.#cyclicDueMs) {
-					execute(
-						this.#program,
-						this.memory,
-						this.#vm,
-						cyclic.intervalMs,
-						this.maxStepsPerScan,
-						undefined,
-						cyclic.entry
-					);
-					this.#cyclicDueMs += cyclic.intervalMs;
-					this.#cyclicCount++;
-				}
+		const elapsed = Math.max(dtMs, this.#cycle.execMs);
+		const o = this.#options;
+		let steps = 0;
+		let handling = false;
+		const onError = (message: string, pc: number): boolean => {
+			if (o.programmingError === undefined || handling) {
+				this.#log(
+					'error',
+					`Błąd programowania: ${message} (instrukcja ${pc}) — brak OB121, CPU w STOP`
+				);
+				return false;
 			}
-			this.#lastScanSteps = execute(
+			this.#log('warning', `Błąd programowania: ${message} (instrukcja ${pc}) — obsłużony w OB121`);
+			handling = true;
+			steps += this.#exec(0, o.programmingError);
+			handling = false;
+			return true;
+		};
+		const run = (dt: number, entry: number, limit = this.maxStepsPerScan) =>
+			(steps += execute(
 				this.#program,
 				this.memory,
 				this.#vm,
-				dtMs,
-				this.maxStepsPerScan
-			);
+				dt,
+				limit,
+				undefined,
+				entry,
+				onError
+			));
+
+		this.memory.I.set(this.#inputs);
+		this.#applyForces(true);
+		try {
+			if (this.#scanCount === 0 && o.startup !== undefined) {
+				run(0, o.startup);
+				this.#log('info', 'Rozruch: wykonano OB100');
+			}
+			// the cyclic interrupt interrupts the main program each time its interval elapses
+			if (o.cyclic) {
+				while (this.#timeMs + elapsed >= this.#cyclicDueMs) {
+					run(o.cyclic.intervalMs, o.cyclic.entry);
+					this.#cyclicDueMs += o.cyclic.intervalMs;
+					this.#cyclicCount++;
+				}
+			}
+			// the CPU stops when the cycle runs past twice the maximum cycle time
+			const main = run(elapsed, 0, 2 * this.maxStepsPerScan);
+			this.#lastScanSteps = main;
 		} catch (e) {
 			if (!(e instanceof PlcFault)) throw e;
-			this.#fault = e;
-			this.#mode = 'FAULT';
-			this.#outputs.fill(0);
+			this.#halt(
+				e,
+				e.kind === 'watchdog'
+					? `Przekroczony 2 × maksymalny czas cyklu (${2 * MAX_CYCLE_MS} ms) — CPU w STOP`
+					: e.kind === 'program'
+						? `CPU w STOP po błędzie programowania`
+						: `Błąd CPU: ${e.message} — CPU w STOP`
+			);
 			return false;
 		}
+
+		const execMs = (steps * US_PER_INSTRUCTION) / 1000 + CYCLE_OVERHEAD_MS;
+		if (steps > this.maxStepsPerScan) {
+			const over = `Przekroczony maksymalny czas cyklu: ${execMs.toFixed(1)} ms > ${MAX_CYCLE_MS} ms`;
+			if (o.timeError === undefined) {
+				this.#halt(new PlcFault(over, 0, 'watchdog'), `${over} — brak OB80, CPU w STOP`);
+				return false;
+			}
+			this.#log('warning', `${over} — obsłużony w OB80`);
+			try {
+				this.#exec(elapsed, o.timeError, onError);
+			} catch (e) {
+				if (!(e instanceof PlcFault)) throw e;
+				this.#halt(e, `Błąd CPU w OB80: ${e.message} — CPU w STOP`);
+				return false;
+			}
+		}
+
 		this.#applyForces(false);
 		this.#outputs.set(this.memory.Q);
 
+		const c = this.#cycle;
+		this.#cycle = {
+			lastMs: elapsed,
+			minMs: this.#scanCount === 0 ? elapsed : Math.min(c.minMs, elapsed),
+			maxMs: Math.max(c.maxMs, elapsed),
+			execMs
+		};
 		this.#scanCount++;
-		this.#timeMs += dtMs;
+		this.#timeMs += elapsed;
 		return true;
+	}
+
+	/** Runs one organisation block (an entry point of the program). */
+	#exec(dt: number, entry: number, onError?: (message: string, pc: number) => boolean): number {
+		return execute(
+			this.#program,
+			this.memory,
+			this.#vm,
+			dt,
+			this.maxStepsPerScan,
+			undefined,
+			entry,
+			onError
+		);
 	}
 
 	snapshot(): PlcSnapshot {
@@ -258,6 +397,8 @@ export class Plc {
 			scanCount: this.#scanCount,
 			timeMs: this.#timeMs,
 			lastScanSteps: this.#lastScanSteps,
+			cycle: { ...this.#cycle },
+			diagnostics: this.#diag.map((d) => ({ ...d })),
 			cyclicCount: this.#cyclicCount,
 			fault: this.#fault ? { message: this.#fault.message, pc: this.#fault.pc } : null,
 			inputs: this.#inputs.slice(),

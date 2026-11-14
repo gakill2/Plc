@@ -51,6 +51,8 @@ export type Stmt = Span &
 		| { kind: 'while'; cond: Expr; body: Stmt[] }
 		| { kind: 'repeat'; body: Stmt[]; until: Expr }
 		| { kind: 'exit' }
+		/** a programming error at run time (generated, e.g. an array index out of range) */
+		| { kind: 'fault'; message: string }
 		| { kind: 'return' }
 	);
 
@@ -92,4 +94,14 @@ export interface StProgram {
 	pous?: Pou[];
 	/** CYCLIC_INTERRUPT T#100ms … END_CYCLIC_INTERRUPT — runs at a fixed interval, like OB30 */
 	cyclic?: { intervalMs: number; body: Stmt[] } & Span;
+	/** ORGANIZATION_BLOCK OB100 / OB121 / OB80: startup, programming error, time error */
+	obs?: ({ ob: ErrorOb; body: Stmt[] } & Span)[];
 }
+
+/** Organisation blocks the CPU calls on events. */
+export type ErrorOb = 'OB100' | 'OB121' | 'OB80';
+export const EVENT_OBS: Record<ErrorOb, string> = {
+	OB100: 'rozruch (startup)',
+	OB121: 'błąd programowania',
+	OB80: 'błąd czasu (przekroczony czas cyklu)'
+};

@@ -875,6 +875,26 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		checkIt
 	],
 
+	'recipe-index': [
+		{
+			text: 'Sprawdź zakres przed indeksem: `IF RecipeNo >= 1 AND RecipeNo <= 3 THEN …`',
+			done: (c) => /RecipeNo\s*>=\s*1/i.test(c.st ?? '') && /RecipeNo\s*<=\s*3/i.test(c.st ?? '')
+		},
+		{
+			text: 'Przy złej wartości zapal `BadRecipe`, przy dobrej zgaś.',
+			done: (c) =>
+				/BadRecipe\s*:=\s*TRUE/i.test(c.st ?? '') && /BadRecipe\s*:=\s*FALSE/i.test(c.st ?? '')
+		},
+		{
+			text: 'Dodaj siatkę bezpieczeństwa: `ORGANIZATION_BLOCK OB121` … `END_ORGANIZATION_BLOCK`.',
+			done: (c) => /ORGANIZATION_BLOCK\s+OB121/i.test(c.st ?? '')
+		},
+		runIt(
+			'w widoku Diagnostics zobacz bufor diagnostyczny; wpisz w Watch RecipeNo = 7 — CPU pracuje dalej.'
+		),
+		checkIt
+	],
+
 	'oven-filter': [
 		{
 			text: 'W `CYCLIC_INTERRUPT` zapisz próbkę: `buf[pos] := Temperature;` i przesuń `pos` z powrotem do 0 po 9.',

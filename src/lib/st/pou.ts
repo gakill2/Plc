@@ -12,8 +12,9 @@
  *   that uses it, into a hidden variable that replaces the call;
  * - an ARRAY becomes one variable per element (`a[0]`, `a[1]` …). A constant index picks the
  *   element directly; a computed index is dispatched by a binary search over IF statements, so a
- *   read costs about log2(n) comparisons. An index outside the bounds reads 0 / FALSE and a write
- *   to it does nothing (a real CPU would report an access error).
+ *   read costs about log2(n) comparisons. An index outside the bounds is a programming error
+ *   (ERR): the CPU calls OB121 if there is one — the read gives 0 / FALSE and the write is
+ *   skipped — or goes to STOP, like an S7-1500.
  */
 import type { Arg, Expr, Pou, Span, Stmt, StProgram, StructType, Target, VarDecl } from './ast.js';
 
@@ -399,13 +400,19 @@ export function expandPous(program: StProgram, report: Report): StProgram {
 				m,
 				index,
 				(k) => [assign(tmp, element(scope, e, k, false), e)],
-				[assign(tmp, zero(type, e), e)],
+				[assign(tmp, zero(type, e), e), outOfRange(e.array, m, e)],
 				e,
 				pre
 			)
 		);
 		return tmp;
 	}
+
+	const outOfRange = (name: string, m: { low: number; high: number }, at: Span): Stmt => ({
+		kind: 'fault',
+		message: `indeks poza zakresem tablicy ${name}[${m.low}..${m.high}]`,
+		...sp(at)
+	});
 
 	/** `t := value` for any target, including an array element with a computed index. */
 	function assignTo(
@@ -435,7 +442,7 @@ export function expandPous(program: StProgram, report: Report): StProgram {
 			m,
 			index,
 			(k) => [assign(element(scope, t, k, true) as Target, v, at)],
-			[],
+			[outOfRange(t.array, m, t)],
 			at,
 			pre
 		);
@@ -616,7 +623,7 @@ export function expandPous(program: StProgram, report: Report): StProgram {
 					);
 				return [...pre, ...one(k)];
 			}
-			const d = dispatch(arr, index, one, [], s, pre);
+			const d = dispatch(arr, index, one, [outOfRange(s.name, arr, s)], s, pre);
 			return [...pre, d];
 		}
 		const m = scope.names.get(up(s.name));
@@ -759,7 +766,9 @@ export function expandPous(program: StProgram, report: Report): StProgram {
 	}
 
 	const body = block(program.body, main, []);
-	if (!program.cyclic) return { vars, body };
-	const cyclic = { ...program.cyclic, body: block(program.cyclic.body, main, []) };
-	return { vars, body, cyclic };
+	const out: StProgram = { vars, body };
+	if (program.cyclic)
+		out.cyclic = { ...program.cyclic, body: block(program.cyclic.body, main, []) };
+	if (program.obs) out.obs = program.obs.map((o) => ({ ...o, body: block(o.body, main, []) }));
+	return out;
 }

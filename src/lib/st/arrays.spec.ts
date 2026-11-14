@@ -37,7 +37,7 @@ END_FOR;
 		expect(read('a[3]')).toBe(30);
 	});
 
-	it('writes with a computed index and reads 0 outside the bounds', () => {
+	it('writes with a computed index; outside the bounds OB121 runs and a read gives 0', () => {
 		const { read, scan } = load(`
 VAR
   buf : ARRAY[0..9] OF DINT;
@@ -51,6 +51,8 @@ k := 12;
 out := buf[k];
 buf[k] := 99;
 last := buf[k - 3];
+ORGANIZATION_BLOCK OB121
+END_ORGANIZATION_BLOCK
 `);
 		scan();
 		expect(read('buf[7]')).toBe(49);

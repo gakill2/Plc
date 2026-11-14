@@ -11,10 +11,13 @@ const MAX_STACK = 1024;
 export class PlcFault extends Error {
 	override name = 'PlcFault';
 	readonly pc: number;
+	/** watchdog: the cycle took too long · program: a programming error (ERR) nobody handled */
+	readonly kind: 'fault' | 'watchdog' | 'program';
 
-	constructor(message: string, pc: number) {
+	constructor(message: string, pc: number, kind: 'fault' | 'watchdog' | 'program' = 'fault') {
 		super(message);
 		this.pc = pc;
+		this.kind = kind;
 	}
 }
 
@@ -105,7 +108,9 @@ export function execute(
 	maxSteps = DEFAULT_MAX_STEPS,
 	hook?: ExecHook,
 	/** first instruction: 0 for the main program, another entry point for an interrupt */
-	entry = 0
+	entry = 0,
+	/** a programming error (ERR): return true when it was handled (OB121) and execution goes on */
+	onError?: (message: string, pc: number) => boolean
 ): number {
 	const stack: boolean[] = [];
 	let pc = entry;
@@ -130,7 +135,11 @@ export function execute(
 	try {
 		while (pc < program.length) {
 			if (++steps > maxSteps) {
-				throw new PlcFault(`Watchdog: more than ${maxSteps} instructions in one scan`, pc);
+				throw new PlcFault(
+					`Watchdog: more than ${maxSteps} instructions in one scan`,
+					pc,
+					'watchdog'
+				);
 			}
 			const ins = program[pc];
 			let next = pc + 1;
@@ -251,6 +260,9 @@ export function execute(
 					if (ins.slot >= state.taps.length)
 						throw new PlcFault(`Probe ${ins.slot} out of range`, pc);
 					push(state.taps[ins.slot] === 1);
+					break;
+				case 'ERR':
+					if (!onError?.(ins.message, pc)) throw new PlcFault(ins.message, pc, 'program');
 					break;
 			}
 

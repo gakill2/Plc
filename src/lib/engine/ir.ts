@@ -26,6 +26,7 @@ import type { Address, AddrOperand, CmpOp, MathFn, Operand } from './types.js';
  * | MATH fn a b dst        | en → eno                             | ENO = false on division by zero         |
  * | JMP t                  | –                                    | unconditional jump to instruction t     |
  * | JMPC / JMPCN t         | c →                                  | jump if c is true / false               |
+ * | ERR "text"             | –                                    | programming error (e.g. index out of range) |
  *
  * Probes (used by graphical editors for live power flow):
  *
@@ -44,6 +45,7 @@ export type Instr =
 	| { op: 'MOVE'; src: Operand; dst: AddrOperand }
 	| { op: 'MATH'; fn: MathFn; a: Operand; b: Operand; dst: AddrOperand }
 	| { op: 'JMP' | 'JMPC' | 'JMPCN'; target: number }
-	| { op: 'TAP' | 'LDT'; slot: number };
+	| { op: 'TAP' | 'LDT'; slot: number }
+	| { op: 'ERR'; message: string };
 
 export type Program = readonly Instr[];

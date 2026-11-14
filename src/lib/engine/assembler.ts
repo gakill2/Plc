@@ -241,6 +241,8 @@ function build({ mnemonic: m, args }: Line, labels: Map<string, number>): Instr 
 			arity(1);
 			if (!/^\d+$/.test(args[0])) throw new Error(`${m} expects a probe number`);
 			return { op: m, slot: Number(args[0]) };
+		case 'ERR':
+			return { op: 'ERR', message: args.join(', ').replace(/^"|"$/g, '') };
 		default:
 			throw new Error(`Unknown instruction "${m}"`);
 	}
@@ -302,6 +304,8 @@ export function disassemble(program: Program): string[] {
 			case 'TAP':
 			case 'LDT':
 				return `${ins.op} ${ins.slot}`;
+			case 'ERR':
+				return `ERR "${ins.message}"`;
 		}
 	});
 }

@@ -959,6 +959,9 @@ export function compileSt(
 				place(exit);
 				return;
 			}
+			case 'fault':
+				emit({ op: 'ERR', message: s.message });
+				return;
 			case 'exit': {
 				const loop = loops.at(-1);
 				if (!loop) throw new CompileError('EXIT is only allowed inside FOR, WHILE or REPEAT', s);
@@ -1014,18 +1017,30 @@ export function compileSt(
 	place(returnLabel);
 
 	// the cyclic interrupt: its own entry point after the main program, which jumps over it
-	let cyclic: LoadOptions['cyclic'];
-	if (ast.cyclic) {
-		const end = newLabel();
-		line = lineOf(ast.cyclic.from);
-		jump('JMP', end);
-		cyclic = { entry: program.length, intervalMs: ast.cyclic.intervalMs };
-		returnLabel = end;
-		block(ast.cyclic.body);
-		place(end);
-	}
+	// other organisation blocks: entry points after the main program; each one jumps to the end
 	const load: LoadOptions = {};
-	if (cyclic) load.cyclic = cyclic;
+	const end = newLabel();
+	const section = (from: number, body: Stmt[]): number => {
+		line = lineOf(from);
+		jump('JMP', end);
+		const entry = program.length;
+		returnLabel = newLabel();
+		block(body);
+		place(returnLabel);
+		return entry;
+	};
+	if (ast.cyclic)
+		load.cyclic = {
+			entry: section(ast.cyclic.from, ast.cyclic.body),
+			intervalMs: ast.cyclic.intervalMs
+		};
+	for (const o of ast.obs ?? []) {
+		const entry = section(o.from, o.body);
+		if (o.ob === 'OB100') load.startup = entry;
+		else if (o.ob === 'OB121') load.programmingError = entry;
+		else load.timeError = entry;
+	}
+	place(end);
 	if (retained.length)
 		load.retain = {
 			from: VAR_AREA.start,
@@ -1057,7 +1072,7 @@ export function compileSt(
 		variables: variables.filter((v) => !v.name.includes('#')),
 		// lines in the library are not lines of this source
 		lines: lines.map((l) => (l === null || l - preLines <= 0 ? null : l - preLines)),
-		...(load.cyclic || load.retain ? { load } : {})
+		...(Object.keys(load).length ? { load } : {})
 	};
 }
 

@@ -11,6 +11,7 @@ import type {
 	Target,
 	VarDecl
 } from './ast.js';
+import { EVENT_OBS, type ErrorOb } from './ast.js';
 import { StSyntaxError, tokenize, type Token } from './lexer.js';
 
 export interface ParseResult {
@@ -32,7 +33,9 @@ const BLOCK_END = new Set([
 	'END_FUNCTION_BLOCK',
 	'END_FUNCTION',
 	'CYCLIC_INTERRUPT',
-	'END_CYCLIC_INTERRUPT'
+	'END_CYCLIC_INTERRUPT',
+	'ORGANIZATION_BLOCK',
+	'END_ORGANIZATION_BLOCK'
 ]);
 
 /**
@@ -277,7 +280,9 @@ export function parse(src: string): ParseResult {
 					return fail('VAR blocks must come before the first statement');
 				case 'CYCLIC_INTERRUPT':
 				case 'END_CYCLIC_INTERRUPT':
-					return fail('CYCLIC_INTERRUPT goes after the main program, at the end of the source');
+				case 'ORGANIZATION_BLOCK':
+				case 'END_ORGANIZATION_BLOCK':
+					return fail(`${t.text} goes after the main program, at the end of the source`);
 			}
 			return fail(`Unexpected ${describe(t)}`);
 		}
@@ -687,7 +692,31 @@ export function parse(src: string): ParseResult {
 	});
 	const body = statements();
 	let cyclic: StProgram['cyclic'];
-	if (isKw('CYCLIC_INTERRUPT')) {
+	const obs: NonNullable<StProgram['obs']> = [];
+	while (isKw('CYCLIC_INTERRUPT') || isKw('ORGANIZATION_BLOCK')) {
+		if (isKw('ORGANIZATION_BLOCK')) {
+			const head = next();
+			try {
+				const name = next();
+				const ob = name.text.toUpperCase();
+				if (name.kind !== 'ident' || !(ob in EVENT_OBS))
+					fail('Known blocks: OB100 (startup), OB121 (programming error), OB80 (time error)', name);
+				if (obs.some((o) => o.ob === ob)) fail(`${ob} is defined twice`, name);
+				const body = statements();
+				expectKw('END_ORGANIZATION_BLOCK');
+				optionalSemicolon();
+				obs.push({ ob: ob as ErrorOb, body, from: head.from, to: name.to });
+			} catch (e) {
+				recover(e);
+				while (peek().kind !== 'eof' && !isKw('END_ORGANIZATION_BLOCK')) next();
+				if (isKw('END_ORGANIZATION_BLOCK')) next();
+			}
+			continue;
+		}
+		if (cyclic)
+			errors.push(
+				new StSyntaxError('Only one CYCLIC_INTERRUPT is allowed', peek().from, peek().to)
+			);
 		const head = next();
 		try {
 			const t = next();
@@ -722,5 +751,15 @@ export function parse(src: string): ParseResult {
 		body.push(...statements());
 	}
 
-	return { program: { vars, body, types, pous, ...(cyclic ? { cyclic } : {}) }, errors };
+	return {
+		program: {
+			vars,
+			body,
+			types,
+			pous,
+			...(cyclic ? { cyclic } : {}),
+			...(obs.length ? { obs } : {})
+		},
+		errors
+	};
 }

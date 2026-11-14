@@ -31,6 +31,18 @@
 		<span class="font-mono text-[11px] text-slate-500" title="Simulated time · scan count">
 			{((snapshot?.timeMs ?? 0) / 1000).toFixed(2)} s · #{snapshot?.scanCount ?? 0}
 		</span>
+		{#if snapshot?.cycle && snapshot.scanCount > 0}
+			<span
+				class="font-mono text-[11px] {snapshot.cycle.lastMs > 10
+					? 'text-amber-300'
+					: 'text-slate-500'}"
+				title="Czas cyklu: ostatni / maksymalny (program liczył {snapshot.cycle.execMs.toFixed(
+					2
+				)} ms)"
+				aria-label="Cycle time"
+				>cykl {snapshot.cycle.lastMs.toFixed(0)} ms · max {snapshot.cycle.maxMs.toFixed(0)}</span
+			>
+		{/if}
 		{#if snapshot?.cyclicCount}
 			<span
 				class="font-mono text-[11px] text-sky-400"
@@ -96,6 +108,7 @@
 	{#if snapshot?.fault}
 		<span class="rounded bg-red-500/15 px-2 py-1 font-mono text-xs text-red-300">
 			FAULT @{snapshot.fault.pc}: {snapshot.fault.message}
+			<span class="text-red-200/70" lang="pl">· szczegóły w Diagnostics</span>
 		</span>
 	{/if}
 </div>

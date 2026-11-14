@@ -41,6 +41,7 @@
 	import XrefPanel from './XrefPanel.svelte';
 	import ExplainPanel from './ExplainPanel.svelte';
 	import DebugView from './DebugView.svelte';
+	import DiagView from './DiagView.svelte';
 	import { watchEntry } from '#lib/monitor/watch.js';
 	import IoCheck from './IoCheck.svelte';
 	import HmiView from '#lib/hmi/HmiView.svelte';
@@ -66,6 +67,7 @@
 		| 'symbols'
 		| 'watch'
 		| 'debug'
+		| 'diag'
 		| 'hmi'
 		| 'iocheck';
 
@@ -101,7 +103,8 @@
 		{ id: 'hmi', label: 'HMI' },
 		{ id: 'symbols', label: 'Symbols' },
 		{ id: 'watch', label: 'Watch' },
-		{ id: 'debug', label: 'Debug' }
+		{ id: 'debug', label: 'Debug' },
+		{ id: 'diag', label: 'Diagnostics' }
 	]);
 
 	// The simulated plant runs in the worker next to the PLC.
@@ -740,6 +743,8 @@
 						onWrite={hmiWrite}
 						onAck={ackAlarm}
 					/>
+				{:else if view === 'diag'}
+					<DiagView snapshot={runtime.snapshot} />
 				{:else if view === 'debug'}
 					<DebugView
 						compiled={loaded && runtime.online ? loaded : project.compiled}

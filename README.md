@@ -11,7 +11,10 @@ it and watch the controller execute your program scan by scan — or let it driv
 ## Features
 
 - **Realistic scan cycle** — process images, RUN / STOP / PAUSE / single STEP, adjustable speed
-  (×0.1 – ×10), faults and a watchdog.
+  (×0.1 – ×10). The cycle time follows the program (about 1 µs per instruction over a 10 ms
+  minimum), a maximum cycle time of 150 ms calls OB80 or stops the CPU, programming errors (an array
+  index out of range) call OB121 or stop it, OB100 runs at startup — and everything is written to a
+  **diagnostic buffer**, like on an S7-1500.
 - **Ladder editor** — contacts (NO, NC, P, N), coils (normal, negated, set, reset), timers,
   counters, compare, MOVE and MATH boxes, parallel branches, with **live power flow** while
   running. Copy / paste, insert before / after, change the element type in place.
@@ -30,7 +33,7 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
   pusher, each with simple physics; connect one to any project.
-- **27 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
+- **28 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
   to a crane with an encoder, a PID-tuned oven, a remote I/O station and two-hand control. Your
   program runs against test cases in a headless PLC (or through the wired circuit); every lesson
   ships a reference solution that the test suite proves passes, plus a live step-by-step guide.
@@ -122,9 +125,9 @@ Design decisions are recorded as ADRs:
 
 ## Quality
 
-- ~560 unit tests (Vitest) for the engine, compilers, runtime, plants, lessons and persistence,
+- ~570 unit tests (Vitest) for the engine, compilers, runtime, plants, lessons and persistence,
   with coverage thresholds enforced in CI (~97 % lines, ~90 % branches on the core).
-- 43 end-to-end tests (Playwright) for the main flows: running the demo, forcing, ST errors,
+- 44 end-to-end tests (Playwright) for the main flows: running the demo, forcing, ST errors,
   undo/redo, lessons, projects and share links.
 - Strict TypeScript, ESLint and Prettier; GitHub Actions runs everything on every push.
 

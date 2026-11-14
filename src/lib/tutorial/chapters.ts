@@ -98,7 +98,7 @@ Druga konsekwencja: **reakcja sterownika nie jest natychmiastowa**. Od zmiany na
 				kind: 'callout',
 				tone: 'warn',
 				title: 'Watchdog',
-				text: `Jeżeli program wpadnie w nieskończoną pętlę (np. \`WHILE TRUE DO … END_WHILE\`), cykl nigdy się nie skończy, a wyjścia przestaną być odświeżane. Dlatego sterownik ma **watchdog** — gdy cykl trwa za długo, przechodzi w stan błędu (STOP / FAULT) i wyłącza wyjścia. PLC Sim robi to samo.`
+				text: `Jeżeli program wpadnie w nieskończoną pętlę (np. \`WHILE TRUE DO … END_WHILE\`), cykl nigdy się nie skończy, a wyjścia przestaną być odświeżane. Dlatego sterownik ma **watchdog** — gdy cykl trwa za długo, przechodzi w stan błędu (STOP / FAULT) i wyłącza wyjścia. PLC Sim robi to samo: maksymalny czas cyklu to 150 ms, a powód zatrzymania zobaczysz w buforze diagnostycznym (widok **Diagnostics**).`
 			},
 			{
 				kind: 'quiz',
@@ -1326,6 +1326,34 @@ END_CYCLIC_INTERRUPT`
 				kind: 'lesson',
 				slug: 'oven-filter',
 				text: 'Filtr średniej kroczącej w przerwaniu cyklicznym, bufor w tablicy i licznik alarmów w RETAIN.'
+			},
+			{
+				kind: 'text',
+				text: `Sterownik nie jest idealnym kalkulatorem. Trzy rzeczy, które widać dopiero na obiekcie:
+
+1. **Czas cyklu się zmienia.** Ustawia się *minimalny* czas cyklu (w PLC Sim 10 ms), ale gdy program liczy dłużej — długa pętla, rzadko wykonywana gałąź — cykl się wydłuża. Timery liczą prawdziwy czas, więc działają dalej poprawnie, ale wejścia są czytane rzadziej. Powyżej **maksymalnego czasu cyklu** (tu 150 ms) CPU wywołuje **OB80** (błąd czasu), a bez niego przechodzi w STOP.
+2. **Błędy programowania** — indeks tablicy poza zakresem, odwołanie do nieistniejących danych — wywołują **OB121**. Na S7-1500 brak OB121 oznacza STOP całej maszyny z powodu jednej złej liczby z panelu operatorskiego.
+3. **Bufor diagnostyczny** zapisuje zmiany trybu, wgrania programu i każdy błąd z czasem i numerem instrukcji. Przy awarii to pierwsze miejsce, do którego zagląda automatyk — w PLC Sim widok **Diagnostics**.
+
+**OB100** (rozruch) wykonuje się raz przed pierwszym cyklem — tam ustawia się stan początkowy maszyny, np. „wszystkie siłowniki w pozycji bazowej”.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Operator wpisał na panelu numer receptury 7, a tablica ma 3 elementy. Co zrobi S7-1500 bez OB121?',
+				options: [
+					'Weźmie ostatni element tablicy',
+					'Zapisze błąd w buforze diagnostycznym i przejdzie w STOP',
+					'Zignoruje instrukcję i pojedzie dalej'
+				],
+				correct: 1,
+				explanation:
+					'Błąd dostępu to błąd programowania. Bez OB121 CPU S7-1500 zatrzymuje się, a wyjścia gasną. Dlatego dane z zewnątrz (HMI, sieć) zawsze sprawdza się przed użyciem jako indeksu.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'recipe-index',
+				text: 'Znajdź błąd: zły numer receptury zatrzymuje CPU. Bufor diagnostyczny, kontrola zakresu i OB121.'
 			}
 		]
 	},

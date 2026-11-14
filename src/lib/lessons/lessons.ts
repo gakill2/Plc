@@ -195,6 +195,36 @@ CYCLIC_INTERRUPT T#100ms
 END_CYCLIC_INTERRUPT
 `;
 
+const RECIPE_HEAD = `(* Receptury pieca: operator wybiera numer 1 … 3 na panelu (RecipeNo, MW10).
+   Setpoint (MW12) = temperatura zadana z receptury, °C × 10. *)
+VAR
+  temps : ARRAY[1..3] OF INT := [1800, 2000, 2200];
+END_VAR
+`;
+const RECIPE_STARTER = `${RECIPE_HEAD}
+Setpoint := temps[RecipeNo];
+`;
+const RECIPE_SOLUTION = `${RECIPE_HEAD}
+// sprawdź dane z panelu, zanim użyjesz ich jako indeksu
+IF RecipeNo >= 1 AND RecipeNo <= 3 THEN
+  Setpoint := temps[RecipeNo];
+  BadRecipe := FALSE;
+ELSE
+  BadRecipe := TRUE;                  // zła wartość: zostaw poprzednią temperaturę
+END_IF;
+
+// siatka bezpieczeństwa: każdy błąd programowania zapala lampkę zamiast zatrzymać CPU
+ORGANIZATION_BLOCK OB121
+  BadRecipe := TRUE;
+END_ORGANIZATION_BLOCK
+`;
+const setpointIs =
+	(v: number): Check =>
+	({ plc }) => {
+		const s = plc.memory.readNumber(parseAddress('MW12'));
+		return s === v ? null : `Setpoint (MW12) = ${s}, a powinno być ${v}`;
+	};
+
 /** The filtered value in MW20 is close to the real temperature. */
 const avgNear =
 	(tol: number): Check =>
@@ -2589,6 +2619,92 @@ export const LESSONS: Lesson[] = [
 						restart: true,
 						wait: 500,
 						check: alarmCount(2)
+					}
+				]
+			}
+		]
+	},
+	{
+		slug: 'recipe-index',
+		kind: 'debug',
+		title: 'Znajdź błąd: CPU staje po wyborze receptury',
+		level: 'process',
+		summary:
+			'Zły numer receptury z panelu wychodzi poza tablicę i zatrzymuje sterownik. Zabezpiecz program i dodaj OB121.',
+		instructions: [
+			'Operator wybiera na panelu recepturę 1 … 3 (`RecipeNo`, `MW10`), a program bierze z tablicy temperaturę zadaną `Setpoint` (`MW12`).',
+			'**Objaw:** zaraz po Run sterownik przechodzi w STOP (FAULT). W widoku **Diagnostics** bufor diagnostyczny mówi: indeks poza zakresem tablicy. Panel startuje z wartością 0, a operator potrafi też wpisać 7.',
+			'Popraw program: zanim użyjesz `RecipeNo` jako indeksu, sprawdź zakres. Przy złej wartości zapal lampkę `BadRecipe` (`Q0.1`) i zostaw poprzednią temperaturę. Jako siatkę bezpieczeństwa dodaj **OB121** (blok błędu programowania), który też zapala `BadRecipe` — bez niego każdy przeoczony błąd zatrzymuje maszynę.'
+		],
+		hints: [
+			'`IF RecipeNo >= 1 AND RecipeNo <= 3 THEN Setpoint := temps[RecipeNo]; BadRecipe := FALSE; ELSE BadRecipe := TRUE; END_IF;`',
+			'Na końcu programu: `ORGANIZATION_BLOCK OB121` … `BadRecipe := TRUE;` … `END_ORGANIZATION_BLOCK`.',
+			'Na S7-1500 brak OB121 przy takim błędzie = STOP. Dane z HMI zawsze traktuj jak dane z zewnątrz: sprawdzaj zakres.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'recipe-index',
+			language: 'st',
+			st: RECIPE_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([['lamp', 'BadRecipe', 'Q0.1', { color: 'red' }]]),
+			symbols: [
+				symbol('RecipeNo', 'MW10', 'Numer receptury z panelu (1 … 3)'),
+				symbol('Setpoint', 'MW12', 'Temperatura zadana, °C × 10')
+			],
+			watch: [
+				watchEntry('RecipeNo', 'DEC', true),
+				watchEntry('Setpoint', 'DEC', true),
+				watchEntry('BadRecipe', undefined, true)
+			]
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: RECIPE_SOLUTION,
+		tests: [
+			{
+				name: 'Poprawny numer: temperatura z receptury',
+				steps: [
+					{
+						label: 'receptura 2',
+						hmi: { MW10: 2 },
+						wait: 100,
+						check: setpointIs(2000),
+						expect: { 'Q0.1': false }
+					},
+					{ label: 'receptura 3', hmi: { MW10: 3 }, wait: 100, check: setpointIs(2200) }
+				]
+			},
+			{
+				name: 'Zły numer: CPU pracuje dalej, lampka, temperatura bez zmian',
+				steps: [
+					{ label: 'start z 0 z panelu', wait: 100, expect: { 'Q0.1': true } },
+					{
+						label: 'receptura 1',
+						hmi: { MW10: 1 },
+						wait: 100,
+						check: setpointIs(1800),
+						expect: { 'Q0.1': false }
+					},
+					{
+						label: 'operator wpisuje 7',
+						hmi: { MW10: 7 },
+						wait: 200,
+						check: setpointIs(1800),
+						expect: { 'Q0.1': true }
+					},
+					{
+						label: 'operator wpisuje -1',
+						hmi: { MW10: -1 },
+						wait: 200,
+						check: setpointIs(1800),
+						expect: { 'Q0.1': true }
+					},
+					{
+						label: 'z powrotem 2',
+						hmi: { MW10: 2 },
+						wait: 100,
+						check: setpointIs(2000),
+						expect: { 'Q0.1': false }
 					}
 				]
 			}

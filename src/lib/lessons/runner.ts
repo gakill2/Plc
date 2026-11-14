@@ -75,11 +75,14 @@ export function runLessonTests(
 			devices?.actuate(step.actuate ?? {});
 			devices?.apply();
 
-			for (let t = 0; t < step.wait; t += SCAN_MS) {
+			for (let t = 0; t < step.wait;) {
+				const before = plc.timeMs;
 				plc.scan(SCAN_MS);
-				devices?.step(SCAN_MS);
+				const dt = Math.max(SCAN_MS, plc.timeMs - before);
+				t += dt;
+				devices?.step(dt);
 				if (plc.mode === 'FAULT') return fail(`Błąd PLC: ${plc.fault?.message}`);
-				process?.step(SCAN_MS, io);
+				process?.step(dt, io);
 				const problem = test.always?.(ctx);
 				if (problem) return fail(problem);
 			}

@@ -80,7 +80,10 @@ export class RuntimeCore {
 				return null;
 			case 'step':
 				if (this.plc.mode === 'STOP' && this.plc.run()) this.#paused = true;
-				if (this.status === 'PAUSED' && this.plc.scan(SCAN_MS)) this.#afterScan();
+				if (this.status === 'PAUSED') {
+					const before = this.plc.timeMs;
+					if (this.plc.scan(SCAN_MS)) this.#afterScan(this.plc.timeMs - before);
+				}
 				return null;
 			case 'stop':
 				this.plc.stop();
@@ -139,9 +142,12 @@ export class RuntimeCore {
 		this.#debtMs += Math.max(0, realMs) * this.#speed;
 		let scans = 0;
 		while (this.#debtMs >= SCAN_MS && scans < MAX_SCANS_PER_TICK) {
+			const before = this.plc.timeMs;
 			if (!this.plc.scan(SCAN_MS)) break;
-			this.#afterScan();
-			this.#debtMs -= SCAN_MS;
+			// a long program stretches the cycle: the plant and the clock follow the real cycle time
+			const dt = this.plc.timeMs - before;
+			this.#afterScan(dt);
+			this.#debtMs -= dt;
 			scans++;
 		}
 		if (scans === MAX_SCANS_PER_TICK) this.#debtMs = 0; // fall behind instead of spiralling
@@ -163,8 +169,8 @@ export class RuntimeCore {
 	}
 
 	/** The plant reacts to the outputs of the scan that just ran, then the trace is sampled. */
-	#afterScan() {
-		this.#process?.step(SCAN_MS, this.#io);
+	#afterScan(dt = SCAN_MS) {
+		this.#process?.step(dt, this.#io);
 		this.#sample();
 	}
 

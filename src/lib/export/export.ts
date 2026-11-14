@@ -11,6 +11,7 @@
  */
 import { formatAddress, parseAddress } from '#lib/engine/index.js';
 import { boxTypes, fbdToSt, type Fbd } from '#lib/fbd/fbd.js';
+import { EVENT_OBS, type ErrorOb } from '#lib/st/ast.js';
 import type { BlockBox, Element, LadderProgram, Series } from '#lib/ladder/model.js';
 import type { Expr, Pou, Stmt, StructType, VarDecl } from '#lib/st/ast.js';
 import { parse } from '#lib/st/parser.js';
@@ -195,7 +196,12 @@ export interface ExportInput {
 interface Unit {
 	types: StructType[];
 	pous: Pou[];
-	main: { vars: VarDecl[]; body: Stmt[]; cyclic?: { intervalMs: number; body: Stmt[] } };
+	main: {
+		vars: VarDecl[];
+		body: Stmt[];
+		cyclic?: { intervalMs: number; body: Stmt[] };
+		obs?: { ob: ErrorOb; body: Stmt[] }[];
+	};
 	errors: string[];
 	/** The parser upper-cases parameter, member and type names; this restores how they were declared. */
 	caseOf: (name: string) => string;
@@ -244,7 +250,7 @@ function unit(p: ExportInput): Unit {
 	return {
 		types: ast.types ?? [],
 		pous: ast.pous ?? [],
-		main: { vars: ast.vars, body: ast.body, cyclic: ast.cyclic },
+		main: { vars: ast.vars, body: ast.body, cyclic: ast.cyclic, obs: ast.obs },
 		errors: errors.map((e) => e.message),
 		caseOf: (n) => names.get(up(n)) ?? n
 	};
@@ -528,8 +534,32 @@ export function exportScl(p: ExportInput): { scl: string; tags: string; errors: 
 		'END_ORGANIZATION_BLOCK',
 		''
 	);
+	// the interrupt and event OBs read the program's variables through its instance DB
+	const obDialect: Dialect = {
+		...md,
+		name: (n) => (mainLocals.has(up(n)) ? `"Main_DB".${n}` : md.name(n)),
+		member: (o, m) => (mainLocals.has(up(o)) ? `"Main_DB".${o}.${m}` : md.member(o, m)),
+		call: (n) => (mainLocals.has(up(n)) ? `"Main_DB".${n}` : md.call(n))
+	};
+	const OB_NAMES: Record<ErrorOb, string> = {
+		OB100: 'Startup',
+		OB121: 'Programming_error',
+		OB80: 'Time_error'
+	};
+	for (const o of u.main.obs ?? [])
+		out.push(
+			`ORGANIZATION_BLOCK "${OB_NAMES[o.ob]}"`,
+			`TITLE = '${EVENT_OBS[o.ob]}'`,
+			`// Typ OB w TIA Portal: ${o.ob} (${EVENT_OBS[o.ob]}).`,
+			"{ S7_Optimized_Access := 'TRUE' }",
+			'VERSION : 0.1',
+			'',
+			'BEGIN',
+			...stmts(o.body, obDialect, '\t'),
+			'END_ORGANIZATION_BLOCK',
+			''
+		);
 	if (u.main.cyclic) {
-		// the interrupt reads the program's variables through its instance DB
 		const cd: Dialect = {
 			...md,
 			name: (n) => (mainLocals.has(up(n)) ? `"Main_DB".${n}` : md.name(n)),
@@ -673,14 +703,23 @@ export function exportPlcOpen(p: ExportInput, now = new Date()): { xml: string; 
 		'      </pou>'
 	);
 	const mainNames = new Set(u.main.vars.map((v) => up(v.name)));
+	// other programs reach the main program's variables as PLC_PRG.x
+	const cd: Dialect = {
+		...d,
+		name: (n) => (mainNames.has(up(n)) ? `PLC_PRG.${n}` : n),
+		member: (o, m) => (mainNames.has(up(o)) ? `PLC_PRG.${o}.${m}` : `${o}.${m}`),
+		call: (n) => (mainNames.has(up(n)) ? `PLC_PRG.${n}` : n)
+	};
+	// CODESYS calls these from system events (Task configuration → System events)
+	for (const o of u.main.obs ?? [])
+		out.push(
+			`      <pou name="${o.ob}_PRG" pouType="program">`,
+			`        <documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">${esc(EVENT_OBS[o.ob])} — w CODESYS przypisz do zdarzenia systemowego</xhtml></documentation>`,
+			'        <interface/>',
+			...body(o.body, cd),
+			'      </pou>'
+		);
 	if (u.main.cyclic) {
-		// a second program in its own task; it reaches the main program's variables as PLC_PRG.x
-		const cd: Dialect = {
-			...d,
-			name: (n) => (mainNames.has(up(n)) ? `PLC_PRG.${n}` : n),
-			member: (o, m) => (mainNames.has(up(o)) ? `PLC_PRG.${o}.${m}` : `${o}.${m}`),
-			call: (n) => (mainNames.has(up(n)) ? `PLC_PRG.${n}` : n)
-		};
 		out.push(
 			'      <pou name="CYCLIC_PRG" pouType="program">',
 			'        <interface/>',
