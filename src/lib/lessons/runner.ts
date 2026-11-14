@@ -1,6 +1,13 @@
 import { parseAddress, Plc, ProgramError, type Instr } from '#lib/engine/index.js';
 import { DeviceBank } from '#lib/circuit/devices.js';
-import { inputDrive, normalizeTerminal, type Circuit } from '#lib/circuit/model.js';
+import {
+	hasFault,
+	inputDrive,
+	normalizeTerminal,
+	outputReaches,
+	type Circuit,
+	type Fault
+} from '#lib/circuit/model.js';
 import { createProcess } from '#lib/processes/models.js';
 import type { Lesson, TestContext, TestResult } from './types.js';
 
@@ -10,7 +17,12 @@ const SCAN_MS = 10;
  * Runs a lesson's tests against a compiled program, headless and deterministic:
  * a fresh PLC (and process model) per test, fixed 10 ms scans.
  */
-export function runLessonTests(lesson: Lesson, program: Instr[], circuit?: Circuit): TestResult[] {
+export function runLessonTests(
+	lesson: Lesson,
+	program: Instr[],
+	circuit?: Circuit,
+	faults: Fault[] = []
+): TestResult[] {
 	const field = (lesson.kind === 'commissioning' || lesson.fieldTests) && circuit ? circuit : null;
 	return lesson.tests.map((test) => {
 		const plc = new Plc();
@@ -25,10 +37,13 @@ export function runLessonTests(lesson: Lesson, program: Instr[], circuit?: Circu
 		const process = lesson.scenario ? createProcess(lesson.scenario) : null;
 		const io = {
 			output: (t: string) => plc.getOutput(t),
-			input: (t: string, v: boolean) => plc.setInput(t, v)
+			input: (t: string, v: boolean) => plc.setInput(t, v),
+			word: (a: string) => plc.memory.readNumber(parseAddress(a)),
+			setWord: (a: string, v: number) => plc.setInputNumber(a, v)
 		};
 		process?.step(0, io); // initial sensor values
 		const devices = field ? new FieldSim(field, plc) : null;
+		if (devices) devices.faults = faults;
 		const ctx: TestContext = {
 			plc,
 			process,
@@ -86,10 +101,12 @@ export function runLessonTests(lesson: Lesson, program: Instr[], circuit?: Circu
  * The circuit in a headless test: devices are operated by label, their signals reach the PLC's
  * input terminals through the wiring (so wrong wiring fails the test), outputs drive the devices.
  */
-class FieldSim {
+export class FieldSim {
 	readonly #actuated: Record<string, boolean> = {};
 	readonly #bank = new DeviceBank();
 	#sent = new Set<string>();
+	/** Faults to simulate (on-call mode tests). */
+	faults: Fault[] = [];
 
 	constructor(
 		readonly circuit: Circuit,
@@ -114,6 +131,7 @@ class FieldSim {
 	/** Pushes device signals to the input terminals. */
 	apply() {
 		const drive = inputDrive(this.circuit, this.#actuated, {
+			faults: this.faults,
 			output: (t) => this.plc.getOutput(t),
 			vfd: (id) => this.#bank.out.get(id)
 		});
@@ -123,10 +141,15 @@ class FieldSim {
 	}
 
 	step(dtMs: number) {
-		const words = this.#bank.step(this.circuit, dtMs, {
-			bit: (t) => this.plc.getOutput(t),
-			word: (a) => this.plc.memory.readNumber(parseAddress(a))
-		});
+		const words = this.#bank.step(
+			this.circuit,
+			dtMs,
+			{
+				bit: (t) => this.plc.getOutput(t),
+				word: (a) => this.plc.memory.readNumber(parseAddress(a))
+			},
+			this.faults
+		);
 		for (const [a, v] of words) this.plc.setInputNumber(a, v);
 		this.apply();
 	}
@@ -141,6 +164,11 @@ class FieldSim {
 		const wire = this.circuit.wires.find((w) => w.device === d.id && (w.port ?? 'main') === 'main');
 		const t = wire ? normalizeTerminal(wire.terminal) : null;
 		if (!t || !t.startsWith('Q')) return { on: this.#actuated[d.id] ?? false, hz: 0 };
-		return { on: this.plc.getOutput(t), hz: 0 };
+		if (
+			d.type === 'contactor' &&
+			(this.#actuated[d.id] || hasFault(this.faults, d.label, 'overload'))
+		)
+			return { on: false, hz: 0 };
+		return { on: this.plc.getOutput(t) && outputReaches(d, 'main', this.faults), hz: 0 };
 	}
 }

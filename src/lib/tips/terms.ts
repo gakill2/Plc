@@ -150,6 +150,26 @@ export const TERMS: Record<string, Term> = {
 		text: 'Sterowanie mocą przez szybkie włączanie i wyłączanie z regulowanym wypełnieniem.',
 		chapter: 'liczby-i-analog'
 	},
+	EDM: {
+		name: 'External Device Monitoring',
+		text: 'Sprzężenie zwrotne styczników do przekaźnika bezpieczeństwa: zgrzany stycznik blokuje reset.',
+		chapter: 'bezpieczenstwo-maszyn'
+	},
+	SIL: {
+		name: 'Safety Integrity Level',
+		text: 'Poziom nienaruszalności bezpieczeństwa (IEC 62061), odpowiednik PL z ISO 13849.',
+		chapter: 'bezpieczenstwo-maszyn'
+	},
+	GSDML: {
+		name: 'General Station Description Markup Language',
+		text: 'Plik opisu urządzenia Profinet — importujesz go do projektu sterownika.',
+		chapter: 'komunikacja'
+	},
+	MBAP: {
+		name: 'Modbus Application Protocol header',
+		text: 'Nagłówek Modbus TCP: ID transakcji, protokół, długość, ID jednostki.',
+		chapter: 'komunikacja'
+	},
 	SSR: {
 		name: 'Solid State Relay',
 		text: 'Przekaźnik półprzewodnikowy — bez styków, do częstego przełączania (np. grzałek).',

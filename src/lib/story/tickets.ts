@@ -375,6 +375,82 @@ export const TICKETS: Ticket[] = [
 				'HMI nigdy nie pisze do wejść I i nie zastępuje twardego Stopu. Przycisk na ekranie to kolejne źródło polecenia.',
 			tip: 'Stop awaryjny nigdy nie idzie przez panel ani przez program — to osobny obwód bezpieczeństwa.'
 		}
+	},
+	{
+		id: 'z18',
+		week: 3,
+		lesson: 'crane-positioning',
+		from: MAINTENANCE,
+		machine: 'Suwnica S1, magazyn',
+		priority: 'pilny',
+		title: 'Suwnica uderza w odbojniki',
+		message:
+			'Po modernizacji suwnica dostała enkoder, ale program jeździ „na krańcówki” i co chwilę wali w odbojnik. Ma podjeżdżać sama do stacji A i B — dokładnie i bez uderzeń.',
+		costPerHour: 1800,
+		debrief: {
+			cause:
+				'Wózek ma masę: z pełnej prędkości hamuje pół metra. Bez zwolnienia przed celem przejeżdża stację albo uderza w koniec toru.',
+			lesson:
+				'Pozycjonowanie dwubiegowe: liczysz uchyb (pozycja − cel), daleko jedziesz szybko, blisko wolno, w paśmie tolerancji stop. Krańcówki to ostatnia linia obrony, nie sposób sterowania.',
+			tip: 'Na prawdziwej suwnicy dochodzą jeszcze tłumienie kołysania i ograniczniki udźwigu — ale logika zwolnień jest dokładnie taka.'
+		}
+	},
+	{
+		id: 'z19',
+		week: 3,
+		lesson: 'oven-pid',
+		from: PROCESS,
+		machine: 'Piec hartowniczy P1',
+		priority: 'pilny',
+		title: 'Piec przegrzewa detale',
+		message:
+			'Piec ma trzymać 180 °C, a na wykresie widzę skoki do 200 i więcej. Detale wychodzą przegrzane. Integrator zostawił regulator PI w ST — dostrój go.',
+		costPerHour: 2200,
+		debrief: {
+			cause:
+				'Za duże wzmocnienie i za krótki czas zdwojenia: regulator reagował za ostro, a całka nabijała się w czasie nagrzewania.',
+			lesson:
+				'Kp decyduje o sile reakcji, Ti o tym, jak szybko całka usuwa uchyb. Martwy czas procesu ogranicza, jak „ostro” można regulować. Anti-windup chroni przed przestrzałem po nasyceniu.',
+			tip: 'Strój na żywo z trendem przed oczami: zmieniaj jedną nastawę naraz i zapisuj, co się stało. Klient zawsze zapyta, „jakie nastawy i dlaczego”.'
+		}
+	},
+	{
+		id: 'z20',
+		week: 3,
+		lesson: 'remote-pump',
+		from: MAINTENANCE,
+		machine: 'Pompownia P3 (stacja zdalna)',
+		priority: 'awaria',
+		title: 'Panel pokazuje, że pompa pracuje — a ona stoi',
+		message:
+			'W nocy koparka przecięła kabel sieciowy do pompowni. Przez trzy godziny na panelu pompa „pracowała”, a zbiornik był pusty. Ma się to więcej nie powtórzyć.',
+		costPerHour: 3000,
+		debrief: {
+			cause:
+				'Po przerwaniu sieci w obrazie procesu zostały ostatnie dane. Program nie sprawdzał, czy dane są świeże.',
+			lesson:
+				'Każde połączenie sieciowe potrzebuje nadzoru: licznik życia, diagnostyka sieci albo bity jakości. Przy braku komunikacji — stan bezpieczny i alarm.',
+			tip: 'Ustaw też watchdog po stronie urządzenia (stan wyjść przy utracie komunikacji). Obie strony muszą wiedzieć, co robić, gdy kabel zniknie.'
+		}
+	},
+	{
+		id: 'z21',
+		week: 3,
+		lesson: 'two-hand-press',
+		from: 'Anna Kowal, specjalista BHP',
+		machine: 'Prasa krawędziowa P2',
+		priority: 'pilny',
+		title: 'Operator przykleił przycisk taśmą',
+		message:
+			'Na prasie P2 operator przykleił lewy przycisk taśmą, żeby pracować jedną ręką. Program musi to wykrywać: obie ręce prawie jednocześnie, a po każdym cyklu obie puszczone.',
+		costPerHour: 400,
+		debrief: {
+			cause:
+				'Zwykłe AND dwóch przycisków nie sprawdza jednoczesności ani puszczenia. Jeden przyklejony przycisk zamieniał prasę w maszynę jednoręczną.',
+			lesson:
+				'Sterowanie oburęczne typu III: jednoczesność 0,5 s, przerwanie przy puszczeniu, nowy cykl po puszczeniu obu.',
+			tip: 'W prawdziwej maszynie tę funkcję realizuje przekaźnik lub sterownik bezpieczeństwa z certyfikatem — Twój program w PLC może ją powielać do diagnostyki, ale nie zastępować.'
+		}
 	}
 ];
 

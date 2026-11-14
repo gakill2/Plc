@@ -15,7 +15,18 @@ function context(
 	const circuit =
 		which === 'solution' ? (lesson.solutionCircuit?.() ?? project.circuit) : project.circuit;
 	const hmi = which === 'solution' ? (lesson.solutionHmi?.() ?? project.hmi) : project.hmi;
-	return { ladder, circuit, hmi, addr: addressResolver(map), online: false, passed: false };
+	const st = which === 'solution' ? (lesson.solutionSt ?? project.st) : project.st;
+	const sfc = which === 'solution' ? (lesson.solutionSfc?.() ?? project.sfc) : project.sfc;
+	return {
+		ladder,
+		circuit,
+		hmi,
+		st,
+		sfc,
+		addr: addressResolver(map),
+		online: false,
+		passed: false
+	};
 }
 
 describe('lesson guides', () => {
@@ -42,7 +53,9 @@ describe('lesson guides', () => {
 			const empty = {
 				...context(slug, { version: 1, rungs: [] }, 'starter'),
 				circuit: undefined,
-				hmi: undefined
+				hmi: undefined,
+				st: undefined,
+				sfc: undefined
 			};
 			expect(steps.some((s) => s.done(empty))).toBe(false);
 			const start = context(slug, lesson.starter().ladder, 'starter');

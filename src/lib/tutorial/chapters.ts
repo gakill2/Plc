@@ -844,6 +844,11 @@ alarm := raw = 32767;`
 				correct: 1,
 				explanation:
 					'Żywe zero: każda wartość z zakresu ma przepływ prądu, a jego brak to diagnoza.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'crane-positioning',
+				text: 'Suwnica z enkoderem: pozycjonowanie z dwiema prędkościami, uchyb liczony blokiem SUB, krańcówki i blokady.'
 			}
 		]
 	},
@@ -924,6 +929,11 @@ Spróbuj: ustaw **Ti = wył.** (sam P) i zobacz uchyb ustalony. Potem włącz Ti
 				correct: 1,
 				explanation:
 					'Oscylacje to zwykle zbyt „agresywny” regulator: za duże Kp albo za mały Ti (za silne całkowanie).'
+			},
+			{
+				kind: 'lesson',
+				slug: 'oven-pid',
+				text: 'Dostrój prawdziwy regulator PI pieca w Structured Text: Kp, Ti, anti-windup i blokada drzwi.'
 			}
 		]
 	},
@@ -1370,6 +1380,11 @@ Dzięki temu w każdej chwili aktywny jest dokładnie jeden krok, a każdą akcj
 				kind: 'lesson',
 				slug: 'drilling-station',
 				text: 'Zaprogramuj stację wiercenia na linii produkcyjnej — prawdziwą sekwencję z czujnikami krańcowymi.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'sfc-drilling',
+				text: 'Ta sama stacja wiercenia jako diagram SFC / GRAFCET: kroki, akcje N i przejścia z czasem kroku.'
 			}
 		]
 	},
@@ -1621,6 +1636,178 @@ W PLC Sim falownik dodasz w widoku Circuit (*Frequency inverter*). Ma przycisk *
 				kind: 'lesson',
 				slug: 'commissioning-vfd',
 				text: 'Uruchom pompę z falownikiem: trzy usterki w podłączeniu napędu.'
+			}
+		]
+	},
+	/* ------------------------------------------------------------------ komunikacja */
+	{
+		slug: 'komunikacja',
+		title: 'Sieci przemysłowe: Profinet, Modbus, zdalne I/O',
+		summary:
+			'Dlaczego nie ciągnie się kabla do każdego czujnika, jak dane z sieci trafiają do obrazu procesu i co zrobić, gdy sieć padnie.',
+		minutes: 10,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Na dużej linii czujniki i napędy są dziesiątki metrów od szafy ze sterownikiem. Zamiast setek przewodów do kart wejść stawia się przy maszynie **zdalną stację I/O** (wyspę), a z PLC łączy ją jeden kabel sieciowy. Tak samo podłącza się falowniki, panele HMI i inne sterowniki.
+
+Dla programu nic się nie zmienia: sygnały ze stacji pojawiają się w **obrazie procesu** pod adresami I i Q, tak jak z lokalnych kart. Sieć co kilka milisekund wymienia cały obraz — to **komunikacja cykliczna**.`
+			},
+			{
+				kind: 'table',
+				head: ['', 'Profinet / EtherNet/IP / EtherCAT', 'Modbus TCP / RTU'],
+				rows: [
+					[
+						'Do czego',
+						'I/O, napędy, czas rzeczywisty',
+						'proste urządzenia, liczniki energii, integracja „z czymkolwiek”'
+					],
+					[
+						'Kto pyta',
+						'kontroler wymienia dane cyklicznie z każdym urządzeniem',
+						'master (klient) pyta, slave (serwer) odpowiada'
+					],
+					[
+						'Konfiguracja',
+						'plik opisu urządzenia (GSDML, EDS, ESI), nazwa urządzenia, czas cyklu',
+						'adres IP / ID stacji, mapa rejestrów z dokumentacji'
+					],
+					['Typowy cykl', '1 … 32 ms', '10 … 1000 ms (zależy od programu)']
+				]
+			},
+			{
+				kind: 'text',
+				text: `**Modbus** jest najprostszy i spotkasz go wszędzie. Urządzenie ma cztery „tablice”:
+
+- **cewki** (0x) — bity do odczytu i zapisu,
+- **wejścia dyskretne** (1x) — bity tylko do odczytu,
+- **rejestry wejściowe** (3x) — słowa 16-bitowe tylko do odczytu,
+- **rejestry holding** (4x) — słowa do odczytu i zapisu.
+
+Master wysyła **kod funkcji**, adres i ilość, a stacja odpowiada danymi. Sprawdź, jakie bajty idą po kablu:`
+			},
+			{ kind: 'modbus' },
+			{
+				kind: 'callout',
+				tone: 'warn',
+				title: 'Pułapka: adres od 0 czy od 1?',
+				text: 'Dokumentacja falownika podaje „rejestr 40010”, a w telegramie trzeba wysłać adres **9**. Prefiks 4 oznacza tablicę, a numeracja w dokumentacji zaczyna się od 1. Połowa problemów przy uruchamianiu Modbusa to przesunięcie o jeden.'
+			},
+			{
+				kind: 'text',
+				text: `**Co, gdy sieć padnie?** Sterownik nie dostaje nowych danych, ale w obrazie procesu **zostają ostatnie wartości**. Program widzi „pompa pracuje”, choć pompa dawno stoi. Dlatego:
+
+- stacja zdalna ma własny **watchdog**: bez telegramów przez określony czas ustawia wyjścia w stan bezpieczny (zwykle 0),
+- program w PLC sprawdza świeżość danych — najprościej **licznikiem życia** (heartbeat): urządzenie zwiększa licznik co chwilę, a sterownik alarmuje, gdy licznik stoi,
+- Profinet daje też diagnostykę (status urządzenia, bity jakości danych) — warto ją czytać, ale licznik życia działa z każdym protokołem.`
+			},
+			{
+				kind: 'code',
+				title: 'Licznik życia w ST',
+				code: `stale(IN := Heartbeat = LastBeat, PT := T#500ms);
+CommFault := stale.Q;
+LastBeat := Heartbeat;
+IF CommFault THEN
+  Run := FALSE;   // stan bezpieczny, po powrocie sieci nowy Start
+END_IF;`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Kabel do zdalnej stacji został przerwany. Co widzi program w PLC na wejściach tej stacji?',
+				options: [
+					'Same zera — sterownik zeruje wejścia stacji',
+					'Ostatnie odebrane wartości, dopóki program sam nie wykryje awarii',
+					'Losowe wartości',
+					'PLC przechodzi w STOP'
+				],
+				correct: 1,
+				explanation:
+					'Obraz procesu trzyma ostatnie dane. Bez licznika życia lub diagnostyki sieci program nie odróżni „pompa pracuje” od „nie wiem, co z pompą”.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'W dokumentacji licznika energii moc czynna to rejestr 40021. Jaki adres wpiszesz w zapytaniu funkcji 03?',
+				options: ['40021', '21', '20', '40020'],
+				correct: 2,
+				explanation: '4 = tablica rejestrów holding, numeracja od 1 → offset 20.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'remote-pump',
+				text: 'Pompa za siecią: wykryj utratę komunikacji licznikiem życia i przejdź w stan bezpieczny.'
+			}
+		]
+	},
+	/* ------------------------------------------------------------------ bezpieczeństwo maszyn */
+	{
+		slug: 'bezpieczenstwo-maszyn',
+		title: 'Bezpieczeństwo maszyn: obwody bezpieczeństwa i PL',
+		summary:
+			'Ocena ryzyka, poziom zapewnienia bezpieczeństwa PL, kategorie, przekaźnik bezpieczeństwa, osłony z ryglem i sterowanie oburęczne.',
+		minutes: 12,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Zwykły PLC **nie jest** urządzeniem bezpieczeństwa: program może mieć błąd, karta wyjść może się „zawiesić” w stanie 1. Dlatego funkcje chroniące ludzi — zatrzymanie awaryjne, osłony, kurtyny świetlne — realizuje się **osobnym obwodem bezpieczeństwa**: przekaźnikiem bezpieczeństwa albo sterownikiem bezpieczeństwa (safety PLC, np. F-CPU). Zwykły program tylko **dostaje informację** o stanie tego obwodu.
+
+Projekt zaczyna się od **oceny ryzyka** (PN-EN ISO 12100): jakie zagrożenia ma maszyna i jak bardzo trzeba je ograniczyć. Dla każdej funkcji bezpieczeństwa norma **PN-EN ISO 13849-1** każe wyznaczyć wymagany poziom **PLr** (od a do e).`
+			},
+			{
+				kind: 'table',
+				head: ['Kategoria', 'Architektura', 'Co się dzieje przy jednym uszkodzeniu'],
+				rows: [
+					[
+						'B, 1',
+						'jeden kanał, sprawdzone elementy',
+						'funkcja bezpieczeństwa może zostać utracona'
+					],
+					['2', 'jeden kanał + okresowy test', 'błąd wykryty przy teście'],
+					['3', 'dwa kanały', 'funkcja działa dalej; większość błędów wykrywana'],
+					['4', 'dwa kanały + pełna diagnostyka', 'funkcja działa; każdy pojedynczy błąd wykryty']
+				]
+			},
+			{ kind: 'safety' },
+			{
+				kind: 'text',
+				text: `**Zatrzymanie awaryjne** (PN-EN ISO 13850, PN-EN 60204-1) to czerwony grzybek na żółtym tle, z **zatrzaskiem**. Kategoria zatrzymania **0** odcina energię natychmiast; kategoria **1** najpierw hamuje napędem (np. rampą falownika), potem odcina energię. Po odblokowaniu grzybka maszyna **nie może** sama ruszyć — potrzebny jest świadomy reset.
+
+**Osłony z ryglem**: drzwi do strefy niebezpiecznej mają wyłącznik bezpieczeństwa. Jeśli maszyna po zatrzymaniu jeszcze się kręci (wybieg wrzeciona), drzwi trzeba **zaryglować**, dopóki ruch nie ustanie. Najczęściej rygiel trzyma sprężyna, a cewka **odblokowuje** (zasada „power to unlock”) — zanik zasilania nie otworzy drzwi.
+
+**Sterowanie oburęczne** (PN-EN ISO 13851) zmusza operatora do trzymania obu rąk na przyciskach. Typ III: obie ręce muszą zadziałać **prawie jednocześnie** (w ciągu 0,5 s), puszczenie którejkolwiek zatrzymuje ruch, a nowy cykl wymaga puszczenia obu.`
+			},
+			{
+				kind: 'callout',
+				tone: 'warn',
+				title: 'Na rozmowie kwalifikacyjnej',
+				text: 'Pytanie „czy można zrobić e-stop na zwykłym wejściu PLC?” ma jedną dobrą odpowiedź: nie jako funkcję bezpieczeństwa. Grzybek odcina energię przez przekaźnik lub sterownik bezpieczeństwa, a PLC dostaje tylko sygnał do diagnostyki i HMI.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Po co dwa styczniki w szeregu z kontrolą sprzężenia zwrotnego (EDM)?',
+				options: [
+					'Żeby silnik miał więcej mocy',
+					'Gdy jeden się zgrzeje, drugi i tak odetnie silnik, a przekaźnik nie pozwoli na kolejny reset',
+					'Żeby można było sterować dwoma prędkościami',
+					'To wymóg tylko dla silników powyżej 10 kW'
+				],
+				correct: 1,
+				explanation:
+					'To redundancja i diagnostyka: pojedyncze uszkodzenie nie odbiera funkcji bezpieczeństwa i zostaje wykryte — typowa architektura kategorii 3/4.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Ciężki uraz (S2), częsty dostęp (F2), uniknięcie możliwe (P1). Jaki PL jest wymagany?',
+				options: ['PL b', 'PL c', 'PL d', 'PL e'],
+				correct: 2,
+				explanation: 'Graf ryzyka: S2 → F2 → P1 daje PLr = d.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'two-hand-press',
+				text: 'Zaprogramuj logikę sterowania oburęcznego typu III: jednoczesność 0,5 s i nowy cykl po puszczeniu obu przycisków.'
 			}
 		]
 	}

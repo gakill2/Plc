@@ -5,5 +5,6 @@ export const REPO_URL = 'https://github.com/gakill2/Plc';
 export const NAV_ITEMS = [
 	{ href: '/projects', label: 'Projects' },
 	{ href: '/learn', label: 'Learn' },
-	{ href: '/work', label: 'Zgłoszenia' }
+	{ href: '/work', label: 'Zgłoszenia' },
+	{ href: '/oncall', label: 'Dyżur' }
 ] as const;

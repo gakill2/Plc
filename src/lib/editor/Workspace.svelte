@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import CircuitEditor from '#lib/circuit/CircuitEditor.svelte';
 	import { inputDrive, portOf } from '#lib/circuit/model.js';
 	import { terminalBit } from '#lib/circuit/context.js';
@@ -15,6 +15,11 @@
 	import { resolve } from '$app/paths';
 	import LessonPanel from '#lib/lessons/LessonPanel.svelte';
 	import TipToast from '#lib/tips/TipToast.svelte';
+	import SfcView from '#lib/sfc/SfcView.svelte';
+	import { demoSfc } from '#lib/sfc/sfc.js';
+	import OnCallPanel from '#lib/oncall/OnCallPanel.svelte';
+	import { machineFromProjectId, machineProject } from '#lib/oncall/machines.js';
+	import { incidentOf, loadLog } from '#lib/oncall/shift.js';
 	import { getLesson, LESSON_PREFIX } from '#lib/lessons/lessons.js';
 	import ProcessView from '#lib/processes/ProcessView.svelte';
 	import { createProcess } from '#lib/processes/models.js';
@@ -59,12 +64,14 @@
 	const startLesson = untrack(() =>
 		projectId.startsWith(LESSON_PREFIX) ? getLesson(projectId.slice(LESSON_PREFIX.length)) : null
 	);
+	/** On-call projects: a healthy machine that breaks down (faults injected into the circuit). */
+	const machine = untrack(() => machineFromProjectId(projectId));
 	let project = $state(
 		new ProjectState(
 			loadProject(
 				localStorage,
 				untrack(() => projectId),
-				startLesson ? startLesson.starter : demoProject
+				startLesson ? startLesson.starter : machine ? () => machineProject(machine) : demoProject
 			)
 		)
 	);
@@ -74,7 +81,9 @@
 		{ id: 'program', label: 'Program' },
 		...(project.scenario ? [{ id: 'process' as const, label: 'Process' }] : []),
 		{ id: 'circuit', label: 'Circuit' },
-		...(lesson?.kind === 'commissioning' ? [{ id: 'iocheck' as const, label: 'Test I/O' }] : []),
+		...(lesson?.kind === 'commissioning' || machine
+			? [{ id: 'iocheck' as const, label: 'Test I/O' }]
+			: []),
 		{ id: 'hmi', label: 'HMI' },
 		{ id: 'symbols', label: 'Symbols' },
 		{ id: 'watch', label: 'Watch' },
@@ -88,6 +97,12 @@
 	const doc = $derived(project.ladder);
 	const sim = new CircuitSim();
 	const runtime = new PlcRuntime();
+	onMount(() => {
+		const shift = loadLog().current;
+		const incident =
+			shift && !shift.solvedAt && shift.machine === machine?.id ? incidentOf(shift) : null;
+		if (incident) sim.faults = [incident.fault];
+	});
 	onDestroy(() => runtime.dispose());
 
 	let view = $state<View>('program');
@@ -157,6 +172,7 @@
 		const outputs = runtime.snapshot?.outputs;
 		const drive = inputDrive(project.circuit, sim.actuated, {
 			positions: sim.positions,
+			faults: sim.faults,
 			output: (t) => terminalBit(outputs, t),
 			vfd: (id) => sim.vfd[id]
 		});
@@ -366,6 +382,7 @@
 
 	function setLanguage(language: ProgramLanguage) {
 		if (language === 'st' && !project.st.trim()) project.st = lesson ? EMPTY_ST : DEMO_ST;
+		if (language === 'sfc' && !project.sfc.transitions.length && !lesson) project.sfc = demoSfc();
 		project.language = language;
 	}
 
@@ -374,6 +391,8 @@
 			project.ladder.program = lesson.solution();
 			if (lesson.solutionCircuit) project.circuit = lesson.solutionCircuit();
 			if (lesson.solutionHmi) project.hmi = lesson.solutionHmi();
+			if (lesson.solutionSt) project.st = lesson.solutionSt;
+			if (lesson.solutionSfc) project.sfc = lesson.solutionSfc();
 			project.ladder.select(null);
 			view = 'program';
 		}
@@ -406,7 +425,7 @@
 		role="group"
 		aria-label="Language"
 	>
-		{#each [{ id: 'ladder', label: 'Ladder (LAD)' }, { id: 'st', label: 'Structured Text' }] as const as l (l.id)}
+		{#each [{ id: 'ladder', label: 'Ladder (LAD)' }, { id: 'st', label: 'Structured Text' }, { id: 'sfc', label: 'SFC' }] as const as l (l.id)}
 			<button
 				class="rounded px-2.5 py-1 text-xs font-medium disabled:cursor-not-allowed {project.language ===
 				l.id
@@ -514,7 +533,20 @@
 	<div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_20rem]">
 		<div class="flex min-h-0 flex-col">
 			<div class="min-h-0 flex-1">
-				{#if view === 'program' && project.language === 'st'}
+				{#if view === 'program' && project.language === 'sfc'}
+					<SfcView
+						sfc={project.sfc}
+						readOnly={runtime.online}
+						online={runtime.online}
+						snapshot={runtime.snapshot}
+						variables={(loaded && runtime.online ? loadedVariables : project.stResult?.variables) ??
+							[]}
+						problemIds={project.compiled.diagnostics.map((d) => d.id)}
+						generated={project.sfcSt?.source ?? ''}
+					>
+						{#snippet header()}{@render languageSwitch()}{/snippet}
+					</SfcView>
+				{:else if view === 'program' && project.language === 'st'}
 					<div class="flex h-full flex-col">
 						<div class="flex items-center gap-3 border-b border-slate-800 px-4 py-2">
 							{@render languageSwitch()}
@@ -632,7 +664,11 @@
 					language={project.language}
 					circuit={project.circuit}
 					hmi={project.hmi}
+					st={project.st}
+					sfc={project.sfc}
 				/>
+			{:else if machine}
+				<OnCallPanel {machine} circuit={project.circuit} onRepaired={() => (sim.faults = [])} />
 			{/if}
 			<IoPanel {runtime} labels={terminalLabels} />
 
@@ -756,5 +792,5 @@
 		online: runtime.online,
 		forces: runtime.forces.size
 	}}
-	quiet={lesson?.kind === 'debug' || lesson?.kind === 'commissioning'}
+	quiet={lesson?.kind === 'debug' || lesson?.kind === 'commissioning' || !!machine}
 />

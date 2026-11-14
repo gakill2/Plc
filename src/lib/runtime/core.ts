@@ -36,7 +36,9 @@ export class RuntimeCore {
 	#process: ProcessModel | null = null;
 	readonly #io: ProcessIO = {
 		output: (t) => this.plc.getOutput(t),
-		input: (t, v) => this.plc.setInput(t, v)
+		input: (t, v) => this.plc.setInput(t, v),
+		word: (a) => this.plc.memory.readNumber(parseAddress(a)),
+		setWord: (a, v) => this.plc.setInputNumber(a, v)
 	};
 
 	get status(): RuntimeStatus {

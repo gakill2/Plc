@@ -3,6 +3,7 @@ import type { LadderProgram } from '#lib/ladder/model.js';
 import type { Project } from '#lib/project/project.js';
 import type { Circuit } from '#lib/circuit/model.js';
 import type { Hmi } from '#lib/hmi/model.js';
+import type { Sfc } from '#lib/sfc/sfc.js';
 import type { ProcessKind, ProcessModel } from '#lib/processes/types.js';
 
 export interface TestContext {
@@ -66,6 +67,10 @@ export interface Lesson {
 	scenario?: ProcessKind;
 	starter: () => Project;
 	solution: () => LadderProgram;
+	/** Structured Text lessons: the reference solution as ST source (the ladder one is empty). */
+	solutionSt?: string;
+	/** SFC lessons: the reference chart. */
+	solutionSfc?: () => Sfc;
 	tests: LessonTest[];
 }
 

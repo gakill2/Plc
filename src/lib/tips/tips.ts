@@ -14,7 +14,7 @@ export type TipInput = {
 	/** Symbol name → address. */
 	symbols: SymbolMap;
 	hmi?: Hmi;
-	language: 'ladder' | 'st';
+	language: 'ladder' | 'st' | 'sfc';
 	online: boolean;
 	forces: number;
 };

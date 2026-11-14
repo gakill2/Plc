@@ -30,10 +30,21 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
   pusher, each with simple physics; connect one to any project.
-- **17 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
-  to a VFD-driven fan and an operator panel. Your program runs against test cases in a headless
-  PLC (or through the wired circuit); every lesson ships a reference solution that the test suite
-  proves passes, plus a live step-by-step guide.
+- **23 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
+  to a crane with an encoder, a PID-tuned oven, a remote I/O station and two-hand control. Your
+  program runs against test cases in a headless PLC (or through the wired circuit); every lesson
+  ships a reference solution that the test suite proves passes, plus a live step-by-step guide.
+- **SFC / GRAFCET** — a third language: steps with N / S / R actions, transitions with ST
+  conditions (`Step.T`, `Step.X`), alternative and parallel branches. The chart is translated to
+  ST and runs on the same compiler; active steps light up online.
+- **On-call mode „Dyżur”** — a working machine breaks down at night (broken wire, stuck sensor,
+  tripped overload, burnt auxiliary contact, inverter trips …). Find the failed component with the
+  trend, watch table and I/O check; downtime and wrong repairs are scored. Every fault is proven by
+  a test to cause a visible symptom.
+- **More plants** — overhead crane (encoder, inertia, limit switches, hoist interlock), electric
+  oven (first order + dead time, thermostat) and a remote I/O station on a fieldbus with a heartbeat.
+- **Networks and machine safety** — an interactive Modbus TCP frame builder, a two-channel safety
+  relay with feedback monitoring and the ISO 13849-1 risk graph.
 - **Story mode „Zgłoszenia”** — work orders from a shift foreman wrap the lessons into three weeks
   on a plant. Each ticket is graded with stars (attempts, hints), shows the downtime it cost and
   ends with a debrief; stars move you up from _Praktykant_ to _Starszy automatyk_.
@@ -75,6 +86,8 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Compilers** — `src/lib/ladder/compiler.ts` and `src/lib/st/*`; both emit the same IR.
 - **Runtime** — `RuntimeCore` (tested in Node) inside a Web Worker; the UI receives snapshots.
 - **Plants & lessons** — `src/lib/processes`, `src/lib/lessons` (the runner reuses the engine).
+- **SFC & on-call** — `src/lib/sfc` (chart model, translation to ST, editor), `src/lib/oncall`
+  (machines, incidents, scoring); faults are injected in `src/lib/circuit/model.ts`.
 - **Story & tips** — `src/lib/story` (tickets, grading, career), `src/lib/tips` (triggers on the
   project state, glossary terms).
 

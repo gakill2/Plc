@@ -3,7 +3,9 @@
 	import { getCircuitView, terminalBit } from './context.js';
 	import {
 		DEVICES,
+		hasFault,
 		MAIN,
+		outputReaches,
 		portSignal,
 		portsOf,
 		removeDevice,
@@ -21,6 +23,7 @@
 	const ports = $derived(dev ? portsOf(dev.type) : []);
 	const deviceState = $derived({
 		positions: view.sim.positions,
+		faults: view.sim.faults,
 		output: (t: string) => terminalBit(view.snapshot?.outputs, t)
 	});
 	/** Signal on a port: input ports → sent to the PLC, output ports → driven by the PLC. */
@@ -29,11 +32,16 @@
 		if (io === 'input')
 			return portSignal(view.project.circuit, dev, port, view.sim.actuated, deviceState);
 		const w = wireOf(view.project.circuit, dev.id, port);
-		return w ? terminalBit(view.snapshot?.outputs, w.terminal) : false;
+		return w
+			? terminalBit(view.snapshot?.outputs, w.terminal) && outputReaches(dev, port, view.sim.faults)
+			: false;
 	};
 	const on = $derived(spec ? portOn(MAIN, spec.io) : false);
 	/** Contactor: the coil is energised, but the motor only runs if the overload has not tripped. */
-	const running = $derived(dev?.type === 'contactor' ? on && !actuated : on);
+	const tripped = $derived(
+		actuated || (dev ? hasFault(view.sim.faults, dev.label, 'overload') : false)
+	);
+	const running = $derived(dev?.type === 'contactor' ? on && !tripped : on);
 	const POSITIONS = [
 		{ value: -1, label: 'HAND' },
 		{ value: 0, label: '0' },
@@ -173,11 +181,11 @@
 						/>
 						<rect
 							x="8"
-							y={on && !actuated ? 18 : 10}
+							y={on && !tripped ? 18 : 10}
 							width="24"
 							height="8"
 							rx="1"
-							fill={on && !actuated ? '#34d399' : '#64748b'}
+							fill={on && !tripped ? '#34d399' : '#64748b'}
 							class="transition-all"
 						/>
 						<text x="20" y="40" text-anchor="middle" font-size="9" font-weight="bold" fill="#e2e8f0"

@@ -204,7 +204,51 @@ export function portOf(type: DeviceType, id: string | undefined): PortSpec | und
 }
 
 /** Physical state of the devices that is not a plain on/off "actuated" flag. */
+/* ---------- faults (on-call mode): things that break in a working machine ---------- */
+
+export type FaultKind =
+	/** the wire of a port is broken: an input reads 0, an output never reaches the device */
+	| 'wire-break'
+	/** a sensor or limit switch is stuck: it always reports 1 */
+	| 'stuck-on'
+	/** the contactor's overload relay has tripped: the motor stops, feedback drops */
+	| 'overload'
+	/** the contactor's auxiliary contact is burnt: feedback never closes */
+	| 'aux-contact'
+	/** the inverter trips (overcurrent) every time it speeds up */
+	| 'vfd-trip'
+	/** the lamp's bulb is burnt */
+	| 'lamp-burnt';
+
+/** A fault on a device, by its label (stable across project copies). */
+export interface Fault {
+	kind: FaultKind;
+	device: string;
+	/** port for wire faults; main when absent */
+	port?: string;
+}
+
+export const hasFault = (
+	faults: readonly Fault[] | undefined,
+	label: string,
+	kind: FaultKind,
+	port?: string
+) =>
+	!!faults?.some(
+		(f) =>
+			f.kind === kind &&
+			f.device.toUpperCase() === label.toUpperCase() &&
+			(port === undefined || (f.port ?? MAIN) === port)
+	);
+
+/** Does an output terminal's signal actually reach the device (wire intact, bulb alive)? */
+export const outputReaches = (d: Device, port: string, faults: readonly Fault[] | undefined) =>
+	!hasFault(faults, d.label, 'wire-break', port) &&
+	!(port === MAIN && hasFault(faults, d.label, 'lamp-burnt'));
+
 export interface DeviceState {
+	/** Active faults (on-call mode). */
+	faults?: readonly Fault[];
 	/** 3-position selectors: -1 = HAND, 0 = OFF, 1 = AUTO */
 	positions?: Readonly<Record<string, number>>;
 	/** PLC output terminals — drive coils whose feedback contacts are read back. */
@@ -227,6 +271,9 @@ export function portSignal(
 	state: DeviceState = {}
 ): boolean {
 	const on = actuated[d.id] ?? false;
+	const faults = state.faults;
+	if (hasFault(faults, d.label, 'wire-break', port ?? MAIN)) return false;
+	if (hasFault(faults, d.label, 'stuck-on', port ?? MAIN)) return true;
 	switch (d.type) {
 		case 'selector': {
 			const pos = state.positions?.[d.id] ?? 0;
@@ -240,9 +287,13 @@ export function portSignal(
 		}
 		case 'contactor': {
 			// auxiliary NO contact: closed when the coil is energised and the overload has not tripped
+			if (hasFault(faults, d.label, 'aux-contact')) return false;
+			const tripped = on || hasFault(faults, d.label, 'overload');
 			const coil = wireOf(circuit, d.id);
 			const t = coil ? normalizeTerminal(coil.terminal) : null;
-			return !on && t !== null && (state.output?.(t) ?? false);
+			return (
+				!tripped && t !== null && (state.output?.(t) ?? false) && outputReaches(d, MAIN, faults)
+			);
 		}
 		default:
 			return deviceSignal(d, on);

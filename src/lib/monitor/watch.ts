@@ -39,6 +39,23 @@ function guessFormat(operand: string): WatchFormat {
 	return a ? defaultFormat(a) : 'BOOL';
 }
 
+/**
+ * Rows added by symbol name before the symbol table was known default to BOOL;
+ * give words their decimal format (e.g. `Temperature` → IW4).
+ */
+export function fixWatchFormats(
+	watch: WatchEntry[],
+	symbols: readonly { name: string; address: string }[]
+): WatchEntry[] {
+	for (const e of watch) {
+		if (e.format !== 'BOOL' || tryParse(e.operand)) continue;
+		const s = symbols.find((x) => x.name.toUpperCase() === e.operand.trim().toUpperCase());
+		const a = s ? tryParse(s.address) : null;
+		if (a) e.format = defaultFormat(a);
+	}
+	return watch;
+}
+
 /** Width in bits, for HEX / BIN padding. */
 export function bitWidth(a: Address): number {
 	if (a.area === 'T' || a.area === 'C') return 16;

@@ -30,7 +30,7 @@ test('explain panel and scan-cycle debugger', async ({ page }) => {
 
 test('production line plant runs a part through the drill', async ({ page }) => {
 	await page.goto('/learn', { waitUntil: 'networkidle' });
-	await page.getByRole('link', { name: /stacja wiercenia/ }).click();
+	await page.getByRole('link', { name: /Proces: stacja wiercenia/ }).click();
 	await expect(page.getByRole('list', { name: 'Krok po kroku' })).toBeVisible();
 	page.once('dialog', (d) => d.accept());
 	await page.getByRole('button', { name: 'Pokaż rozwiązanie' }).click();

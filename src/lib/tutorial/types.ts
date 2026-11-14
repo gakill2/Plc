@@ -46,7 +46,9 @@ export type Block =
 	| { kind: 'lesson'; slug: string; text: string }
 	| { kind: 'wiring' }
 	| { kind: 'analog' }
-	| { kind: 'control'; initial?: 'onoff' | 'pid' };
+	| { kind: 'control'; initial?: 'onoff' | 'pid' }
+	| { kind: 'modbus' }
+	| { kind: 'safety' };
 
 export interface Chapter {
 	slug: string;

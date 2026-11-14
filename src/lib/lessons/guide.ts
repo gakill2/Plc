@@ -1,3 +1,4 @@
+import type { Sfc } from '#lib/sfc/sfc.js';
 import { formatAddress, parseAddress } from '#lib/engine/index.js';
 import type {
 	CoilType,
@@ -21,6 +22,10 @@ import type { Hmi } from '#lib/hmi/model.js';
 
 export interface GuideContext {
 	ladder: LadderProgram;
+	/** Structured Text source (ST lessons) */
+	st?: string;
+	/** Sequential function chart (SFC lessons) */
+	sfc?: Sfc;
 	/** the project's operator panel (HMI lessons) */
 	hmi?: Hmi;
 	/** the project's circuit (commissioning lessons check the wiring) */
@@ -81,6 +86,8 @@ export interface RungSpec {
 	counter?: CounterType;
 	/** Number of compare boxes reading this operand. */
 	compares?: [string, number];
+	/** A MATH box with this function writing this destination. */
+	math?: [string, string];
 	/** A MOVE box: source constant / operand → destination. */
 	move?: [string, string];
 }
@@ -101,6 +108,10 @@ export function rungMatches(c: GuideContext, r: Rung, spec: RungSpec): boolean {
 			(e) => e.kind === 'compare' && (sameAddr(c, e.a, op) || sameAddr(c, e.b, op))
 		).length;
 		if (count < n) return false;
+	}
+	if (spec.math) {
+		const [fn, dst] = spec.math;
+		if (!els.some((e) => e.kind === 'math' && e.fn === fn && sameAddr(c, e.dst, dst))) return false;
 	}
 	if (spec.move) {
 		const [src, dst] = spec.move;
@@ -189,6 +200,35 @@ const vfdWord = (c: GuideContext, label: string, key: 'aiWord' | 'aoWord') =>
 /** A widget of this kind on the operator panel, bound to this address (or its symbol). */
 const hmiWidget = (c: GuideContext, kind: string, address: string) =>
 	!!c.hmi?.widgets.some((w) => w.kind === kind && sameAddr(c, w.tag, address));
+
+/** A numeric constant from the ST declarations, e.g. `Kp : REAL := 3.0;` */
+const stParam = (c: GuideContext, name: string): number | null => {
+	const m = new RegExp(`\\b${name}\\s*:\\s*REAL\\s*:=\\s*(-?[\\d.]+)`, 'i').exec(c.st ?? '');
+	return m ? Number(m[1]) : null;
+};
+const inRange = (v: number | null, lo: number, hi: number) => v !== null && v >= lo && v <= hi;
+
+/* ---------- SFC lessons ---------- */
+const sfcStepOf = (c: GuideContext, name: string) =>
+	c.sfc?.steps.find((s) => s.name.toUpperCase() === name.toUpperCase());
+/** The step exists and has all these actions (qualifier, operand). */
+const stepHas = (c: GuideContext, name: string, ...actions: [string, string][]) => {
+	const s = sfcStepOf(c, name);
+	return (
+		!!s &&
+		actions.every(([q, op]) =>
+			s.actions.some((a) => a.qualifier === q && sameAddr(c, a.operand, op))
+		)
+	);
+};
+/** A transition from → to whose condition matches. */
+const transitionIs = (c: GuideContext, from: string, to: string, cond: RegExp) =>
+	!!c.sfc?.transitions.some(
+		(t) =>
+			t.from.some((n) => n.toUpperCase() === from.toUpperCase()) &&
+			t.to.some((n) => n.toUpperCase() === to.toUpperCase()) &&
+			cond.test(t.condition)
+	);
 
 /** How many coils of a type write this operand in the whole program. */
 const coils = (c: GuideContext, type: CoilType, op: string) =>
@@ -527,6 +567,202 @@ export const GUIDES: Record<string, GuideStep[]> = {
 			})
 		},
 		runIt('w zakładce HMI naciśnij Start i Stop na ekranie, potem przyciski na szafie (Circuit).'),
+		checkIt
+	],
+
+	/* ---------- new plants ---------- */
+	'crane-positioning': [
+		{
+			text: 'Stacja A: zbocze `GoA` → MOVE `2000` → `Target` i cewka SET `Moving`.',
+			done: rung({ contacts: [['P', 'I0.5']], move: ['2000', 'MW10'], coil: ['SET', 'M0.0'] })
+		},
+		{
+			text: 'Stacja B: tak samo z `GoB` i `8000`.',
+			done: rung({ contacts: [['P', 'I0.6']], move: ['8000', 'MW10'], coil: ['SET', 'M0.0'] })
+		},
+		{
+			text: 'Uchyb: `Moving` → MATH **SUB** `Position − Target` → `Error` (cewka np. `Calc`).',
+			done: rung({ contacts: [['NO', 'M0.0']], math: ['SUB', 'MW12'] })
+		},
+		{
+			text: 'Na miejscu: dwa porównania (`Error > −30` i `Error < 30`) → RESET `Moving`.',
+			done: rung({ compares: ['MW12', 2], coil: ['RESET', 'M0.0'] })
+		},
+		{
+			text: 'Stop: wciśnięty `Stop` (NC, więc styk NC w programie) → RESET `Moving`.',
+			done: rung({ contacts: [['NC', 'I0.7']], coil: ['RESET', 'M0.0'] })
+		},
+		{
+			text: 'W prawo: `Moving`, `HookTop`, `LimitRight`, `Error < −30` i blokada NC `Left` → `Right`.',
+			done: rung({
+				contacts: [
+					['NO', 'M0.0'],
+					['NO', 'I0.2'],
+					['NO', 'I0.1'],
+					['NC', 'Q0.0']
+				],
+				compares: ['MW12', 1],
+				coil: ['COIL', 'Q0.1']
+			})
+		},
+		{
+			text: 'W lewo: lustrzanie — `LimitLeft`, `Error > 30`, blokada NC `Right` → `Left`.',
+			done: rung({
+				contacts: [
+					['NO', 'M0.0'],
+					['NO', 'I0.2'],
+					['NO', 'I0.0'],
+					['NC', 'Q0.1']
+				],
+				compares: ['MW12', 1],
+				coil: ['COIL', 'Q0.0']
+			})
+		},
+		{
+			text: 'Szybki bieg, gdy daleko: `Error < −600` LUB `Error > 600` → `Fast`.',
+			done: rung({ compares: ['MW12', 2], coil: ['COIL', 'Q0.2'] })
+		},
+		runIt('w widoku Process naciśnij GoB i GoA (Circuit), obserwuj hamowanie przed celem.'),
+		checkIt
+	],
+	'oven-pid': [
+		{
+			text: 'Najpierw zobacz problem: uruchom PLC i obserwuj **trend** `Temperature` — przestrzał i bujanie.',
+			done: (c) => c.online || c.passed,
+			manual: true
+		},
+		{
+			text: 'Zmniejsz wzmocnienie `Kp` (rozsądnie: 2 … 6) — mniejsze oscylacje.',
+			done: (c) => inRange(stParam(c, 'Kp'), 2, 6)
+		},
+		{
+			text: 'Wydłuż czas zdwojenia `Ti` (rozsądnie: 4 … 20 s) — całka nie przestrzeli.',
+			done: (c) => inRange(stParam(c, 'Ti'), 4, 20)
+		},
+		{
+			text: 'Blokada: `Heater := DoorClosed AND NOT OverTemp;`',
+			done: (c) => /Heater\s*:=[^;]*DoorClosed[^;]*NOT\s+OverTemp/i.test(c.st ?? '')
+		},
+		runIt('w widoku Process włóż zimny wsad i otwórz drzwi.'),
+		checkIt
+	],
+
+	'sfc-drilling': [
+		{
+			text: 'Krok `Dwell` z akcjami N `DrillLower`, N `Spindle`, N `Stopper` i przejście `Drill → Dwell` przy `DrillBottom`.',
+			done: (c) =>
+				stepHas(c, 'Dwell', ['N', 'Q0.2'], ['N', 'Q0.3'], ['N', 'Q0.1']) &&
+				transitionIs(c, 'Drill', 'Dwell', /DrillBottom/i)
+		},
+		{
+			text: 'Przejście `Dwell → Raise` po czasie: `Dwell.T >= T#1200ms`.',
+			done: (c) => transitionIs(c, 'Dwell', 'Raise', /Dwell\.T\s*>=?\s*T#/i)
+		},
+		{
+			text: 'Krok `Raise` tylko z N `Stopper` (wiertło wraca do góry) → `Release` przy `DrillTop`.',
+			done: (c) =>
+				stepHas(c, 'Raise', ['N', 'Q0.1']) &&
+				!stepHas(c, 'Raise', ['N', 'Q0.2']) &&
+				transitionIs(c, 'Raise', 'Release', /DrillTop/i)
+		},
+		{
+			text: 'Krok `Release` **bez** `Stopper` → `Leave` przy `Release.T >= T#600ms`.',
+			done: (c) =>
+				!!sfcStepOf(c, 'Release') &&
+				!stepHas(c, 'Release', ['N', 'Q0.1']) &&
+				transitionIs(c, 'Release', 'Leave', /Release\.T\s*>=?\s*T#/i)
+		},
+		{
+			text: 'Krok `Leave` z N `Stopper` i przejście `Leave → Wait` przy `NOT PartAtDrill` — pętla zamknięta.',
+			done: (c) =>
+				stepHas(c, 'Leave', ['N', 'Q0.1']) && transitionIs(c, 'Leave', 'Wait', /NOT\s+PartAtDrill/i)
+		},
+		runIt(
+			'w widoku Program aktywny krok świeci na zielono — obserwuj cały cykl na kolejnych detalach.'
+		),
+		checkIt
+	],
+
+	'remote-pump': [
+		{
+			text: 'Watchdog: porównanie `Heartbeat == LastBeat` → TON `T#500ms` → cewka `CommFault`.',
+			done: rung({ compares: ['IW6', 1], timer: 'TON', coil: ['COIL', 'M0.1'] })
+		},
+		{
+			text: 'Pod nim: MOVE `Heartbeat` → `LastBeat` (każdy network potrzebuje cewki, np. `BeatCopied`).',
+			done: rung({ move: ['IW6', 'MW20'] })
+		},
+		{
+			text: 'Network `Run`: dodaj szeregowo styk NC `CommFault` — brak sieci kasuje podtrzymanie.',
+			done: rung({ contacts: [['NC', 'M0.1']], coil: ['COIL', 'M0.0'] })
+		},
+		{
+			text: 'Lampka `CommLamp` z `CommFault`.',
+			done: rung({ contacts: [['NO', 'M0.1']], coil: ['COIL', 'Q0.0'] })
+		},
+		{
+			text: '`PumpLamp` tylko ze świeżych danych: `PumpRunning` I NIE `CommFault`.',
+			done: rung({
+				contacts: [
+					['NO', 'I2.0'],
+					['NC', 'M0.1']
+				],
+				coil: ['COIL', 'Q0.1']
+			})
+		},
+		runIt(
+			'w widoku Process przerwij kabel i podłącz go z powrotem — obserwuj Heartbeat i LastBeat.'
+		),
+		checkIt
+	],
+
+	'two-hand-press': [
+		{
+			text: 'Tylko jedna ręka: gałęzie `Left` I NIE `Right` ⑂ NIE `Left` I `Right` → TON `T#500ms` → SET `Blocked`.',
+			done: rung({
+				parallel: [
+					[
+						['NO', 'I0.0'],
+						['NC', 'I0.1']
+					],
+					[
+						['NC', 'I0.0'],
+						['NO', 'I0.1']
+					]
+				],
+				timer: 'TON',
+				coil: ['SET', 'M0.0']
+			})
+		},
+		{
+			text: 'Puszczona jedna ręka w trakcie pracy: `WasPressing` I (NIE `Left` ⑂ NIE `Right`) → SET `Blocked`.',
+			done: rung({ contacts: [['NO', 'M0.1']], coil: ['SET', 'M0.0'] })
+		},
+		{
+			text: 'Obie puszczone: NIE `Left` I NIE `Right` → RESET `Blocked`.',
+			done: rung({
+				contacts: [
+					['NC', 'I0.0'],
+					['NC', 'I0.1']
+				],
+				coil: ['RESET', 'M0.0']
+			})
+		},
+		{
+			text: 'Prasa: `Left` I `Right` I NIE `Blocked` → `Press` oraz `WasPressing`.',
+			done: all(
+				rung({
+					contacts: [
+						['NO', 'I0.0'],
+						['NO', 'I0.1'],
+						['NC', 'M0.0']
+					],
+					coil: ['COIL', 'Q0.0']
+				}),
+				rung({ contacts: [['NC', 'M0.0']], coil: ['COIL', 'M0.1'] })
+			)
+		},
+		runIt('naciśnij przyciski w różnej kolejności i z opóźnieniem (przytrzymaj ● w panelu I/O).'),
 		checkIt
 	],
 

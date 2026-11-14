@@ -1,3 +1,4 @@
+import { sfcStep, sfcTransition, type Sfc } from '#lib/sfc/sfc.js';
 import { widget } from '#lib/hmi/model.js';
 import { device, DEVICES, type Circuit, type Device, type DeviceType } from '#lib/circuit/model.js';
 import {
@@ -5,6 +6,7 @@ import {
 	compare,
 	contact,
 	counterBox,
+	mathBox,
 	moveBox,
 	newId,
 	parallel,
@@ -15,7 +17,14 @@ import {
 import { watchEntry } from '#lib/monitor/watch.js';
 import type { Project } from '#lib/project/project.js';
 import type { SymbolEntry } from '#lib/symbols/symbols.js';
-import type { ConveyorState, LineState, ProcessKind, TankState } from '#lib/processes/types.js';
+import type {
+	ConveyorState,
+	CraneState,
+	LineState,
+	OvenState,
+	ProcessKind,
+	TankState
+} from '#lib/processes/types.js';
 import { plantInfo } from '#lib/processes/plants.js';
 import type { Check, Lesson, LessonStep } from './types.js';
 
@@ -84,6 +93,120 @@ const hz =
 			? null
 			: `falownik U1 pracuje z ${f.toFixed(1)} Hz, a powinien ${target} Hz`;
 	};
+
+/* ---------- plant helpers: crane and oven ---------- */
+
+/** The crane never crashes, swings a load or gets Left + Right at once. */
+const craneSafe: Check = ({ process }) => {
+	const s = process?.state() as CraneState | undefined;
+	if (!s) return null;
+	if (s.shorts) return 'Left i Right załączone naraz';
+	if (s.crashes) return 'wózek uderzył w odbojnik';
+	if (s.swings) return 'jazda z opuszczonym hakiem';
+	return null;
+};
+
+/** The trolley stands at this position (± 40 mm). */
+const craneAt =
+	(mm: number): Check =>
+	({ process }) => {
+		const s = process?.state() as CraneState;
+		if (Math.abs(s.v) > 1) return `wózek jeszcze jedzie (${Math.round(s.x)} mm)`;
+		return Math.abs(s.x - mm) <= 40
+			? null
+			: `wózek stanął na ${Math.round(s.x)} mm, a cel to ${mm} mm (±40)`;
+	};
+
+/** The oven holds this temperature within ± tol °C. */
+const ovenNear =
+	(sp: number, tol: number): Check =>
+	({ process }) => {
+		const t = (process?.state() as OvenState).temp;
+		return Math.abs(t - sp) <= tol
+			? null
+			: `temperatura ${t.toFixed(1)} °C, a powinna być ${sp} ± ${tol} °C`;
+	};
+
+/** The oven's PI controller in Structured Text with the given tuning. */
+const ovenSt = (kp: number, ti: number, heater: string) => `(* Regulator PI pieca.
+   Temperature (IW4) = °C × 10, HeaterPower (QW4) = 0 … 27648 = 0 … 100 % *)
+VAR
+  Kp       : REAL := ${kp.toFixed(1)};   // wzmocnienie: % mocy na 1 °C uchybu
+  Ti       : REAL := ${ti.toFixed(1)};   // czas zdwojenia, s
+  Setpoint : REAL := 180.0;  // temperatura zadana, °C
+  pv       : REAL;
+  err      : REAL;
+  integral : REAL;
+  out      : REAL;
+  tick     : TON;
+END_VAR
+
+// regulator liczy co 100 ms (stały okres próbkowania)
+tick(IN := NOT tick.Q, PT := T#100ms);
+IF tick.Q THEN
+  pv := INT_TO_REAL(Temperature) / 10.0;
+  err := Setpoint - pv;
+  integral := integral + err * 0.1 / Ti;
+  out := Kp * (err + integral);
+  // anti-windup: przy nasyceniu całka nie rośnie dalej
+  IF out > 100.0 THEN
+    out := 100.0;
+    integral := integral - err * 0.1 / Ti;
+  ELSIF out < 0.0 THEN
+    out := 0.0;
+    integral := integral - err * 0.1 / Ti;
+  END_IF;
+END_IF;
+
+Heater := ${heater};
+HeaterPower := REAL_TO_INT(out * 276.48);
+`;
+
+/** The drilling station as an SFC chart; `full` adds the steps the student builds. */
+function drillingSfc(full: boolean): Sfc {
+	const steps = [
+		sfcStep('Wait', true, [['N', 'Stopper']]),
+		sfcStep('Drill', false, [
+			['N', 'DrillLower'],
+			['N', 'Spindle'],
+			['N', 'Stopper']
+		])
+	];
+	const transitions = [sfcTransition('Wait', 'Drill', 'Run AND PartAtDrill AND DrillTop')];
+	if (full) {
+		steps.push(
+			sfcStep('Dwell', false, [
+				['N', 'DrillLower'],
+				['N', 'Spindle'],
+				['N', 'Stopper']
+			]),
+			sfcStep('Raise', false, [['N', 'Stopper']]),
+			sfcStep('Release'),
+			sfcStep('Leave', false, [['N', 'Stopper']])
+		);
+		transitions.push(
+			sfcTransition('Drill', 'Dwell', 'DrillBottom'),
+			sfcTransition('Dwell', 'Raise', 'Dwell.T >= T#1200ms'),
+			sfcTransition('Raise', 'Release', 'DrillTop'),
+			sfcTransition('Release', 'Leave', 'Release.T >= T#600ms'),
+			sfcTransition('Leave', 'Wait', 'NOT PartAtDrill')
+		);
+	}
+	return {
+		steps,
+		transitions,
+		logic: `VAR
+  eject : TP;
+END_VAR
+// linia: Start / Stop (NC) z podtrzymaniem, taśma jedzie przy Run
+Run := (Start OR Run) AND Stop;
+Belt := Run;
+// spychacz: krótki impuls na wadliwy detal
+eject(IN := PartAtCheck AND NOT QualityOK, PT := T#400ms);
+Ejector := eject.Q;
+`
+	};
+}
 
 /** Mistakes on the production line fail a test immediately. */
 const lineSafety = ({ process }: { process: { state(): unknown } | null }): string | null => {
@@ -1456,8 +1579,555 @@ export const LESSONS: Lesson[] = [
 				]
 			}
 		]
+	},
+	/* ---------- new plants: crane positioning and oven PID ---------- */
+	{
+		slug: 'crane-positioning',
+		title: 'Suwnica: pozycjonowanie z enkoderem',
+		level: 'process',
+		scenario: 'crane',
+		summary:
+			'Dojedź wózkiem do stacji A lub B: szybko, potem wolno, zatrzymaj się dokładnie i bezpiecznie.',
+		instructions: [
+			'Wózek suwnicy jeździ po torze 10 m. Enkoder podaje pozycję w mm na `Position` (`IW4`). `Left` / `Right` (`Q0.0` / `Q0.1`) to kierunki jazdy, `Fast` (`Q0.2`) — szybki bieg 1 m/s (bez niego 0,2 m/s).',
+			'Przyciski `GoA` (`I0.5`) i `GoB` (`I0.6`) wysyłają wózek do stacji A (**2000 mm**) i B (**8000 mm**). Zapamiętaj cel w `Target` (`MW10`) blokiem MOVE i ustaw `Moving` (`M0.0`).',
+			'Licz uchyb `Error := Position − Target` (blok MATH SUB do `MW12`). Jedź w prawo, gdy `Error < −30`, w lewo, gdy `Error > 30`. Szybko tylko, gdy do celu jest ponad **600 mm** — wózek ma masę i hamuje ok. pół metra. W paśmie ±30 mm skasuj `Moving`.',
+			'Bezpieczeństwo: jazda tylko z hakiem na górze (`HookTop`), krańcówki `LimitLeft` / `LimitRight` są NC (1 = wolne), `Stop` (`I0.7`, NC) zatrzymuje. **Nigdy** `Left` i `Right` naraz.'
+		],
+		hints: [
+			'`┤P GoA├ → MOVE 2000 → Target → (S Moving)`, tak samo dla B z 8000. Każdy network z MOVE potrzebuje cewki — tu SET `Moving` pasuje idealnie.',
+			'`┤Moving├ → SUB Position, Target → Error → (Calc)`. Potem: `┤Moving├ [Error > −30] [Error < 30] → (R Moving)` oraz `┤/Stop├ → (R Moving)`.',
+			'`┤Moving├ ┤HookTop├ ┤LimitRight├ [Error < −30] ┤/Left├ → (Right)` i lustrzanie dla `Left`. `┤Moving├ ([Error < −600] ⑂ [Error > 600]) → (Fast)`.'
+		],
+		starter: starter(
+			'crane-positioning',
+			[
+				['pushbutton', 'GoA', 'I0.5', { color: 'blue' }],
+				['pushbutton', 'GoB', 'I0.6', { color: 'blue' }],
+				['pushbutton', 'Stop', 'I0.7', { color: 'red', nc: true }]
+			],
+			{
+				scenario: 'crane',
+				symbols: [
+					symbol('LimitLeft', 'I0.0', 'Krańcówka lewa, NC (1 = wolne)'),
+					symbol('LimitRight', 'I0.1', 'Krańcówka prawa, NC (1 = wolne)'),
+					symbol('HookTop', 'I0.2', 'Hak na górze'),
+					symbol('HookBottom', 'I0.3', 'Hak na dole'),
+					symbol('Position', 'IW4', 'Enkoder: pozycja wózka w mm'),
+					symbol('Left', 'Q0.0', 'Jazda w lewo'),
+					symbol('Right', 'Q0.1', 'Jazda w prawo'),
+					symbol('Fast', 'Q0.2', 'Szybki bieg'),
+					symbol('Moving', 'M0.0', 'Pozycjonowanie w toku'),
+					symbol('Calc', 'M0.1', 'Uchyb policzony'),
+					symbol('Target', 'MW10', 'Pozycja docelowa, mm'),
+					symbol('Error', 'MW12', 'Uchyb: Position − Target, mm')
+				],
+				watch: ['Position', 'Target', 'Error', 'Moving', 'Fast']
+			}
+		),
+		solution: () =>
+			program(
+				rung(
+					[contact('P', 'GoA'), moveBox('2000', 'Target')],
+					[coil('SET', 'Moving')],
+					'Do stacji A'
+				),
+				rung(
+					[contact('P', 'GoB'), moveBox('8000', 'Target')],
+					[coil('SET', 'Moving')],
+					'Do stacji B'
+				),
+				rung(
+					[contact('NO', 'Moving'), mathBox('SUB', 'Position', 'Target', 'Error')],
+					[coil('COIL', 'Calc')],
+					'Uchyb pozycji'
+				),
+				rung(
+					[contact('NO', 'Moving'), compare('>', 'Error', '-30'), compare('<', 'Error', '30')],
+					[coil('RESET', 'Moving')],
+					'Na miejscu (±30 mm)'
+				),
+				rung([contact('NC', 'Stop')], [coil('RESET', 'Moving')], 'Stop'),
+				rung(
+					[
+						contact('NO', 'Moving'),
+						contact('NO', 'HookTop'),
+						contact('NO', 'LimitRight'),
+						compare('<', 'Error', '-30'),
+						contact('NC', 'Left')
+					],
+					[coil('COIL', 'Right')],
+					'Jazda w prawo'
+				),
+				rung(
+					[
+						contact('NO', 'Moving'),
+						contact('NO', 'HookTop'),
+						contact('NO', 'LimitLeft'),
+						compare('>', 'Error', '30'),
+						contact('NC', 'Right')
+					],
+					[coil('COIL', 'Left')],
+					'Jazda w lewo'
+				),
+				rung(
+					[
+						contact('NO', 'Moving'),
+						parallel([[compare('<', 'Error', '-600')], [compare('>', 'Error', '600')]])
+					],
+					[coil('COIL', 'Fast')],
+					'Szybko daleko od celu'
+				)
+			),
+		tests: [
+			{
+				name: 'Do stacji B i z powrotem do A, dokładnie i bez uderzeń',
+				always: craneSafe,
+				steps: [
+					{ label: 'Stop puszczony', set: { 'I0.7': true }, wait: 100 },
+					{ label: 'GoB', set: { 'I0.6': true }, wait: 100 },
+					{ label: 'puść GoB, 8 s', set: { 'I0.6': false }, wait: 8000, check: craneAt(8000) },
+					{ label: 'GoA', set: { 'I0.5': true }, wait: 100 },
+					{ label: 'puść GoA, 10 s', set: { 'I0.5': false }, wait: 10_000, check: craneAt(2000) }
+				]
+			},
+			{
+				name: 'Szybko daleko od celu, wolno przy celu',
+				always: craneSafe,
+				steps: [
+					{ label: 'Stop puszczony', set: { 'I0.7': true }, wait: 100 },
+					{ label: 'GoB', set: { 'I0.6': true }, wait: 100 },
+					{
+						label: 'puść GoB, 2 s',
+						set: { 'I0.6': false },
+						wait: 2000,
+						expect: { 'Q0.2': true, 'Q0.1': true }
+					},
+					{ label: 'blisko celu', wait: 2500, expect: { 'Q0.2': false } }
+				]
+			},
+			{
+				name: 'Bez haka na górze nie jedzie, Stop zatrzymuje',
+				steps: [
+					{
+						label: 'hak opuszczony, GoB',
+						set: { 'I0.7': true, 'I0.6': true },
+						commands: [['hook', 1]],
+						wait: 100
+					},
+					{
+						label: 'puść GoB, 2 s',
+						set: { 'I0.6': false },
+						wait: 2000,
+						expect: { 'Q0.0': false, 'Q0.1': false }
+					},
+					{ label: 'hak w górę', commands: [['hook', 0]], wait: 1500, expect: { 'Q0.1': true } },
+					{
+						label: 'Stop',
+						set: { 'I0.7': false },
+						wait: 100,
+						expect: { 'Q0.1': false, 'Q0.2': false }
+					},
+					{ label: 'puść Stop', set: { 'I0.7': true }, wait: 1000, expect: { 'Q0.1': false } }
+				]
+			}
+		]
+	},
+	{
+		slug: 'oven-pid',
+		title: 'Piec: strojenie regulatora PI',
+		level: 'process',
+		scenario: 'oven',
+		summary: 'Regulator PI w Structured Text oscyluje. Dostrój Kp i Ti i dodaj blokadę drzwi.',
+		instructions: [
+			'Piec ma grzałki z regulatorem mocy: `HeaterPower` (`QW4`, 0 … 27648 = 0 … 100 %) i stycznik `Heater` (`Q0.0`). Temperatura przychodzi z termopary na `Temperature` (`IW4`) w °C × 10.',
+			'Program w **Structured Text** ma gotowy regulator PI, ale nastawy są złe: temperatura mocno przestrzeliwuje i się buja. Uruchom PLC, zobacz to na **trendzie** i w widoku Process.',
+			'Dobierz `Kp` (wzmocnienie, % mocy na °C) i `Ti` (czas zdwojenia, s) tak, żeby piec doszedł do **180 °C** w mniej niż minutę, przestrzelił najwyżej o 8 °C i trzymał temperaturę ±1,5 °C — także po włożeniu zimnego wsadu.',
+			'Bezpieczeństwo: przy otwartych drzwiach (`DoorClosed` = 0) albo zadziałaniu termostatu (`OverTemp`) stycznik grzałek ma być wyłączony.'
+		],
+		hints: [
+			'Za duże `Kp` = oscylacje, za małe = powolne dochodzenie. Za małe `Ti` = całka „rozkręca się” i daje przeregulowanie. Zacznij od dużego `Ti` (np. 30 s), dobierz `Kp`, potem skracaj `Ti`.',
+			'Proces: wzmocnienie ok. 2,8 °C na 1 % mocy, stała czasowa 25 s, martwy czas 1,5 s. Reguła SIMC daje Kp ≈ 3 i Ti ≈ 12 s.',
+			'`Heater := DoorClosed AND NOT OverTemp;`'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'oven-pid',
+			scenario: 'oven',
+			language: 'st',
+			st: ovenSt(10, 2, 'TRUE'),
+			ladder: { version: 1, rungs: [] },
+			circuit: { plc: { x: 300, y: 0 }, devices: [], wires: [] },
+			symbols: [
+				symbol('DoorClosed', 'I0.0', 'Wyłącznik drzwi (1 = zamknięte)'),
+				symbol('OverTemp', 'I0.1', 'Termostat bezpieczeństwa > 280 °C'),
+				symbol('Temperature', 'IW4', 'Termopara, °C × 10'),
+				symbol('Heater', 'Q0.0', 'Stycznik grzałek'),
+				symbol('HeaterPower', 'QW4', 'Moc grzałek 0 … 27648')
+			],
+			watch: ['Temperature', 'HeaterPower', 'Heater'].map((w) => watchEntry(w, undefined, true))
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: ovenSt(3, 12, 'DoorClosed AND NOT OverTemp'),
+		tests: [
+			{
+				name: 'Dochodzi do 180 °C bez dużego przeregulowania',
+				steps: [
+					{ label: '60 s grzania', wait: 60_000, check: ovenNear(180, 3) },
+					{
+						label: 'przeregulowanie',
+						wait: 0,
+						check: ({ process }) => {
+							const max = (process?.state() as OvenState).maxTemp;
+							return max <= 188 ? null : `temperatura doszła do ${max.toFixed(1)} °C (max 188 °C)`;
+						}
+					},
+					{ label: 'kolejne 20 s', wait: 20_000, check: ovenNear(180, 1.5) }
+				]
+			},
+			{
+				name: 'Zimny wsad: wraca do 180 °C',
+				steps: [
+					{ label: 'rozgrzanie', wait: 60_000 },
+					{
+						label: 'zimny wsad, 40 s',
+						commands: [['load', true]],
+						wait: 40_000,
+						check: ovenNear(180, 1.5)
+					}
+				]
+			},
+			{
+				name: 'Otwarte drzwi wyłączają grzanie',
+				steps: [
+					{ label: 'grzanie', wait: 5000, expect: { 'Q0.0': true } },
+					{
+						label: 'otwórz drzwi',
+						commands: [['door', true]],
+						wait: 100,
+						expect: { 'Q0.0': false }
+					},
+					{
+						label: 'zamknij drzwi',
+						commands: [['door', false]],
+						wait: 100,
+						expect: { 'Q0.0': true }
+					}
+				]
+			}
+		]
+	},
+	/* ---------- fieldbus ---------- */
+	{
+		slug: 'remote-pump',
+		title: 'Sieć: pompa w zdalnej stacji i watchdog',
+		level: 'process',
+		scenario: 'remote',
+		summary:
+			'Pompa jest za siecią. Wykryj utratę komunikacji licznikiem życia i przejdź w stan bezpieczny.',
+		instructions: [
+			'Pompa stoi w odległej pompowni i jest podłączona do zdalnej stacji I/O na sieci (Profinet / Modbus TCP). Jej sygnały są w obrazie procesu: `RunCmd` (`Q2.0`) to rozkaz, `PumpRunning` (`I2.0`) — status. `Start` (`I0.0`) / `Stop` (`I0.1`, NC) z podtrzymaniem w `Run` (`M0.0`) już działają.',
+			'Problem: gdy kabel zostanie przerwany, sterownik **dalej widzi ostatnie dane** — `PumpRunning` = 1, choć pompa stanęła. Sprawdź to w widoku Process („✂ Przerwij kabel”).',
+			'Stacja co 100 ms zwiększa licznik `Heartbeat` (`IW6`). Zapamiętuj go w `LastBeat` (`MW20`). Jeśli przez **500 ms** się nie zmienił, ustaw `CommFault` (`M0.1`): zapal `CommLamp`, zdejmij `RunCmd` i skasuj `Run` — po powrocie sieci pompa ma czekać na nowy Start.',
+			'Lampka `PumpLamp` (praca pompy) może świecić tylko wtedy, gdy dane są świeże.'
+		],
+		hints: [
+			'Najpierw porównanie z poprzednim cyklem, potem zapamiętanie: `[Heartbeat == LastBeat] → TON T0 T#500ms → (CommFault)`, a niżej `MOVE Heartbeat → LastBeat` (z dowolną cewką, np. `BeatCopied`).',
+			'W networku `Run` dodaj `┤/CommFault├` szeregowo — to kasuje podtrzymanie. `RunCmd` sterowany z `Run`, `PumpLamp` z `┤PumpRunning├ ┤/CommFault├`.'
+		],
+		starter: starter(
+			'remote-pump',
+			[
+				['pushbutton', 'Start', 'I0.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I0.1', { color: 'red', nc: true }],
+				['lamp', 'CommLamp', 'Q0.0', { color: 'red' }],
+				['lamp', 'PumpLamp', 'Q0.1', { color: 'green' }]
+			],
+			{
+				scenario: 'remote',
+				symbols: [
+					...(plantInfo('remote')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+					symbol('Run', 'M0.0', 'Pompa włączona (podtrzymanie)'),
+					symbol('CommFault', 'M0.1', 'Brak komunikacji ze stacją'),
+					symbol('BeatCopied', 'M0.2', 'Licznik zapamiętany'),
+					symbol('LastBeat', 'MW20', 'Licznik życia z poprzedniego cyklu')
+				],
+				watch: ['Heartbeat', 'LastBeat', 'CommFault', 'Run', 'RunCmd', 'PumpRunning'],
+				ladder: program(
+					rung(
+						[parallel([[contact('NO', 'Start')], [contact('NO', 'Run')]]), contact('NO', 'Stop')],
+						[coil('COIL', 'Run')],
+						'Pompa: Start / Stop z podtrzymaniem'
+					),
+					rung([contact('NO', 'Run')], [coil('COIL', 'RunCmd')], 'Rozkaz do stacji zdalnej'),
+					rung([contact('NO', 'PumpRunning')], [coil('COIL', 'PumpLamp')], 'Lampka: pompa pracuje')
+				)
+			}
+		),
+		solution: () =>
+			program(
+				rung(
+					[compare('==', 'Heartbeat', 'LastBeat'), timer('TON', 'T0', 'T#500ms')],
+					[coil('COIL', 'CommFault')],
+					'Watchdog: licznik życia stoi 500 ms = brak komunikacji'
+				),
+				rung(
+					[moveBox('Heartbeat', 'LastBeat')],
+					[coil('COIL', 'BeatCopied')],
+					'Zapamiętaj licznik'
+				),
+				rung(
+					[
+						parallel([[contact('NO', 'Start')], [contact('NO', 'Run')]]),
+						contact('NO', 'Stop'),
+						contact('NC', 'CommFault')
+					],
+					[coil('COIL', 'Run')],
+					'Pompa: Start / Stop, brak sieci kasuje podtrzymanie'
+				),
+				rung([contact('NO', 'Run')], [coil('COIL', 'RunCmd')], 'Rozkaz do stacji zdalnej'),
+				rung([contact('NO', 'CommFault')], [coil('COIL', 'CommLamp')], 'Lampka: brak komunikacji'),
+				rung(
+					[contact('NO', 'PumpRunning'), contact('NC', 'CommFault')],
+					[coil('COIL', 'PumpLamp')],
+					'Lampka: pompa pracuje (tylko ze świeżych danych)'
+				)
+			),
+		tests: [
+			{
+				name: 'Start uruchamia pompę w stacji',
+				steps: [
+					settle('Stop puszczony', { 'I0.1': true }, { 'Q2.0': false }),
+					{ label: 'Start', set: { 'I0.0': true }, wait: 100 },
+					{
+						label: 'puść Start, 1 s',
+						set: { 'I0.0': false },
+						wait: 1000,
+						expect: { 'Q2.0': true, 'Q0.1': true, 'Q0.0': false }
+					}
+				]
+			},
+			{
+				name: 'Zerwany kabel: alarm i stan bezpieczny, po naprawie czeka na Start',
+				steps: [
+					{ label: 'Start', set: { 'I0.1': true, 'I0.0': true }, wait: 100 },
+					{ label: 'praca', set: { 'I0.0': false }, wait: 1000 },
+					{
+						label: 'przerwany kabel, 800 ms',
+						commands: [['link', false]],
+						wait: 800,
+						expect: { 'Q0.0': true, 'Q2.0': false, 'Q0.1': false }
+					},
+					{
+						label: 'kabel naprawiony, 500 ms',
+						commands: [['link', true]],
+						wait: 500,
+						expect: { 'Q0.0': false, 'Q2.0': false }
+					},
+					{ label: 'Start ponownie', set: { 'I0.0': true }, wait: 100 },
+					{
+						label: 'puść Start, 1 s',
+						set: { 'I0.0': false },
+						wait: 1000,
+						expect: { 'Q2.0': true, 'Q0.1': true }
+					}
+				]
+			},
+			{
+				name: 'W normalnej pracy nie ma fałszywych alarmów',
+				steps: [
+					{ label: 'Start', set: { 'I0.1': true, 'I0.0': true }, wait: 100 },
+					{
+						label: '10 s pracy',
+						set: { 'I0.0': false },
+						wait: 10_000,
+						expect: { 'Q0.0': false, 'Q2.0': true }
+					}
+				]
+			}
+		]
+	},
+	{
+		slug: 'two-hand-press',
+		title: 'Bezpieczeństwo: sterowanie oburęczne prasy',
+		level: 'logic',
+		summary:
+			'Obie ręce w ciągu 0,5 s, puszczenie którejkolwiek zatrzymuje, nowy cykl po puszczeniu obu.',
+		instructions: [
+			'Prasa `Press` (`Q0.0`) jest sterowana przyciskami `Left` (`I0.0`) i `Right` (`I0.1`). Zwykłe AND (lekcja „AND i OR”) da się oszukać: jeden przycisk przyklejony taśmą i prasę uruchamia jedna ręka.',
+			'Zasady typu III (PN-EN ISO 13851): prasa pracuje tylko, gdy oba przyciski są wciśnięte **i zostały wciśnięte w ciągu 0,5 s** od siebie. Puszczenie któregokolwiek zatrzymuje prasę. Nowy cykl jest możliwy dopiero po **puszczeniu obu**.',
+			'Użyj markera blokady `Blocked` (`M0.0`): ustawiaj go, gdy tylko jeden przycisk jest wciśnięty dłużej niż 0,5 s albo gdy w trakcie pracy puszczono jeden przycisk; kasuj, gdy oba są puszczone. `WasPressing` (`M0.1`) zapamiętuje, że prasa pracowała w poprzednim cyklu.',
+			'W prawdziwej maszynie tę logikę realizuje przekaźnik bezpieczeństwa z funkcją oburęczną — tu uczysz się, jak on działa.'
+		],
+		hints: [
+			'„Tylko jeden”: gałęzie `┤Left├┤/Right├` ⑂ `┤/Left├┤Right├` → `TON T0 T#500ms` → `(S Blocked)`.',
+			'`┤WasPressing├ (┤/Left├ ⑂ ┤/Right├)` → `(S Blocked)`; `┤/Left├ ┤/Right├` → `(R Blocked)`.',
+			'`┤Left├ ┤Right├ ┤/Blocked├` → `(Press)` i `(WasPressing)` — dwie cewki w jednym networku.'
+		],
+		starter: starter(
+			'two-hand-press',
+			[
+				['pushbutton', 'Left', 'I0.0', { color: 'green' }],
+				['pushbutton', 'Right', 'I0.1', { color: 'green' }],
+				['motor', 'Press', 'Q0.0']
+			],
+			{
+				symbols: [
+					symbol('Blocked', 'M0.0', 'Blokada: trzeba puścić oba przyciski'),
+					symbol('WasPressing', 'M0.1', 'Prasa pracowała w poprzednim cyklu')
+				],
+				watch: ['Left', 'Right', 'Blocked', 'Press'],
+				ladder: program(
+					rung(
+						[contact('NO', 'Left'), contact('NO', 'Right')],
+						[coil('COIL', 'Press')],
+						'Prasa: obie ręce (zwykłe AND)'
+					)
+				)
+			}
+		),
+		solution: () =>
+			program(
+				rung(
+					[
+						parallel([
+							[contact('NO', 'Left'), contact('NC', 'Right')],
+							[contact('NC', 'Left'), contact('NO', 'Right')]
+						]),
+						timer('TON', 'T0', 'T#500ms')
+					],
+					[coil('SET', 'Blocked')],
+					'Tylko jedna ręka dłużej niż 0,5 s'
+				),
+				rung(
+					[
+						contact('NO', 'WasPressing'),
+						parallel([[contact('NC', 'Left')], [contact('NC', 'Right')]])
+					],
+					[coil('SET', 'Blocked')],
+					'Puszczono jedną rękę w trakcie pracy'
+				),
+				rung(
+					[contact('NC', 'Left'), contact('NC', 'Right')],
+					[coil('RESET', 'Blocked')],
+					'Obie puszczone: nowy cykl'
+				),
+				rung(
+					[contact('NO', 'Left'), contact('NO', 'Right'), contact('NC', 'Blocked')],
+					[coil('COIL', 'Press'), coil('COIL', 'WasPressing')],
+					'Prasa'
+				)
+			),
+		tests: [
+			{
+				name: 'Obie ręce razem uruchamiają prasę',
+				steps: [
+					{ label: 'Left', set: { 'I0.0': true }, wait: 200 },
+					{ label: 'Right po 0,2 s', set: { 'I0.1': true }, wait: 100, expect: { 'Q0.0': true } },
+					{
+						label: 'puść obie',
+						set: { 'I0.0': false, 'I0.1': false },
+						wait: 100,
+						expect: { 'Q0.0': false }
+					}
+				]
+			},
+			{
+				name: 'Za późno druga ręka — nie rusza, dopóki nie puścisz obu',
+				steps: [
+					{ label: 'Left', set: { 'I0.0': true }, wait: 800 },
+					{ label: 'Right po 0,8 s', set: { 'I0.1': true }, wait: 300, expect: { 'Q0.0': false } },
+					{ label: 'puść obie', set: { 'I0.0': false, 'I0.1': false }, wait: 100 },
+					{
+						label: 'obie razem',
+						set: { 'I0.0': true, 'I0.1': true },
+						wait: 100,
+						expect: { 'Q0.0': true }
+					}
+				]
+			},
+			{
+				name: 'Puszczenie jednej zatrzymuje, ponowne wciśnięcie jej nie wznawia',
+				steps: [
+					{
+						label: 'obie',
+						set: { 'I0.0': true, 'I0.1': true },
+						wait: 100,
+						expect: { 'Q0.0': true }
+					},
+					{ label: 'puść Right', set: { 'I0.1': false }, wait: 100, expect: { 'Q0.0': false } },
+					{
+						label: 'Right znowu (Left cały czas)',
+						set: { 'I0.1': true },
+						wait: 300,
+						expect: { 'Q0.0': false }
+					},
+					{ label: 'puść obie', set: { 'I0.0': false, 'I0.1': false }, wait: 100 },
+					{
+						label: 'obie razem',
+						set: { 'I0.0': true, 'I0.1': true },
+						wait: 100,
+						expect: { 'Q0.0': true }
+					}
+				]
+			},
+			{
+				name: 'Jedna ręka (druga „przyklejona”) nie uruchomi prasy',
+				steps: [
+					{ label: 'Right przyklejony', set: { 'I0.1': true }, wait: 2000 },
+					{ label: 'Left', set: { 'I0.0': true }, wait: 300, expect: { 'Q0.0': false } }
+				]
+			}
+		]
+	},
+	/* ---------- SFC ---------- */
+	{
+		slug: 'sfc-drilling',
+		title: 'SFC: stacja wiercenia krokami',
+		level: 'process',
+		scenario: 'line',
+		summary: 'Ta sama stacja wiercenia, ale jako diagram SFC / GRAFCET: kroki, akcje i przejścia.',
+		instructions: [
+			'Program jest w języku **SFC** (przełącznik języka nad programem). Logika stała (Start/Stop, taśma, spychacz) jest już gotowa pod diagramem — zajmujesz się tylko **cyklem wiercenia**.',
+			'Kroki `Wait` (czeka na detal, zatrzymywacz wysunięty) i `Drill` (wiertło w dół, wrzeciono) już są. Dokończ cykl krokami: `Dwell` (wiercenie jeszcze 1,2 s na dole), `Raise` (wiertło do góry), `Release` (zatrzymywacz schowany 0,6 s) i `Leave` (czekaj, aż detal odjedzie).',
+			'Akcja **N** jest aktywna tylko w swoim kroku, więc `Stopper` dodaj w każdym kroku poza `Release`. Warunki przejść to wyrażenia ST; `Dwell.T` to czas, od kiedy krok `Dwell` jest aktywny, np. `Dwell.T >= T#1200ms`.',
+			'Ostatnie przejście `Leave → Wait` zamyka pętlę: maszyna wraca do czekania na następny detal.'
+		],
+		hints: [
+			'`Drill → Dwell`: `DrillBottom`. `Dwell` ma akcje N `DrillLower`, N `Spindle`, N `Stopper`.',
+			'`Dwell → Raise`: `Dwell.T >= T#1200ms`. `Raise` (tylko N `Stopper`) → `Release` przy `DrillTop`.',
+			'`Release` (bez akcji!) → `Leave` przy `Release.T >= T#600ms`; `Leave` (N `Stopper`) → `Wait` przy `NOT PartAtDrill`.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'sfc-drilling',
+			scenario: 'line',
+			language: 'sfc',
+			sfc: drillingSfc(false),
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I1.1', { color: 'red', nc: true }]
+			]),
+			symbols: [
+				...(plantInfo('line')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+				symbol('Run', 'M1.0', 'Linia włączona')
+			],
+			watch: ['Run', 'PartAtDrill', 'DrillBottom', 'DrillTop', 'Stopper'].map((w) =>
+				watchEntry(w, undefined, true)
+			)
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSfc: () => drillingSfc(true),
+		// the same machine and the same acceptance tests as the ladder version
+		tests: []
 	}
 ];
+
+// the SFC drilling station is accepted by the same tests as the ladder one
+LESSONS.find((l) => l.slug === 'sfc-drilling')!.tests = LESSONS.find(
+	(l) => l.slug === 'drilling-station'
+)!.tests;
 
 export const getLesson = (slug: string) => LESSONS.find((l) => l.slug === slug) ?? null;
 

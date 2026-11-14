@@ -4,11 +4,15 @@
  * writes the PLC inputs (sensors) that the next scan will read.
  */
 
-export type ProcessKind = 'traffic' | 'tank' | 'conveyor' | 'line';
+export type ProcessKind = 'traffic' | 'tank' | 'conveyor' | 'line' | 'oven' | 'crane' | 'remote';
 
 export interface ProcessIO {
 	output(terminal: string): boolean;
 	input(terminal: string, value: boolean): void;
+	/** Output word written by the program, e.g. QW4 (analog output). */
+	word(address: string): number;
+	/** Sets an input word, e.g. IW4 (analog input, encoder). */
+	setWord(address: string, value: number): void;
 }
 
 export interface TrafficState {
@@ -98,7 +102,56 @@ export interface LineState {
 	lastFault: string | null;
 }
 
-export type ProcessState = TrafficState | TankState | ConveyorState | LineState;
+export interface OvenState {
+	kind: 'oven';
+	/** °C */
+	temp: number;
+	maxTemp: number;
+	doorClosed: boolean;
+	overTemp: boolean;
+	heater: boolean;
+	/** requested power 0 … 1 */
+	demand: number;
+	/** power reaching the elements 0 … 1 */
+	power: number;
+}
+
+export interface CraneState {
+	kind: 'crane';
+	/** trolley position, mm */
+	x: number;
+	/** mm/s */
+	v: number;
+	/** 0 = top, 1 = bottom */
+	hook: number;
+	left: boolean;
+	right: boolean;
+	fast: boolean;
+	up: boolean;
+	down: boolean;
+	crashes: number;
+	swings: number;
+	shorts: number;
+	lastFault: string | null;
+}
+
+export interface RemoteState {
+	kind: 'remote';
+	link: boolean;
+	pumpRunning: boolean;
+	pumpFault: boolean;
+	/** the station's watchdog put its outputs in the safe state */
+	stationTripped: boolean;
+	/** heartbeat counter in the station */
+	heartbeat: number;
+	/** heartbeat as the PLC last received it */
+	plcHeartbeat: number;
+	telegrams: number;
+	runCmd: boolean;
+}
+
+export type ProcessState =
+	TrafficState | TankState | ConveyorState | LineState | OvenState | CraneState | RemoteState;
 
 export interface ProcessModel {
 	readonly kind: ProcessKind;

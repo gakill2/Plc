@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { parseAddress } from '#lib/engine/index.js';
-import { bitWidth, canForce, canModify, formatValue, traceSignal, watchEntry } from './watch.js';
+import {
+	bitWidth,
+	canForce,
+	canModify,
+	fixWatchFormats,
+	formatValue,
+	traceSignal,
+	watchEntry
+} from './watch.js';
 
 describe('watch table helpers', () => {
 	it('formats values as IEC literals', () => {
@@ -44,5 +52,16 @@ describe('watch table helpers', () => {
 			type: undefined
 		});
 		expect(traceSignal(watchEntry('MD0', 'REAL'), 'MD0')).toMatchObject({ type: 'REAL' });
+	});
+});
+
+describe('fixWatchFormats', () => {
+	it('gives words named by symbol a decimal format', () => {
+		const rows = [watchEntry('Temperature', undefined, true), watchEntry('Start')];
+		fixWatchFormats(rows, [
+			{ name: 'Temperature', address: 'IW4' },
+			{ name: 'Start', address: 'I0.0' }
+		]);
+		expect(rows.map((r) => r.format)).toEqual(['DEC', 'BOOL']);
 	});
 });

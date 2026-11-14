@@ -1,3 +1,4 @@
+import { checkSfc, emptySfc, sfcToSt, type GeneratedSt, type Sfc } from '#lib/sfc/sfc.js';
 import { emptyHmi, WRITES, type Hmi } from '#lib/hmi/model.js';
 import { formatAddress, parseAddress } from '#lib/engine/index.js';
 import { DEFAULT_MEMORY_CONFIG } from '#lib/engine/index.js';
@@ -10,7 +11,7 @@ import {
 import { analyze, crossReference, type Warning, type XrefEntry } from '#lib/analysis/analysis.js';
 import { LadderDocument } from '#lib/ladder/document.svelte.js';
 import { checkSymbols, type SymbolEntry } from '#lib/symbols/symbols.js';
-import type { WatchEntry } from '#lib/monitor/watch.js';
+import { fixWatchFormats, type WatchEntry } from '#lib/monitor/watch.js';
 import type { ProcessKind } from '#lib/processes/types.js';
 import { plantInfo } from '#lib/processes/plants.js';
 import { newId } from '#lib/ladder/model.js';
@@ -44,10 +45,17 @@ export class ProjectState {
 	/** Operator panel and alarm definitions. */
 	hmi: Hmi = $state(emptyHmi());
 	st: string = $state('');
+	sfc: Sfc = $state(emptySfc());
+	/** The chart translated to ST, while SFC is the active language. */
+	readonly sfcSt: GeneratedSt | null = $derived(this.language === 'sfc' ? sfcToSt(this.sfc) : null);
 
 	/** Structured Text compile result, while ST is the active language. */
 	readonly stResult: StCompileResult | null = $derived(
-		this.language === 'st' ? compileSt(this.st, { symbols: this.symbols.map }) : null
+		this.language === 'st'
+			? compileSt(this.st, { symbols: this.symbols.map })
+			: this.sfcSt
+				? compileSt(this.sfcSt.source, { symbols: this.symbols.map })
+				: null
 	);
 	/** The active program in a common shape — this is what gets downloaded and graded. */
 	readonly compiled: CompiledLadder;
@@ -61,15 +69,22 @@ export class ProjectState {
 	constructor(project: Project) {
 		this.circuit = project.circuit;
 		this.userSymbols = project.symbols;
-		this.watch = project.watch;
+		this.watch = fixWatchFormats(project.watch, project.symbols);
 		this.scenario = project.scenario;
 		this.lesson = project.lesson;
 		this.ladder = new LadderDocument(project.ladder, () => this.symbols);
 		this.name = project.name ?? '';
 		this.language = project.language ?? 'ladder';
 		this.st = project.st ?? '';
+		this.sfc = project.sfc ?? emptySfc();
 		this.hmi = project.hmi ?? emptyHmi();
-		this.compiled = $derived(this.stResult ? fromSt(this.stResult, this.st) : this.ladder.compiled);
+		this.compiled = $derived(
+			this.sfcSt && this.stResult
+				? fromSfc(this.sfc, this.stResult, this.sfcSt)
+				: this.stResult
+					? fromSt(this.stResult, this.st)
+					: this.ladder.compiled
+		);
 		this.problems = $derived([
 			...this.compiled.diagnostics.map((d) => ({ ...d, source: 'program' as const })),
 			...this.symbols.issues.map((d) => ({ ...d, source: 'symbols' as const })),
@@ -176,9 +191,33 @@ export class ProjectState {
 			lesson: this.lesson,
 			language: this.language,
 			st: this.st,
+			sfc:
+				this.language === 'sfc' || this.sfc.steps.length > 1
+					? $state.snapshot(this.sfc)
+					: undefined,
 			hmi: $state.snapshot(this.hmi)
 		};
 	}
+}
+
+/** SFC: chart issues first, then errors of the generated ST — named after the chart element. */
+function fromSfc(sfc: Sfc, result: StCompileResult, gen: GeneratedSt): CompiledLadder {
+	const lineOf = (offset: number) => gen.source.slice(0, offset).split('\n').length;
+	const issues = checkSfc(sfc);
+	return {
+		program: result.program,
+		taps: new Map(),
+		sourceMap: result.lines.map((l) => (l === null ? null : `L${l}`)),
+		diagnostics: [
+			...issues.map((i) => ({ id: `sfc:${i.id}`, message: i.message })),
+			...(issues.length
+				? []
+				: result.diagnostics.map((d) => ({
+						id: `sfc:st:${d.from}`,
+						message: `${gen.origin[lineOf(d.from)] ?? 'SFC'}: ${d.message}`
+					})))
+		]
+	};
 }
 
 /** Adapts an ST compile result to the shape the rest of the app uses for compiled programs. */

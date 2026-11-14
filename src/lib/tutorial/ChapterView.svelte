@@ -5,6 +5,8 @@
 	import AddressExplorer from './AddressExplorer.svelte';
 	import AnalogDemo from './AnalogDemo.svelte';
 	import ControlDemo from './ControlDemo.svelte';
+	import ModbusDemo from './ModbusDemo.svelte';
+	import SafetyDemo from './SafetyDemo.svelte';
 	import WiringDemo from './WiringDemo.svelte';
 	import MiniSim from './MiniSim.svelte';
 	import PlcOverview from './PlcOverview.svelte';
@@ -98,6 +100,10 @@
 			<AnalogDemo />
 		{:else if block.kind === 'control'}
 			<ControlDemo initial={block.initial} />
+		{:else if block.kind === 'modbus'}
+			<ModbusDemo />
+		{:else if block.kind === 'safety'}
+			<SafetyDemo />
 		{:else if block.kind === 'lesson'}
 			{@const lesson = getLesson(block.slug)}
 			{#if lesson}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SfcEditor from '#lib/sfc/SfcEditor.svelte';
 	import { resolve } from '$app/paths';
 	import { untrack } from 'svelte';
 	import { toPng } from 'html-to-image';
@@ -153,7 +154,11 @@
 				/>
 			</div>
 			<p class="mt-2 text-xs opacity-70">
-				{project.language === 'st' ? 'Structured Text (IEC 61131-3)' : 'Ladder diagram (LAD)'}
+				{project.language === 'st'
+					? 'Structured Text (IEC 61131-3)'
+					: project.language === 'sfc'
+						? 'Sequential Function Chart (SFC)'
+						: 'Ladder diagram (LAD)'}
 				{#if plant}· plant: {plant.name}{/if} · {project.compiled.program.length} IL instructions · made
 				with PLC Sim
 			</p>
@@ -170,7 +175,11 @@
 					>
 				</div>
 				<div bind:this={sections.program} class="export p-3">
-					{#if project.language === 'st'}
+					{#if project.language === 'sfc'}
+						<div class="sfc">
+							<SfcEditor sfc={project.sfc} readOnly={true} active={() => null} flagged={[]} />
+						</div>
+					{:else if project.language === 'st'}
 						<pre class="code text-xs leading-5">{#each stLines as line, i (i)}<span class="ln"
 									>{String(i + 1).padStart(3)}</span
 								>  {line}

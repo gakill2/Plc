@@ -1,5 +1,5 @@
 import { DeviceBank, type PlcView } from './devices.js';
-import { DEVICES, type Circuit, type Device } from './model.js';
+import { DEVICES, type Circuit, type Device, type Fault } from './model.js';
 import type { VfdOutputs } from './vfd.js';
 
 /** Which devices are physically actuated right now (button held, switch flipped …). */
@@ -10,6 +10,8 @@ export class CircuitSim {
 
 	/** Frequency inverters: their state over time and what they report to the PLC. */
 	readonly bank = new DeviceBank();
+	/** Faults injected by the on-call mode. */
+	faults: Fault[] = $state([]);
 	vfd: Record<string, VfdOutputs & { hz: number; code: string | null }> = $state({});
 
 	reset() {
@@ -21,7 +23,7 @@ export class CircuitSim {
 
 	/** Steps the inverters; returns the input words to send to the PLC. */
 	stepDevices(circuit: Circuit, dtMs: number, plc: PlcView): Map<string, number> {
-		const words = this.bank.step(circuit, dtMs, plc);
+		const words = this.bank.step(circuit, dtMs, plc, this.faults);
 		const next: typeof this.vfd = {};
 		for (const [id, out] of this.bank.out) {
 			const st = this.bank.vfd.get(id)!;

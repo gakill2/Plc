@@ -1,5 +1,5 @@
 import { formatAddress, parseAddress } from '#lib/engine/index.js';
-import type { Circuit } from './model.js';
+import { hasFault, type Circuit, type Fault } from './model.js';
 import { newVfd, stepVfd, tripVfd, type VfdOutputs, type VfdState } from './vfd.js';
 
 /*
@@ -29,7 +29,12 @@ export class DeviceBank {
 	readonly out = new Map<string, VfdOutputs>();
 
 	/** Advances every inverter of the circuit; returns the input words they drive (IW → value). */
-	step(circuit: Circuit, dtMs: number, plc: PlcView): Map<string, number> {
+	step(
+		circuit: Circuit,
+		dtMs: number,
+		plc: PlcView,
+		faults: readonly Fault[] = []
+	): Map<string, number> {
 		const words = new Map<string, number>();
 		for (const d of circuit.devices) {
 			if (d.type !== 'vfd') continue;
@@ -37,6 +42,7 @@ export class DeviceBank {
 				circuit.wires.find((w) => w.device === d.id && (w.port ?? 'main') === port)?.terminal;
 			const bit = (port: string) => {
 				const t = terminal(port);
+				if (hasFault(faults, d.label, 'wire-break', port)) return false;
 				return t ? plc.bit(t.toUpperCase()) : false;
 			};
 			const ai = normalizeWord(d.aiWord, 'Q');
@@ -45,7 +51,10 @@ export class DeviceBank {
 				{ run: bit('main'), rev: bit('rev'), reset: bit('reset'), setpoint: ai ? plc.word(ai) : 0 },
 				dtMs
 			);
-			this.vfd.set(d.id, state);
+			// a seized bearing: overcurrent trip as soon as the drive gets going
+			const seized =
+				hasFault(faults, d.label, 'vfd-trip') && Math.abs(state.hz) > 15 && !state.fault;
+			this.vfd.set(d.id, seized ? tripVfd(state) : state);
 			this.out.set(d.id, out);
 			const ao = normalizeWord(d.aoWord, 'I');
 			if (ao) words.set(ao, out.actual);

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { deviceSymbols } from '#lib/circuit/model.js';
 import { compileLadder } from '#lib/ladder/compiler.js';
+import { compileSt } from '#lib/st/compiler.js';
+import { sfcToSt } from '#lib/sfc/sfc.js';
 import type { LadderProgram } from '#lib/ladder/model.js';
 import { checkSymbols } from '#lib/symbols/symbols.js';
 import { LESSONS } from './lessons.js';
@@ -14,9 +16,21 @@ function compile(lesson: (typeof LESSONS)[number], ladder: LadderProgram) {
 	return compileLadder(ladder, { symbols: map });
 }
 
+/** Structured Text lessons: compiles the source with the starter's symbols. */
+function compileStLesson(lesson: (typeof LESSONS)[number], src: string) {
+	const project = lesson.starter();
+	const { map } = checkSymbols([...deviceSymbols(project.circuit), ...project.symbols]);
+	const r = compileSt(src, { symbols: map });
+	return { program: r.program, diagnostics: r.diagnostics };
+}
+
 describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, lesson) => {
 	it('the reference solution passes every test', () => {
-		const { program, diagnostics } = compile(lesson, lesson.solution());
+		const { program, diagnostics } = lesson.solutionSfc
+			? compileStLesson(lesson, sfcToSt(lesson.solutionSfc()).source)
+			: lesson.solutionSt
+				? compileStLesson(lesson, lesson.solutionSt)
+				: compile(lesson, lesson.solution());
 		expect(diagnostics).toEqual([]);
 		const circuit = lesson.solutionCircuit?.() ?? lesson.starter().circuit;
 		const results = runLessonTests(lesson, program, circuit);
@@ -24,7 +38,13 @@ describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, les
 	});
 
 	it('the starter project does not pass', () => {
-		const { program } = compile(lesson, lesson.starter().ladder);
+		const start = lesson.starter();
+		const { program } =
+			start.language === 'sfc' && start.sfc
+				? compileStLesson(lesson, sfcToSt(start.sfc).source)
+				: start.language === 'st'
+					? compileStLesson(lesson, start.st ?? '')
+					: compile(lesson, start.ladder);
 		expect(runLessonTests(lesson, program, lesson.starter().circuit).some((r) => !r.passed)).toBe(
 			true
 		);

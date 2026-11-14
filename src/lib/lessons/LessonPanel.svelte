@@ -4,6 +4,7 @@
 	import type { LadderProgram } from '#lib/ladder/model.js';
 	import type { Circuit } from '#lib/circuit/model.js';
 	import type { Hmi } from '#lib/hmi/model.js';
+	import type { Sfc } from '#lib/sfc/sfc.js';
 	import type { SymbolMap } from '#lib/symbols/symbols.js';
 	import { addressResolver, GUIDES } from './guide.js';
 	import { onMount } from 'svelte';
@@ -24,9 +25,11 @@
 		ladder: LadderProgram;
 		symbols: SymbolMap;
 		online: boolean;
-		language: 'ladder' | 'st';
+		language: 'ladder' | 'st' | 'sfc';
 		circuit: Circuit;
 		hmi: Hmi;
+		st: string;
+		sfc: Sfc;
 	};
 	let {
 		lesson,
@@ -39,7 +42,9 @@
 		online,
 		language,
 		circuit,
-		hmi
+		hmi,
+		st,
+		sfc
 	}: Props = $props();
 
 	let results = $state.raw<TestResult[] | null>(null);
@@ -82,6 +87,8 @@
 			ladder,
 			circuit,
 			hmi,
+			st,
+			sfc,
 			addr: addressResolver(symbols),
 			online,
 			passed: passed || completedBefore
@@ -135,7 +142,7 @@
 		{#each lesson.instructions as p, i (i)}<p><RichText text={p} /></p>{/each}
 	</div>
 
-	{#if guide.length && (language === 'ladder' || lesson.kind === 'commissioning')}
+	{#if guide.length && (language === 'ladder' || lesson.kind === 'commissioning' || lesson.solutionSt || lesson.solutionSfc)}
 		<div lang="pl">
 			<p class="mb-1 text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
 				Krok po kroku · {ticks.filter(Boolean).length}/{guide.length}
