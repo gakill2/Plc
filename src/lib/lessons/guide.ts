@@ -10,6 +10,7 @@ import type {
 	TimerType
 } from '#lib/ladder/model.js';
 import { normalizeTerminal, type Circuit } from '#lib/circuit/model.js';
+import type { Hmi } from '#lib/hmi/model.js';
 
 /*
  * Guided steps for the lessons ("krok po kroku"). Each step is checked live against the ladder
@@ -20,6 +21,8 @@ import { normalizeTerminal, type Circuit } from '#lib/circuit/model.js';
 
 export interface GuideContext {
 	ladder: LadderProgram;
+	/** the project's operator panel (HMI lessons) */
+	hmi?: Hmi;
 	/** the project's circuit (commissioning lessons check the wiring) */
 	circuit?: Circuit;
 	/** Resolves a symbol or address to a normalized address (null if invalid). */
@@ -78,6 +81,8 @@ export interface RungSpec {
 	counter?: CounterType;
 	/** Number of compare boxes reading this operand. */
 	compares?: [string, number];
+	/** A MOVE box: source constant / operand → destination. */
+	move?: [string, string];
 }
 
 export function rungMatches(c: GuideContext, r: Rung, spec: RungSpec): boolean {
@@ -96,6 +101,16 @@ export function rungMatches(c: GuideContext, r: Rung, spec: RungSpec): boolean {
 			(e) => e.kind === 'compare' && (sameAddr(c, e.a, op) || sameAddr(c, e.b, op))
 		).length;
 		if (count < n) return false;
+	}
+	if (spec.move) {
+		const [src, dst] = spec.move;
+		const ok = els.some(
+			(e) =>
+				e.kind === 'move' &&
+				sameAddr(c, e.dst, dst) &&
+				(e.src.trim() === src || sameAddr(c, e.src, src))
+		);
+		if (!ok) return false;
 	}
 	if (spec.branch) {
 		const want = spec.branch;
@@ -170,6 +185,10 @@ const vfdWord = (c: GuideContext, label: string, key: 'aiWord' | 'aoWord') =>
 		.find((x) => x.label === label)
 		?.[key]?.trim()
 		.toUpperCase();
+
+/** A widget of this kind on the operator panel, bound to this address (or its symbol). */
+const hmiWidget = (c: GuideContext, kind: string, address: string) =>
+	!!c.hmi?.widgets.some((w) => w.kind === kind && sameAddr(c, w.tag, address));
 
 /** How many coils of a type write this operand in the whole program. */
 const coils = (c: GuideContext, type: CoilType, op: string) =>
@@ -424,6 +443,90 @@ export const GUIDES: Record<string, GuideStep[]> = {
 			})
 		},
 		runIt('wciśnij Start, w widoku Process włącz Auto feed i dorzuć pęknięty detal.'),
+		checkIt
+	],
+
+	/* ---------- field skills ---------- */
+	'vfd-fan': [
+		{
+			text: 'Podtrzymanie: (`Start` LUB `Run`) I `Stop` I NIE `U1_Fault` → cewka `Run`.',
+			done: rung({
+				parallel: [[['NO', 'I0.0']], [['NO', 'M0.0']]],
+				contacts: [
+					['NO', 'I0.1'],
+					['NC', 'I0.5']
+				],
+				coil: ['COIL', 'M0.0']
+			})
+		},
+		{
+			text: 'Wolno: NIE `Fast` → MOVE `11059` → `U1_Setpoint` (20 Hz). Network potrzebuje cewki, np. `SpeedLow`.',
+			done: rung({ contacts: [['NC', 'I0.2']], move: ['11059', 'QW4'] })
+		},
+		{
+			text: 'Szybko: `Fast` → MOVE `24883` → `U1_Setpoint` (45 Hz).',
+			done: rung({ contacts: [['NO', 'I0.2']], move: ['24883', 'QW4'] })
+		},
+		{
+			text: 'Kierunek: `Run` I NIE `Reverse` → `U1_Run`; `Run` I `Reverse` → `U1_Rev`. Nigdy oba naraz.',
+			done: all(
+				rung({
+					contacts: [
+						['NO', 'M0.0'],
+						['NC', 'I0.3']
+					],
+					coil: ['COIL', 'Q0.0']
+				}),
+				rung({
+					contacts: [
+						['NO', 'M0.0'],
+						['NO', 'I0.3']
+					],
+					coil: ['COIL', 'Q0.1']
+				})
+			)
+		},
+		{
+			text: 'Kasowanie awarii: wciśnięty `Stop` (styk NC, bo przycisk jest podłączony NC) → `U1_Reset`.',
+			done: rung({ contacts: [['NC', 'I0.1']], coil: ['COIL', 'Q0.2'] })
+		},
+		runIt('wciśnij Start, przełącz Fast i Reverse, wywołaj Trip i skasuj go Stopem. Patrz na Hz.'),
+		checkIt
+	],
+	'hmi-start': [
+		{
+			text: 'Zakładka **HMI** (PLC zatrzymany): „+ Przycisk” z tagiem `HMI_Start` (`M10.0`).',
+			done: (c) => hmiWidget(c, 'button', 'M10.0')
+		},
+		{
+			text: 'Drugi przycisk z tagiem `HMI_Stop` (`M10.1`) — najlepiej czerwony.',
+			done: (c) => hmiWidget(c, 'button', 'M10.1')
+		},
+		{
+			text: '„+ Lampka” z tagiem `Motor` — operator widzi, czy silnik pracuje.',
+			done: (c) => hmiWidget(c, 'lamp', 'Q0.0')
+		},
+		{
+			text: 'Program: dodaj `HMI_Start` równolegle do `Start` (⑂ Branch) — start z panelu albo z szafy.',
+			done: rung({
+				contacts: [
+					['NO', 'M10.0'],
+					['NO', 'I0.0']
+				],
+				coil: ['COIL', 'Q0.0']
+			})
+		},
+		{
+			text: 'Program: styk NC `HMI_Stop` szeregowo obok `Stop` — stop z panelu zatrzymuje, a Stop z szafy działa dalej.',
+			done: rung({
+				contacts: [
+					['NC', 'M10.1'],
+					['NO', 'I0.1']
+				],
+				coil: ['COIL', 'Q0.0']
+			})
+		},
+		runIt('w zakładce HMI naciśnij Start i Stop na ekranie, potem przyciski na szafie (Circuit).'),
 		checkIt
 	],
 

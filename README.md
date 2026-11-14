@@ -30,9 +30,16 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
   pusher, each with simple physics; connect one to any project.
-- **7 auto-graded lessons** — from a first rung to process control. Your program runs against
-  test cases in a headless PLC; every lesson ships a reference solution that the test suite
-  proves passes (in LAD, and for several lessons also in ST).
+- **17 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
+  to a VFD-driven fan and an operator panel. Your program runs against test cases in a headless
+  PLC (or through the wired circuit); every lesson ships a reference solution that the test suite
+  proves passes, plus a live step-by-step guide.
+- **Story mode „Zgłoszenia”** — work orders from a shift foreman wrap the lessons into three weeks
+  on a plant. Each ticket is graded with stars (attempts, hints), shows the downtime it cost and
+  ends with a debrief; stars move you up from _Praktykant_ to _Starszy automatyk_.
+- **Just-in-time tips and terms** — a short tip appears the first time you use a timer, wire a
+  Stop button, add a drive, force a signal…, linking to the chapter that explains it. Abbreviations
+  (TON, NC, RLO, HMI, VFD, PID…) explain themselves on hover or focus everywhere in the text.
 - **Projects** — saved in the browser, undo / redo, export / import as JSON, and **share links**
   that carry the whole project in the URL fragment (nothing is uploaded).
 - **Operator panel (HMI)** — drag-and-drop screen editor (buttons, switches, lamps, values,
@@ -68,6 +75,8 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Compilers** — `src/lib/ladder/compiler.ts` and `src/lib/st/*`; both emit the same IR.
 - **Runtime** — `RuntimeCore` (tested in Node) inside a Web Worker; the UI receives snapshots.
 - **Plants & lessons** — `src/lib/processes`, `src/lib/lessons` (the runner reuses the engine).
+- **Story & tips** — `src/lib/story` (tickets, grading, career), `src/lib/tips` (triggers on the
+  project state, glossary terms).
 
 Design decisions are recorded as ADRs:
 

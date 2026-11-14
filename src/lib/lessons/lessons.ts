@@ -1,3 +1,4 @@
+import { widget } from '#lib/hmi/model.js';
 import { device, DEVICES, type Circuit, type Device, type DeviceType } from '#lib/circuit/model.js';
 import {
 	coil,
@@ -16,7 +17,7 @@ import type { Project } from '#lib/project/project.js';
 import type { SymbolEntry } from '#lib/symbols/symbols.js';
 import type { ConveyorState, LineState, ProcessKind, TankState } from '#lib/processes/types.js';
 import { plantInfo } from '#lib/processes/plants.js';
-import type { Lesson, LessonStep } from './types.js';
+import type { Check, Lesson, LessonStep } from './types.js';
 
 /* ---------- helpers to build lesson projects ---------- */
 
@@ -73,6 +74,16 @@ const settle = (
 	wait: 50,
 	expect
 });
+
+/** Checks the inverter U1 runs at about this frequency (negative = reverse). */
+const hz =
+	(target: number): Check =>
+	({ device }) => {
+		const f = device('U1')?.hz ?? 0;
+		return Math.abs(f - target) < 0.6
+			? null
+			: `falownik U1 pracuje z ${f.toFixed(1)} Hz, a powinien ${target} Hz`;
+	};
 
 /** Mistakes on the production line fail a test immediately. */
 const lineSafety = ({ process }: { process: { state(): unknown } | null }): string | null => {
@@ -1228,6 +1239,220 @@ export const LESSONS: Lesson[] = [
 					},
 					{ label: 'S3 — kwitowanie', actuate: { S3: true }, wait: 100 },
 					{ label: 'puść S3', actuate: { S3: false }, wait: 100, expectDevices: { H2: false } }
+				]
+			}
+		]
+	},
+	/* ---------- field skills: drives and the operator panel ---------- */
+	{
+		slug: 'vfd-fan',
+		title: 'Falownik: wentylator z dwiema prędkościami',
+		level: 'process',
+		fieldTests: true,
+		summary: 'Sterujesz napędem: RUN / REV, prędkość zadana w słowie analogowym, kasowanie awarii.',
+		instructions: [
+			'Wentylator hali napędza falownik `U1` (widok Circuit). `Start` (`I0.0`) i `Stop` (`I0.1`, podłączony NC) włączają go z podtrzymaniem w markerze `Run` (`M0.0`).',
+			'Przełącznik `Fast` (`I0.2`): wyłączony = **20 Hz**, włączony = **45 Hz**. Prędkość zadaną wpisz blokiem MOVE do `U1_Setpoint` (`QW4`): 27648 = 50 Hz, więc 20 Hz = `11059`, 45 Hz = `24883`.',
+			'Przełącznik `Reverse` (`I0.3`) wybiera kierunek: wtedy zamiast `U1_Run` włącz `U1_Rev`. Nigdy obu naraz — falownik zgłosi błąd.',
+			'Awaria falownika (`U1_Fault`) ma zatrzymać wentylator. Wciśnięcie `Stop` kasuje błąd przez `U1_Reset`. Awarię wywołasz przyciskiem **Trip** na falowniku.'
+		],
+		hints: [
+			'Network z podtrzymaniem jak zawsze: `(Start ⑂ Run)`, `┤Stop├`, `┤/U1_Fault├` → `(Run)`.',
+			'Dwa networki z MOVE: `┤/Fast├ → MOVE 11059 → U1_Setpoint` i `┤Fast├ → MOVE 24883 → U1_Setpoint`. Każdy network potrzebuje cewki — daj np. markery `SpeedLow` (`M0.1`) i `SpeedHigh` (`M0.2`).',
+			'`┤Run├ ┤/Reverse├ → (U1_Run)`, `┤Run├ ┤Reverse├ → (U1_Rev)`, `┤/Stop├ → (U1_Reset)`.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'vfd-fan',
+			ladder: { version: 1, rungs: [] },
+			circuit: field([
+				{
+					type: 'pushbutton',
+					label: 'Start',
+					x: 0,
+					y: 30,
+					extra: { color: 'green' },
+					wires: { main: 'I0.0' }
+				},
+				{
+					type: 'pushbutton',
+					label: 'Stop',
+					x: 0,
+					y: 200,
+					extra: { color: 'red', nc: true },
+					wires: { main: 'I0.1' }
+				},
+				{ type: 'switch', label: 'Fast', x: 0, y: 370, wires: { main: 'I0.2' } },
+				{ type: 'switch', label: 'Reverse', x: 0, y: 530, wires: { main: 'I0.3' } },
+				{
+					type: 'vfd',
+					label: 'U1',
+					x: 720,
+					y: 20,
+					extra: { aiWord: 'QW4', aoWord: 'IW4' },
+					wires: {
+						main: 'Q0.0',
+						rev: 'Q0.1',
+						reset: 'Q0.2',
+						ready: 'I0.4',
+						fault: 'I0.5',
+						atSpeed: 'I0.6'
+					}
+				}
+			]),
+			symbols: [
+				symbol('Run', 'M0.0', 'Wentylator włączony'),
+				symbol('SpeedLow', 'M0.1', 'Wybrana prędkość 20 Hz'),
+				symbol('SpeedHigh', 'M0.2', 'Wybrana prędkość 45 Hz')
+			],
+			watch: ['Run', 'U1_Setpoint', 'U1_Speed', 'U1_Fault'].map((w) =>
+				watchEntry(w, undefined, true)
+			)
+		}),
+		solution: () =>
+			program(
+				rung(
+					[
+						parallel([[contact('NO', 'Start')], [contact('NO', 'Run')]]),
+						contact('NO', 'Stop'),
+						contact('NC', 'U1_Fault')
+					],
+					[coil('COIL', 'Run')]
+				),
+				rung([contact('NC', 'Fast'), moveBox('11059', 'U1_Setpoint')], [coil('COIL', 'SpeedLow')]),
+				rung([contact('NO', 'Fast'), moveBox('24883', 'U1_Setpoint')], [coil('COIL', 'SpeedHigh')]),
+				rung([contact('NO', 'Run'), contact('NC', 'Reverse')], [coil('COIL', 'U1_Run')]),
+				rung([contact('NO', 'Run'), contact('NO', 'Reverse')], [coil('COIL', 'U1_Rev')]),
+				rung([contact('NC', 'Stop')], [coil('COIL', 'U1_Reset')])
+			),
+		tests: [
+			{
+				name: 'Rusza na 20 Hz, Fast daje 45 Hz, Stop zatrzymuje',
+				steps: [
+					{ label: 'wciśnij Start', actuate: { Start: true }, wait: 100 },
+					{ label: 'puść Start, 2,5 s', actuate: { Start: false }, wait: 2500, check: hz(20) },
+					{ label: 'Fast, 3 s', actuate: { Fast: true }, wait: 3000, check: hz(45) },
+					{
+						label: 'wciśnij Stop, 3,5 s',
+						actuate: { Stop: true },
+						wait: 3500,
+						expectDevices: { U1: false }
+					}
+				]
+			},
+			{
+				name: 'Reverse kręci w drugą stronę',
+				steps: [
+					{ label: 'Reverse i Start', actuate: { Reverse: true, Start: true }, wait: 100 },
+					{ label: 'puść Start, 2,5 s', actuate: { Start: false }, wait: 2500, check: hz(-20) }
+				]
+			},
+			{
+				name: 'Awaria zatrzymuje, Stop kasuje błąd',
+				steps: [
+					{ label: 'start', actuate: { Start: true }, wait: 100 },
+					{ label: 'puść Start', actuate: { Start: false }, wait: 1000 },
+					{
+						label: 'awaria U1 (Trip)',
+						actuate: { U1: true },
+						wait: 500,
+						expectDevices: { U1: false }
+					},
+					{ label: 'wciśnij Stop (kasowanie)', actuate: { Stop: true }, wait: 100 },
+					{ label: 'puść Stop', actuate: { Stop: false }, wait: 100 },
+					{ label: 'Start ponownie', actuate: { Start: true }, wait: 100 },
+					{ label: 'puść Start, 2,5 s', actuate: { Start: false }, wait: 2500, check: hz(20) }
+				]
+			}
+		]
+	},
+	{
+		slug: 'hmi-start',
+		solutionHmi: () => ({
+			widgets: [
+				widget('button', 40, 40, { tag: 'HMI_Start', text: 'Start', color: 'green' }),
+				widget('button', 180, 40, { tag: 'HMI_Stop', text: 'Stop', color: 'red' }),
+				widget('lamp', 320, 40, { tag: 'Motor', text: 'Silnik' })
+			],
+			alarms: [],
+			ackTag: ''
+		}),
+		title: 'Panel HMI: start i stop z ekranu',
+		level: 'process',
+		summary: 'Operatorzy chcą sterować silnikiem z panelu — bez psucia przycisków na szafie.',
+		instructions: [
+			'Silnik `Motor` (`Q0.0`) już działa z przycisków na szafie: `Start` (`I0.0`) i `Stop` (`I0.1`, podłączony NC).',
+			'Dodaj na **panelu HMI** (zakładka HMI): przycisk „Start” zapisujący `HMI_Start` (`M10.0`), przycisk „Stop” zapisujący `HMI_Stop` (`M10.1`) i lampkę pokazującą `Motor`.',
+			'Zmień program: start z panelu działa **tak jak** przycisk na szafie (LUB), a stop z panelu zatrzymuje silnik **tak jak** Stop na szafie. Stop na szafie musi dalej działać zawsze.'
+		],
+		hints: [
+			'Panel nie pisze do wejść I, tylko do markerów M — program łączy je z przyciskami: `Start ⑂ HMI_Start ⑂ Motor`.',
+			'Stop z panelu to dodatkowy styk w szeregu: `┤/HMI_Stop├` obok `┤Stop├`.'
+		],
+		starter: starter(
+			'hmi-start',
+			[
+				['pushbutton', 'Start', 'I0.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I0.1', { color: 'red', nc: true }],
+				['motor', 'Motor', 'Q0.0']
+			],
+			{
+				symbols: [
+					symbol('HMI_Start', 'M10.0', 'Przycisk Start na panelu'),
+					symbol('HMI_Stop', 'M10.1', 'Przycisk Stop na panelu')
+				],
+				ladder: program(
+					rung(
+						[parallel([[contact('NO', 'Start')], [contact('NO', 'Motor')]]), contact('NO', 'Stop')],
+						[coil('COIL', 'Motor')],
+						'Silnik z podtrzymaniem (przyciski na szafie)'
+					)
+				)
+			}
+		),
+		solution: () =>
+			program(
+				rung(
+					[
+						parallel([
+							[contact('NO', 'Start')],
+							[contact('NO', 'HMI_Start')],
+							[contact('NO', 'Motor')]
+						]),
+						contact('NO', 'Stop'),
+						contact('NC', 'HMI_Stop')
+					],
+					[coil('COIL', 'Motor')]
+				)
+			),
+		tests: [
+			{
+				name: 'Start i Stop z panelu',
+				steps: [
+					settle('Stop na szafie puszczony', { 'I0.1': true }, { 'Q0.0': false }),
+					{ label: 'Start na panelu', hmi: { 'M10.0': 1 }, wait: 50, expect: { 'Q0.0': true } },
+					{
+						label: 'puść Start na panelu',
+						hmi: { 'M10.0': 0 },
+						wait: 50,
+						expect: { 'Q0.0': true }
+					},
+					{ label: 'Stop na panelu', hmi: { 'M10.1': 1 }, wait: 50, expect: { 'Q0.0': false } },
+					{ label: 'puść Stop na panelu', hmi: { 'M10.1': 0 }, wait: 50, expect: { 'Q0.0': false } }
+				]
+			},
+			{
+				name: 'Przyciski na szafie działają dalej, Stop na szafie wygrywa',
+				steps: [
+					settle('Start na szafie', { 'I0.1': true, 'I0.0': true }, { 'Q0.0': true }),
+					settle('puść Start', { 'I0.0': false }, { 'Q0.0': true }),
+					{
+						label: 'Stop na szafie i Start na panelu',
+						set: { 'I0.1': false },
+						hmi: { 'M10.0': 1 },
+						wait: 50,
+						expect: { 'Q0.0': false }
+					}
 				]
 			}
 		]

@@ -1453,6 +1453,11 @@ Alarm znika z listy dopiero, gdy ustąpił **i** został pokwitowany — dzięki
 				correct: 1,
 				explanation:
 					'Alarm zostaje na liście do pokwitowania, nawet gdy ustąpił. Do tego służy kwitowanie — żeby nic nie umknęło.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'hmi-start',
+				text: 'Dodaj start i stop z panelu do działającej maszyny — bez psucia przycisków na szafie.'
 			}
 		]
 	},
@@ -1606,6 +1611,11 @@ W PLC Sim falownik dodasz w widoku Circuit (*Frequency inverter*). Ma przycisk *
 				correct: 0,
 				explanation:
 					'Kasowanie zwykle wymaga zbocza RESET przy zdjętym RUN (i usuniętej przyczynie błędu). Dlatego w programie awaria najpierw zrzuca RUN.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'vfd-fan',
+				text: 'Zaprogramuj wentylator z falownikiem: dwie prędkości, kierunek, kasowanie awarii.'
 			},
 			{
 				kind: 'lesson',

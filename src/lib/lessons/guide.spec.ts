@@ -14,7 +14,8 @@ function context(
 	const { map } = checkSymbols([...deviceSymbols(project.circuit), ...project.symbols]);
 	const circuit =
 		which === 'solution' ? (lesson.solutionCircuit?.() ?? project.circuit) : project.circuit;
-	return { ladder, circuit, addr: addressResolver(map), online: false, passed: false };
+	const hmi = which === 'solution' ? (lesson.solutionHmi?.() ?? project.hmi) : project.hmi;
+	return { ladder, circuit, hmi, addr: addressResolver(map), online: false, passed: false };
 }
 
 describe('lesson guides', () => {
@@ -38,7 +39,11 @@ describe('lesson guides', () => {
 			}
 			expect(steps.at(-1)!.done({ ...c, passed: true })).toBe(true);
 			// neither an empty program nor the starter ticks the building steps
-			const empty = { ...context(slug, { version: 1, rungs: [] }, 'starter'), circuit: undefined };
+			const empty = {
+				...context(slug, { version: 1, rungs: [] }, 'starter'),
+				circuit: undefined,
+				hmi: undefined
+			};
 			expect(steps.some((s) => s.done(empty))).toBe(false);
 			const start = context(slug, lesson.starter().ladder, 'starter');
 			expect(building.every((s) => s.done(start))).toBe(false);

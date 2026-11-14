@@ -2,6 +2,7 @@ import type { Plc } from '#lib/engine/index.js';
 import type { LadderProgram } from '#lib/ladder/model.js';
 import type { Project } from '#lib/project/project.js';
 import type { Circuit } from '#lib/circuit/model.js';
+import type { Hmi } from '#lib/hmi/model.js';
 import type { ProcessKind, ProcessModel } from '#lib/processes/types.js';
 
 export interface TestContext {
@@ -26,6 +27,8 @@ export interface LessonStep {
 	 * Values stay until changed by a later step.
 	 */
 	actuate?: Record<string, boolean>;
+	/** Values written like an operator panel does, e.g. `{ 'M10.0': 1 }` (an HMI button). */
+	hmi?: Record<string, number>;
 	/** Commissioning lessons: expected state of devices by label (lamp lit, contactor pulled in …). */
 	expectDevices?: Record<string, boolean>;
 	/** Commands to the process model (e.g. feed boxes). */
@@ -48,8 +51,12 @@ export interface Lesson {
 	slug: string;
 	/** build = write the program, debug = find and fix the bug in a given program */
 	kind?: 'build' | 'debug' | 'commissioning';
+	/** Run the tests through the project's circuit (like commissioning lessons do). */
+	fieldTests?: boolean;
 	/** Commissioning: the correctly wired circuit (the program is right from the start). */
 	solutionCircuit?: () => Circuit;
+	/** The finished operator panel (HMI lessons). */
+	solutionHmi?: () => Hmi;
 	title: string;
 	level: 'basics' | 'logic' | 'timers' | 'process';
 	summary: string;

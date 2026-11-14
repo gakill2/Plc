@@ -33,7 +33,10 @@ test('interactive figures: wiring, analog scaling, PID oven', async ({ page }) =
 	await page.goto('/learn/basics/elektryka', { waitUntil: 'networkidle' });
 	await page.getByRole('button', { name: /brak obiektu/ }).click();
 	await expect(page.getByText('I0.0 = 1')).toBeVisible();
-	await page.getByRole('button', { name: 'NPN' }).click();
+	await page
+		.getByRole('group', { name: 'Typ czujnika' })
+		.getByRole('button', { name: 'NPN' })
+		.click();
 	await expect(page.getByRole('status').filter({ hasText: 'czujnik' })).toContainText(
 		'choć czujnik świeci'
 	);

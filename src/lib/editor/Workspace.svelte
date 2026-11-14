@@ -14,6 +14,7 @@
 	import { saveProject } from '#lib/project/storage.js';
 	import { resolve } from '$app/paths';
 	import LessonPanel from '#lib/lessons/LessonPanel.svelte';
+	import TipToast from '#lib/tips/TipToast.svelte';
 	import { getLesson, LESSON_PREFIX } from '#lib/lessons/lessons.js';
 	import ProcessView from '#lib/processes/ProcessView.svelte';
 	import { createProcess } from '#lib/processes/models.js';
@@ -372,6 +373,7 @@
 		if (lesson && confirm('Zastąpić Twój program rozwiązaniem wzorcowym?')) {
 			project.ladder.program = lesson.solution();
 			if (lesson.solutionCircuit) project.circuit = lesson.solutionCircuit();
+			if (lesson.solutionHmi) project.hmi = lesson.solutionHmi();
 			project.ladder.select(null);
 			view = 'program';
 		}
@@ -629,6 +631,7 @@
 					online={runtime.online}
 					language={project.language}
 					circuit={project.circuit}
+					hmi={project.hmi}
 				/>
 			{/if}
 			<IoPanel {runtime} labels={terminalLabels} />
@@ -742,3 +745,16 @@
 		</div>
 	</div>
 {/if}
+
+<TipToast
+	input={{
+		ladder: project.ladder.program,
+		circuit: project.circuit,
+		symbols: project.symbols.map,
+		hmi: project.hmi,
+		language: project.language ?? 'ladder',
+		online: runtime.online,
+		forces: runtime.forces.size
+	}}
+	quiet={lesson?.kind === 'debug' || lesson?.kind === 'commissioning'}
+/>

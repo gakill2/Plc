@@ -3,6 +3,8 @@
 	 * A tiny markdown subset for tutorial text: paragraphs (blank line), lists ("- "),
 	 * **bold** and `code`.
 	 */
+	import TermText from '#lib/tips/TermText.svelte';
+
 	let { text }: { text: string } = $props();
 
 	type Inline = { t: string; kind: 'text' | 'bold' | 'code' };
@@ -41,11 +43,11 @@
 </script>
 
 {#snippet parts(list: Inline[])}{#each list as p, i (i)}{#if p.kind === 'bold'}<strong
-				class="font-semibold text-white">{p.t}</strong
+				class="font-semibold text-white"><TermText text={p.t} /></strong
 			>{:else if p.kind === 'code'}<code
 				class="rounded bg-slate-800 px-1 py-0.5 font-mono text-[0.88em] text-emerald-300"
 				>{p.t}</code
-			>{:else}{p.t}{/if}{/each}{/snippet}
+			>{:else}<TermText text={p.t} />{/if}{/each}{/snippet}
 
 <div class="space-y-3 leading-relaxed text-slate-300">
 	{#each paras as para, i (i)}

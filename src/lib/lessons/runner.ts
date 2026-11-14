@@ -11,7 +11,7 @@ const SCAN_MS = 10;
  * a fresh PLC (and process model) per test, fixed 10 ms scans.
  */
 export function runLessonTests(lesson: Lesson, program: Instr[], circuit?: Circuit): TestResult[] {
-	const field = lesson.kind === 'commissioning' && circuit ? circuit : null;
+	const field = (lesson.kind === 'commissioning' || lesson.fieldTests) && circuit ? circuit : null;
 	return lesson.tests.map((test) => {
 		const plc = new Plc();
 		try {
@@ -45,6 +45,7 @@ export function runLessonTests(lesson: Lesson, program: Instr[], circuit?: Circu
 		for (const step of test.steps) {
 			for (const [terminal, value] of Object.entries(step.set ?? {})) plc.setInput(terminal, value);
 			for (const [name, value] of step.commands ?? []) process?.command(name, value);
+			for (const [address, value] of Object.entries(step.hmi ?? {})) plc.modify(address, value);
 			devices?.actuate(step.actuate ?? {});
 			devices?.apply();
 

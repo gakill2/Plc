@@ -3,6 +3,7 @@
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
 	import type { LadderProgram } from '#lib/ladder/model.js';
 	import type { Circuit } from '#lib/circuit/model.js';
+	import type { Hmi } from '#lib/hmi/model.js';
 	import type { SymbolMap } from '#lib/symbols/symbols.js';
 	import { addressResolver, GUIDES } from './guide.js';
 	import { onMount } from 'svelte';
@@ -10,6 +11,9 @@
 	import RichText from './RichText.svelte';
 	import { runLessonTests } from './runner.js';
 	import type { Lesson, TestResult } from './types.js';
+	import TicketCard from '#lib/story/TicketCard.svelte';
+	import { getTicket, type Ticket } from '#lib/story/tickets.js';
+	import { loadStory, solveTicket, updateTicket, type TicketRecord } from '#lib/story/progress.js';
 
 	type Props = {
 		lesson: Lesson;
@@ -22,6 +26,7 @@
 		online: boolean;
 		language: 'ladder' | 'st';
 		circuit: Circuit;
+		hmi: Hmi;
 	};
 	let {
 		lesson,
@@ -33,7 +38,8 @@
 		symbols,
 		online,
 		language,
-		circuit
+		circuit,
+		hmi
 	}: Props = $props();
 
 	let results = $state.raw<TestResult[] | null>(null);
@@ -50,12 +56,32 @@
 	let completedBefore = $state(false);
 	onMount(() => (completedBefore = completedLessons().has(lesson.slug)));
 
+	/* story mode: the lesson opened from a foreman's ticket (?ticket=z03) */
+	let ticket = $state<Ticket | null>(null);
+	let record = $state<TicketRecord | null>(null);
+	let justSolved = $state(false);
+	onMount(() => {
+		const t = getTicket(new URLSearchParams(location.search).get('ticket') ?? '');
+		if (!t || t.lesson !== lesson.slug) return;
+		ticket = t;
+		record = loadStory()[t.id] ?? updateTicket(t.id, () => {});
+	});
+	/** Count attempts only while the ticket is still open. */
+	function track(change: (r: TicketRecord) => void) {
+		if (ticket && record?.solvedAt === undefined) record = updateTicket(ticket.id, change);
+	}
+	function showSolution() {
+		track((r) => (r.usedSolution = true));
+		onShowSolution();
+	}
+
 	/* live step-by-step guide */
 	const guide = $derived(GUIDES[lesson.slug] ?? []);
 	const ticks = $derived.by(() => {
 		const ctx = {
 			ladder,
 			circuit,
+			hmi,
 			addr: addressResolver(symbols),
 			online,
 			passed: passed || completedBefore
@@ -76,7 +102,13 @@
 		setTimeout(() => {
 			results = runLessonTests(lesson, compiled.program, $state.snapshot(circuit) as Circuit);
 			checking = false;
-			if (results.every((r) => r.passed)) markCompleted(lesson.slug);
+			if (results.every((r) => r.passed)) {
+				markCompleted(lesson.slug);
+				if (ticket) {
+					justSolved = record?.solvedAt === undefined;
+					record = solveTicket(ticket.id);
+				}
+			} else track((r) => r.failedChecks++);
 		}, 20);
 	}
 </script>
@@ -86,6 +118,8 @@
 	aria-labelledby="lesson-title"
 	class="space-y-3 rounded-lg border border-sky-500/30 bg-sky-500/5 p-3"
 >
+	{#if ticket}<TicketCard {ticket} {record} {justSolved} part="brief" />{/if}
+
 	<div>
 		<p class="text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
 			{lesson.kind === 'debug'
@@ -142,7 +176,10 @@
 		{#if hintsShown < lesson.hints.length}
 			<button
 				class="rounded-md border border-slate-700 px-2.5 py-1.5 text-xs hover:border-slate-500"
-				onclick={() => hintsShown++}
+				onclick={() => {
+					hintsShown++;
+					track((r) => r.hints++);
+				}}
 			>
 				Podpowiedź {hintsShown + 1}/{lesson.hints.length}
 			</button>
@@ -174,7 +211,9 @@
 				</li>
 			{/each}
 		</ul>
-		{#if passed}
+		{#if passed && ticket}
+			<TicketCard {ticket} {record} {justSolved} part="debrief" />
+		{:else if passed}
 			<p class="rounded bg-emerald-500/15 px-2 py-1.5 text-xs font-semibold text-emerald-200">
 				Zaliczone! <a href={resolve('/learn')} class="underline">Dalej na ścieżce →</a>
 			</p>
@@ -182,7 +221,7 @@
 	{/if}
 
 	<div class="flex gap-3 border-t border-slate-800 pt-2 text-[11px]">
-		<button class="text-slate-400 underline hover:text-slate-200" onclick={onShowSolution}
+		<button class="text-slate-400 underline hover:text-slate-200" onclick={showSolution}
 			>Pokaż rozwiązanie</button
 		>
 		<button class="text-slate-400 underline hover:text-slate-200" onclick={onRestart}
