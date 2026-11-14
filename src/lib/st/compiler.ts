@@ -10,7 +10,8 @@ import {
 	type MathFn,
 	type MemoryConfig,
 	type NumType,
-	type Operand
+	type Operand,
+	mathOp
 } from '#lib/engine/index.js';
 import type { SymbolMap } from '#lib/symbols/symbols.js';
 import type { BinaryOp, Expr, Span, Stmt, Target, VarDecl } from './ast.js';
@@ -121,6 +122,18 @@ function typeOfAddress(a: Address): Value {
 }
 
 const isNumeric = (t: ValType) => t !== 'BOOL';
+
+/** Standard functions with a fixed number of positional arguments. */
+const FUNCTIONS: Record<string, number> = {
+	ABS: 1,
+	MIN: 2,
+	MAX: 2,
+	LIMIT: 3,
+	TRUNC: 1,
+	SHL: 2,
+	SHR: 2
+};
+const CONVERSION_RE = /^(BOOL|BYTE|INT|DINT|REAL|TIME)_TO_(BOOL|BYTE|INT|DINT|REAL|TIME)$/;
 const describeExpr = (e: Expr) =>
 	e.kind === 'name'
 		? e.name
@@ -369,10 +382,43 @@ export function compileSt(
 			case 'member':
 				return resolve(e).type; // unknown names are reported right here
 			case 'unary':
-				return e.op === 'NOT' ? 'BOOL' : typeOf(e.expr);
+				if (e.op === 'NOT') return typeOf(e.expr) === 'BOOL' ? 'BOOL' : 'DINT';
+				return typeOf(e.expr);
 			case 'binary':
-				if (['AND', 'OR', 'XOR', '=', '<>', '<', '>', '<=', '>='].includes(e.op)) return 'BOOL';
+				if (e.op === 'AND' || e.op === 'OR' || e.op === 'XOR')
+					return typeOf(e.left) === 'BOOL' || typeOf(e.right) === 'BOOL' ? 'BOOL' : 'DINT';
+				if (['=', '<>', '<', '>', '<=', '>='].includes(e.op)) return 'BOOL';
 				return typeOf(e.left) === 'REAL' || typeOf(e.right) === 'REAL' ? 'REAL' : 'DINT';
+			case 'fcall':
+				return callType(e);
+		}
+	}
+
+	function callType(e: Extract<Expr, { kind: 'fcall' }>): ValType {
+		const conv = CONVERSION_RE.exec(e.name);
+		const arity = conv ? 1 : FUNCTIONS[e.name];
+		if (arity === undefined) {
+			const hint =
+				vars.get(e.name)?.kind === 'fb'
+					? ` — call ${e.name} as a statement: ${e.name}(IN := …);`
+					: '';
+			throw new CompileError(`Unknown function "${e.name}"${hint}`, e);
+		}
+		if (e.args.length !== arity)
+			throw new CompileError(
+				`${e.name} takes ${arity} argument${arity > 1 ? 's' : ''}, not ${e.args.length}`,
+				e
+			);
+		if (conv) return conv[2] as ValType;
+		switch (e.name) {
+			case 'ABS':
+				return typeOf(e.args[0]) === 'REAL' ? 'REAL' : 'DINT';
+			case 'MIN':
+			case 'MAX':
+			case 'LIMIT':
+				return e.args.some((a) => typeOf(a) === 'REAL') ? 'REAL' : 'DINT';
+			default:
+				return 'DINT'; // TRUNC, SHL, SHR
 		}
 	}
 
@@ -406,7 +452,10 @@ export function compileSt(
 		'-': 'SUB',
 		'*': 'MUL',
 		'/': 'DIV',
-		MOD: 'MOD'
+		MOD: 'MOD',
+		AND: 'WAND',
+		OR: 'WOR',
+		XOR: 'WXOR'
 	};
 
 	function math(fn: MathFn, a: Operand, b: Operand, dst: AddrOperand) {
@@ -416,18 +465,89 @@ export function compileSt(
 	}
 
 	function fold(fn: MathFn, a: number, b: number, real: boolean): number | null {
-		if ((fn === 'DIV' || fn === 'MOD') && b === 0) return null;
-		const r =
-			fn === 'ADD'
-				? a + b
-				: fn === 'SUB'
-					? a - b
-					: fn === 'MUL'
-						? a * b
-						: fn === 'DIV'
-							? a / b
-							: a % b;
-		return real ? r : Math.trunc(r);
+		const r = mathOp(fn, a, b);
+		return r === null || real ? r : Math.trunc(r);
+	}
+
+	const ZERO: Operand = { kind: 'const', value: 0 };
+
+	/** a fn b into `target` (or a temporary); constant operands are folded at compile time. */
+	function op(
+		fn: MathFn,
+		a: Operand,
+		b: Operand,
+		real: boolean,
+		span: Span,
+		target?: AddrOperand
+	): Operand {
+		if (a.kind === 'const' && b.kind === 'const') {
+			const v = fold(fn, a.value, b.value, real);
+			if (v === null) throw new CompileError('Division by zero', span);
+			return { kind: 'const', value: v };
+		}
+		const dst = target ?? (isTemp(a, real) ? a : isTemp(b, real) ? b : allocTemp(real, span));
+		math(fn, a, b, dst);
+		return dst;
+	}
+
+	/** Standard function calls and type conversions. */
+	function evalCall(e: Extract<Expr, { kind: 'fcall' }>, target?: AddrOperand): Operand {
+		const type = callType(e);
+		const real = type === 'REAL';
+		const num = (x: Expr) => evalNum(x);
+		const conv = CONVERSION_RE.exec(e.name);
+		if (conv) {
+			const [, from, to] = conv;
+			const arg = e.args[0];
+			if ((typeOf(arg) === 'BOOL') !== (from === 'BOOL'))
+				throw new CompileError(`${e.name} expects a ${from} argument`, arg);
+			if (to === 'BOOL')
+				throw new CompileError(`${e.name} gives a BOOL — a number is needed here`, e);
+			if (from === 'BOOL') {
+				// 0, then 1 if the condition is true
+				const dst = target ?? allocTemp(false, e);
+				emit({ op: 'LDC', value: true });
+				emit({ op: 'MOVE', src: ZERO, dst });
+				emit({ op: 'POP' });
+				pushBool(arg);
+				emit({ op: 'MOVE', src: { kind: 'const', value: 1 }, dst });
+				emit({ op: 'POP' });
+				return dst;
+			}
+			const x = num(arg);
+			const fromReal = typeOf(arg) === 'REAL';
+			if (real) {
+				if (x.kind === 'const' || isTemp(x, true)) return x;
+				const dst = target && target.type === 'REAL' ? target : allocTemp(true, e);
+				emit({ op: 'LDC', value: true });
+				emit({ op: 'MOVE', src: x, dst });
+				emit({ op: 'POP' });
+				return dst;
+			}
+			let result = fromReal ? op('ROUND', x, ZERO, false, e, target) : x;
+			if (to === 'BYTE')
+				result = op('WAND', result, { kind: 'const', value: 255 }, false, e, target);
+			return result;
+		}
+		for (const a of e.args)
+			if (typeOf(a) === 'BOOL') throw new CompileError(`${e.name} needs numbers, not a BOOL`, a);
+		switch (e.name) {
+			case 'ABS':
+				return op('ABS', num(e.args[0]), ZERO, real, e, target);
+			case 'TRUNC':
+				return op('TRUNC', num(e.args[0]), ZERO, false, e, target);
+			case 'MIN':
+			case 'MAX':
+			case 'SHL':
+			case 'SHR':
+				return op(e.name, num(e.args[0]), num(e.args[1]), real, e, target);
+			default: {
+				// LIMIT(MN, IN, MX) = MIN(MAX(IN, MN), MX)
+				const [mn, input, mx] = e.args.map(num);
+				const low = op('MAX', input, mn, real, e);
+				return op('MIN', low, mx, real, e, target);
+			}
+		}
 	}
 
 	/** Evaluates a numeric expression; returns where its value is. `target` may receive the result directly. */
@@ -446,8 +566,14 @@ export function compileSt(
 					throw new CompileError(`${describeExpr(e)} is a BOOL — a number is needed here`, e);
 				return { kind: 'addr', addr: v.addr, type: v.numType };
 			}
+			case 'fcall':
+				return evalCall(e, target);
 			case 'unary': {
-				if (e.op === 'NOT') throw new CompileError('NOT works on BOOL values only', e);
+				if (e.op === 'NOT') {
+					if (typeOf(e.expr) === 'REAL')
+						throw new CompileError('NOT works on BOOL or integer values, not REAL', e);
+					return op('WNOT', evalNum(e.expr), ZERO, false, e, target);
+				}
 				const x = evalNum(e.expr);
 				if (x.kind === 'const') return { kind: 'const', value: -x.value };
 				const real = typeOf(e) === 'REAL';
@@ -459,16 +585,14 @@ export function compileSt(
 				const fn = MATH[e.op];
 				if (!fn) throw new CompileError(`${e.op} gives a BOOL — a number is needed here`, e);
 				const real = typeOf(e) === 'REAL';
+				if (
+					(fn === 'WAND' || fn === 'WOR' || fn === 'WXOR') &&
+					(typeOf(e.left) === 'REAL' || typeOf(e.right) === 'REAL')
+				)
+					throw new CompileError(`${e.op} works on BOOL or integer values, not REAL`, e);
 				const a = evalNum(e.left);
 				const b = evalNum(e.right);
-				if (a.kind === 'const' && b.kind === 'const') {
-					const v = fold(fn, a.value, b.value, real);
-					if (v === null) throw new CompileError('Division by zero', e);
-					return { kind: 'const', value: v };
-				}
-				const dst = target ?? (isTemp(a, real) ? a : isTemp(b, real) ? b : allocTemp(real, e));
-				math(fn, a, b, dst);
-				return dst;
+				return op(fn, a, b, real, e, target);
 			}
 		}
 	}
@@ -494,8 +618,17 @@ export function compileSt(
 				emit({ op: 'LD', addr: v.addr });
 				return;
 			}
+			case 'fcall': {
+				if (callType(e) !== 'BOOL')
+					throw new CompileError('A BOOL is needed here, not a number', e);
+				// *_TO_BOOL: TRUE when not zero
+				if (typeOf(e.args[0]) === 'BOOL') return pushBool(e.args[0]);
+				emit({ op: 'CMP', cmp: '<>', a: evalNum(e.args[0]), b: ZERO });
+				return;
+			}
 			case 'unary':
-				if (e.op === '-') throw new CompileError('A BOOL is needed here, not a number', e);
+				if (e.op === '-' || typeOf(e.expr) !== 'BOOL')
+					throw new CompileError('A BOOL is needed here, not a number', e);
 				pushBool(e.expr);
 				emit({ op: 'NOT' });
 				return;
@@ -503,7 +636,7 @@ export function compileSt(
 				if (e.op === 'AND' || e.op === 'OR' || e.op === 'XOR') {
 					if (typeOf(e.left) !== 'BOOL' || typeOf(e.right) !== 'BOOL') {
 						throw new CompileError(
-							`${e.op} on numbers (bitwise) is not supported — use BOOL operands`,
+							`${e.op} needs two BOOLs (or two integers for a bitwise ${e.op}) — compare the number, e.g. (x ${e.op} 16#01) <> 0`,
 							e
 						);
 					}
@@ -565,7 +698,7 @@ export function compileSt(
 			);
 		const dst: AddrOperand = { kind: 'addr', addr: v.addr, type: v.numType };
 		const direct =
-			(value.kind === 'binary' || value.kind === 'unary') &&
+			(value.kind === 'binary' || value.kind === 'unary' || value.kind === 'fcall') &&
 			(typeOf(value) === 'REAL') === (v.type === 'REAL');
 		const result = evalNum(value, direct ? dst : undefined);
 		if (result !== dst) {

@@ -13,21 +13,32 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Realistic scan cycle** — process images, RUN / STOP / PAUSE / single STEP, adjustable speed
   (×0.1 – ×10), faults and a watchdog.
 - **Ladder editor** — contacts (NO, NC, P, N), coils (normal, negated, set, reset), timers,
-  counters and compare boxes, parallel branches, with **live power flow** while running.
+  counters, compare, MOVE and MATH boxes, parallel branches, with **live power flow** while
+  running. Copy / paste, insert before / after, change the element type in place.
+- **Static analysis** — non-blocking warnings (double coils, a timer used twice, wired I/O the
+  program ignores, markers read but never written) and a **cross-reference** list.
 - **Structured Text** — hand-written lexer, recursive-descent parser and code generator:
   `IF / CASE / FOR / WHILE / REPEAT`, `TON / TOF / TP / CTU / CTD / R_TRIG / F_TRIG`, automatic
-  `VAR` allocation; CodeMirror editor with highlighting, completions and inline errors.
+  `VAR` allocation, standard functions (`ABS`, `MIN`, `MAX`, `LIMIT`, `TRUNC`, `SHL`, `SHR`,
+  `*_TO_*` conversions) and bitwise `AND / OR / XOR / NOT` on integers; CodeMirror editor with
+  highlighting, completions and inline errors.
 - **Circuit editor** — field devices wired to the PLC's terminals (Svelte Flow); devices are
-  operated by hand while the program runs. Wired devices become symbols automatically.
+  operated by hand while the program runs. Wired devices become symbols automatically. Includes
+  an e-stop that latches, a HAND / 0 / AUTO selector and a contactor with a feedback contact
+  (and an overload trip to simulate a fault).
 - **Symbol table** — `Start` instead of `I0.0`, in both languages.
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
-  pusher, each with simple physics.
+  pusher, each with simple physics; connect one to any project.
 - **7 auto-graded lessons** — from a first rung to process control. Your program runs against
   test cases in a headless PLC; every lesson ships a reference solution that the test suite
   proves passes (in LAD, and for several lessons also in ST).
 - **Projects** — saved in the browser, undo / redo, export / import as JSON, and **share links**
   that carry the whole project in the URL fragment (nothing is uploaded).
+- **Reports** — a printable page (PDF via the browser) with the ladder diagram or ST code, symbol
+  table and I/O list; each section also exports as PNG for lab reports.
+- **Works offline** — installable PWA; a service worker caches the whole app after the first
+  visit.
 
 | Circuit                                                         | Watch table & trend                                                 |
 | --------------------------------------------------------------- | ------------------------------------------------------------------- |

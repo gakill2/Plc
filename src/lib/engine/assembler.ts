@@ -1,6 +1,13 @@
 import { formatAddress, parseAddress } from './address.js';
 import type { Instr, Program } from './ir.js';
-import type { AddrOperand, CmpOp, MathFn, NumType, Operand } from './types.js';
+import {
+	UNARY_MATH,
+	type AddrOperand,
+	type CmpOp,
+	type MathFn,
+	type NumType,
+	type Operand
+} from './types.js';
 
 /*
  * A tiny text assembler for the IR, using IL-like mnemonics. Handy for tests, for debugging the
@@ -196,6 +203,13 @@ function build({ mnemonic: m, args }: Line, labels: Map<string, number>): Instr 
 		case 'MUL':
 		case 'DIV':
 		case 'MOD':
+		case 'MIN':
+		case 'MAX':
+		case 'WAND':
+		case 'WOR':
+		case 'WXOR':
+		case 'SHL':
+		case 'SHR':
 			arity(3);
 			return {
 				op: 'MATH',
@@ -203,6 +217,19 @@ function build({ mnemonic: m, args }: Line, labels: Map<string, number>): Instr 
 				a: parseOperand(args[0]),
 				b: parseOperand(args[1]),
 				dst: destination(args[2])
+			};
+		case 'ABS':
+		case 'NEG':
+		case 'WNOT':
+		case 'TRUNC':
+		case 'ROUND':
+			arity(2);
+			return {
+				op: 'MATH',
+				fn: m as MathFn,
+				a: parseOperand(args[0]),
+				b: { kind: 'const', value: 0 },
+				dst: destination(args[1])
 			};
 		case 'JMP':
 		case 'JMPC':
@@ -265,7 +292,9 @@ export function disassemble(program: Program): string[] {
 			case 'MOVE':
 				return `MOVE ${formatOperand(ins.src)}, ${formatOperand(ins.dst)}`;
 			case 'MATH':
-				return `${ins.fn} ${formatOperand(ins.a)}, ${formatOperand(ins.b)}, ${formatOperand(ins.dst)}`;
+				return UNARY_MATH.includes(ins.fn)
+					? `${ins.fn} ${formatOperand(ins.a)}, ${formatOperand(ins.dst)}`
+					: `${ins.fn} ${formatOperand(ins.a)}, ${formatOperand(ins.b)}, ${formatOperand(ins.dst)}`;
 			case 'JMP':
 			case 'JMPC':
 			case 'JMPCN':

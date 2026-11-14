@@ -106,6 +106,16 @@ export function parse(src: string): ParseResult {
 			case 'address':
 				return { kind: 'address', text: t.text, from: t.from, to: t.to };
 			case 'ident': {
+				if (isOp('(')) {
+					next();
+					const args: Expr[] = [];
+					if (!isOp(')')) {
+						do args.push(expression());
+						while (isOp(',') && next());
+					}
+					const close = expectOp(')');
+					return { kind: 'fcall', name: t.text.toUpperCase(), args, from: t.from, to: close.to };
+				}
 				if (isOp('.')) {
 					next();
 					const member = expectIdent('a member name like Q or ET');

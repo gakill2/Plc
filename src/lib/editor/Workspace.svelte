@@ -372,6 +372,11 @@
 					class="rounded px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
 					onclick={exportFile}>Export</button
 				>
+				<a
+					class="rounded px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+					href={resolve('/editor/[id]/report', { id })}
+					title="Printable report: ladder diagram, symbol table and I/O list (PDF / PNG)">Report</a
+				>
 			</div>
 		</div>
 		<nav

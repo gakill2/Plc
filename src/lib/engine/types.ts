@@ -23,4 +23,41 @@ export type AddrOperand = { kind: 'addr'; addr: Address; type?: NumType };
 export type Operand = ConstOperand | AddrOperand;
 
 export type CmpOp = '==' | '<>' | '<' | '>' | '<=' | '>=';
-export type MathFn = 'ADD' | 'SUB' | 'MUL' | 'DIV' | 'MOD';
+/**
+ * Numeric operations of the MATH instruction. Binary: a fn b. Unary (see UNARY_MATH): fn a, b unused.
+ * W-prefixed functions are bitwise (on the two's-complement integer value).
+ */
+export type MathFn =
+	| 'ADD'
+	| 'SUB'
+	| 'MUL'
+	| 'DIV'
+	| 'MOD'
+	| 'MIN'
+	| 'MAX'
+	| 'WAND'
+	| 'WOR'
+	| 'WXOR'
+	| 'SHL'
+	| 'SHR'
+	| 'ABS'
+	| 'NEG'
+	| 'WNOT'
+	| 'TRUNC'
+	| 'ROUND';
+
+export const UNARY_MATH: readonly MathFn[] = ['ABS', 'NEG', 'WNOT', 'TRUNC', 'ROUND'];
+export const BINARY_MATH: readonly MathFn[] = [
+	'ADD',
+	'SUB',
+	'MUL',
+	'DIV',
+	'MOD',
+	'MIN',
+	'MAX',
+	'WAND',
+	'WOR',
+	'WXOR',
+	'SHL',
+	'SHR'
+];

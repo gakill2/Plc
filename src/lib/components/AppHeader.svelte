@@ -2,12 +2,13 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { APP_NAME, NAV_ITEMS, REPO_URL } from '#lib/config.js';
+	import InstallButton from './InstallButton.svelte';
 	import StatusLed from './StatusLed.svelte';
 
 	const isActive = (href: string) => page.url.pathname.startsWith(href);
 </script>
 
-<header class="border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+<header class="border-b border-slate-800 bg-slate-950/80 backdrop-blur print:hidden">
 	<div class="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4">
 		<a
 			href={resolve('/')}
@@ -31,10 +32,13 @@
 			{/each}
 		</nav>
 
+		<div class="ml-auto flex items-center gap-3">
+			<InstallButton />
+		</div>
 		<!-- eslint-disable svelte/no-navigation-without-resolve -- external link -->
 		<a
 			href={REPO_URL}
-			class="ml-auto text-sm text-slate-400 hover:text-white"
+			class="text-sm text-slate-400 hover:text-white"
 			target="_blank"
 			rel="noreferrer"
 		>

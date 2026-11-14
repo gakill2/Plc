@@ -17,6 +17,8 @@ export type Expr = Span &
 		| { kind: 'member'; object: string; member: string }
 		| { kind: 'unary'; op: 'NOT' | '-'; expr: Expr }
 		| { kind: 'binary'; op: BinaryOp; left: Expr; right: Expr }
+		/** Standard function call with positional arguments, e.g. MAX(a, b) or INT_TO_REAL(x). */
+		| { kind: 'fcall'; name: string; args: Expr[] }
 	);
 
 /** Something that can be assigned to. */

@@ -16,7 +16,11 @@ export default defineConfig({
 
 			// Cloudflare Workers: prerendered pages are served as static assets,
 			// the rest (e.g. /editor/[id]) goes through the worker. Config: wrangler.jsonc.
-			adapter: adapter()
+			adapter: adapter(),
+
+			// Absolute asset URLs: the offline service worker serves one cached editor page for every
+			// /editor/... URL, so the HTML must not depend on how deep the URL is.
+			paths: { relative: false }
 		})
 	],
 	test: {

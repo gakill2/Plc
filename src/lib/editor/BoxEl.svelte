@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { CmpOp, MathFn } from '#lib/engine/index.js';
+	import { BINARY_MATH, type CmpOp, type MathFn } from '#lib/engine/index.js';
 	import { getLadderView } from '#lib/ladder/context.js';
 	import type { Compare, CounterBox, MathBox, MoveBox, TimerBox } from '#lib/ladder/model.js';
 	import { operandInput, wireColor } from './colors.js';
@@ -13,7 +13,7 @@
 	const inPower = $derived(view.monitor?.power(inId) ?? false);
 	const outPower = $derived(view.monitor?.power(el.id) ?? false);
 	const CMP_OPS: CmpOp[] = ['==', '<>', '<', '>', '<=', '>='];
-	const MATH_FNS: MathFn[] = ['ADD', 'SUB', 'MUL', 'DIV', 'MOD'];
+	const MATH_FNS = BINARY_MATH;
 	type IoKey = 'src' | 'a' | 'b' | 'dst';
 	const ioFields: { key: IoKey; name: string }[] = $derived(
 		el.kind === 'move'

@@ -47,7 +47,7 @@ function compare(cmp: CmpOp, a: number, b: number): boolean {
 }
 
 /** Returns null when the operation is undefined (division by zero). */
-function math(fn: MathFn, a: number, b: number): number | null {
+export function mathOp(fn: MathFn, a: number, b: number): number | null {
 	switch (fn) {
 		case 'ADD':
 			return a + b;
@@ -59,6 +59,31 @@ function math(fn: MathFn, a: number, b: number): number | null {
 			return b === 0 ? null : a / b;
 		case 'MOD':
 			return b === 0 ? null : a % b;
+		case 'MIN':
+			return Math.min(a, b);
+		case 'MAX':
+			return Math.max(a, b);
+		case 'WAND':
+			return Math.trunc(a) & Math.trunc(b);
+		case 'WOR':
+			return Math.trunc(a) | Math.trunc(b);
+		case 'WXOR':
+			return Math.trunc(a) ^ Math.trunc(b);
+		case 'SHL':
+			return b >= 32 ? 0 : Math.trunc(a) << Math.max(0, b);
+		case 'SHR':
+			return Math.trunc(a) >> Math.min(31, Math.max(0, b));
+		case 'ABS':
+			return Math.abs(a);
+		case 'NEG':
+			return -a;
+		case 'WNOT':
+			return ~Math.trunc(a);
+		case 'TRUNC':
+			return Math.trunc(a);
+		case 'ROUND':
+			// IEC REAL_TO_INT: round half away from zero
+			return Math.sign(a) * Math.round(Math.abs(a));
 	}
 }
 
@@ -189,7 +214,7 @@ export function execute(
 					break;
 				case 'MATH':
 					if (peek()) {
-						const result = math(ins.fn, value(ins.a), value(ins.b));
+						const result = mathOp(ins.fn, value(ins.a), value(ins.b));
 						if (result === null) {
 							pop();
 							push(false);

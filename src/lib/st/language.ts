@@ -62,6 +62,8 @@ const parser: StreamParser<{ comment: boolean; afterDot: boolean }> = {
 			if (upper === 'TRUE' || upper === 'FALSE') return 'bool';
 			if (KEYWORDS.has(upper)) return 'keyword';
 			if (TYPE_SET.has(upper)) return 'typeName';
+			if (upper in FUNCTION_SIGNATURES && stream.match(/^\s*\(/, false))
+				return 'variableName.function';
 			return 'variableName';
 		}
 		if (stream.match(/^(:=|<>|<=|>=|\.\.|[-+*/=<>&])/)) return 'operator';
@@ -91,6 +93,32 @@ const FB_MEMBERS: Record<string, string[]> = {
 
 const SNIPPET_KEYWORDS = [...KEYWORDS].map<Completion>((k) => ({ label: k, type: 'keyword' }));
 const TYPE_COMPLETIONS = ST_TYPES.map<Completion>((t) => ({ label: t, type: 'type' }));
+
+/** Standard functions: name → signature shown in the autocomplete. */
+export const FUNCTION_SIGNATURES: Record<string, string> = {
+	ABS: 'ABS(IN) — absolute value',
+	MIN: 'MIN(IN1, IN2) — smaller value',
+	MAX: 'MAX(IN1, IN2) — larger value',
+	LIMIT: 'LIMIT(MN, IN, MX) — IN clamped to MN…MX',
+	TRUNC: 'TRUNC(IN) — REAL → integer, drops the fraction',
+	SHL: 'SHL(IN, N) — shift bits left',
+	SHR: 'SHR(IN, N) — shift bits right',
+	INT_TO_REAL: 'INT_TO_REAL(IN)',
+	REAL_TO_INT: 'REAL_TO_INT(IN) — rounds',
+	DINT_TO_REAL: 'DINT_TO_REAL(IN)',
+	REAL_TO_DINT: 'REAL_TO_DINT(IN) — rounds',
+	INT_TO_DINT: 'INT_TO_DINT(IN)',
+	DINT_TO_INT: 'DINT_TO_INT(IN)',
+	BOOL_TO_INT: 'BOOL_TO_INT(IN) — 0 or 1',
+	INT_TO_BOOL: 'INT_TO_BOOL(IN) — TRUE if not 0',
+	BYTE_TO_INT: 'BYTE_TO_INT(IN)',
+	INT_TO_BYTE: 'INT_TO_BYTE(IN) — keeps the low 8 bits',
+	TIME_TO_DINT: 'TIME_TO_DINT(IN) — milliseconds',
+	DINT_TO_TIME: 'DINT_TO_TIME(IN) — from milliseconds'
+};
+const FUNCTION_COMPLETIONS = Object.entries(FUNCTION_SIGNATURES).map<Completion>(
+	([label, detail]) => ({ label, type: 'function', detail, apply: `${label}(` })
+);
 
 export interface CompletionNames {
 	symbols: { name: string; address: string }[];
@@ -130,7 +158,8 @@ export function stCompletions(names: () => CompletionNames) {
 					boost: 1
 				})),
 				...SNIPPET_KEYWORDS,
-				...TYPE_COMPLETIONS
+				...TYPE_COMPLETIONS,
+				...FUNCTION_COMPLETIONS
 			],
 			validFor: /^[A-Za-z_][A-Za-z0-9_]*$/
 		};

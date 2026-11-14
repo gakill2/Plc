@@ -116,12 +116,13 @@ describe('compiler — less common paths', () => {
 
 	it.each([
 		['Q0.0 := 5;', /a BOOL expression is needed/],
-		['Q0.0 := NOT 5;', /A BOOL is needed here, not a number/],
+		['Q0.0 := NOT 5;', /a BOOL expression is needed/],
 		['Q0.0 := -I0.0;', /A BOOL is needed here, not a number/],
 		['MW0 := NOT I0.0;', /a number is needed, not a BOOL/],
 		['MW0 := I0.0 + 1;', /is a BOOL — a number is needed/],
 		['MW0 := TRUE + 1;', /not TRUE \/ FALSE/],
-		['Q0.0 := MW0 AND MW2;', /bitwise/],
+		['Q0.0 := MW0 AND MW2;', /a BOOL expression is needed/],
+		['Q0.0 := MW0 AND I0.0;', /needs two BOOLs/],
 		['Q0.0 := I0.0 = 1;', /Cannot compare a BOOL with a number/],
 		['Q0.0 := I0.0 < I0.1;', /Cannot compare a BOOL with a BOOL using </],
 		['Q0.0 := MW0 + 1;', /a BOOL expression is needed/],
