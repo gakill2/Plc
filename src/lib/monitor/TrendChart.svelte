@@ -1,9 +1,11 @@
 <script lang="ts">
-	import type { PlcRuntime } from '#lib/runtime/runtime.svelte.js';
+	import type { TraceBuffer } from '#lib/runtime/trace.js';
 	import type { TraceSample } from '#lib/runtime/protocol.js';
 	import { formatValue, type TrendLane } from './watch.js';
 
-	type Props = { runtime: PlcRuntime; lanes: TrendLane[]; onRestart: () => void };
+	/** Anything with a current time and a trace — the PLC runtime or a tutorial mini-simulator. */
+	type TrendSource = { readonly snapshot: { timeMs: number } | null; readonly trace: TraceBuffer };
+	type Props = { runtime: TrendSource; lanes: TrendLane[]; onRestart: () => void };
 	let { runtime, lanes, onRestart }: Props = $props();
 
 	const WINDOWS = [1000, 2000, 5000, 10_000, 30_000, 60_000];

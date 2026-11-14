@@ -27,7 +27,33 @@
 	</p>
 	<p class="mt-2 text-sm text-slate-500">{done.size} / {LESSONS.length} completed</p>
 
-	<ol class="mt-8 space-y-3">
+	<a
+		href={resolve('/learn/basics')}
+		lang="pl"
+		class="mt-8 flex items-center gap-5 rounded-xl border border-sky-500/40 bg-gradient-to-r from-sky-500/15 to-transparent p-5 transition-colors hover:border-sky-400"
+	>
+		<span
+			class="grid size-12 shrink-0 place-items-center rounded-full bg-sky-500 text-xl text-slate-950"
+			>📘</span
+		>
+		<span class="min-w-0 flex-1">
+			<span class="flex items-center gap-2">
+				<span class="text-lg font-semibold text-white">Podstawy PLC — samouczek</span>
+				<span class="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">PL</span>
+			</span>
+			<span class="block text-sm text-slate-400">
+				Teoria krok po kroku z działającymi symulatorami i pytaniami: cykl skanowania, styki i
+				cewki, timery, liczniki, ST, bezpieczeństwo. Plus słowniczek PL – EN.
+			</span>
+		</span>
+		<span class="text-slate-400" aria-hidden="true">→</span>
+	</a>
+
+	<h2 class="mt-10 text-sm font-semibold tracking-wider text-slate-400 uppercase">
+		Hands-on lessons
+	</h2>
+
+	<ol class="mt-3 space-y-3">
 		{#each LESSONS as lesson, i (lesson.slug)}
 			<li>
 				<a
