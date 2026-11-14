@@ -27,6 +27,8 @@
 	import IoPanel from './IoPanel.svelte';
 	import LadderEditor from './LadderEditor.svelte';
 	import XrefPanel from './XrefPanel.svelte';
+	import ExplainPanel from './ExplainPanel.svelte';
+	import DebugView from './DebugView.svelte';
 	import { findRung } from '#lib/ladder/ops.js';
 	import Palette from './Palette.svelte';
 	import RuntimeToolbar from './RuntimeToolbar.svelte';
@@ -39,7 +41,7 @@
 	type Props = { projectId: string };
 	let { projectId }: Props = $props();
 
-	type View = 'program' | 'process' | 'circuit' | 'symbols' | 'watch';
+	type View = 'program' | 'process' | 'circuit' | 'symbols' | 'watch' | 'debug';
 
 	let showTrend = $state(true);
 
@@ -65,7 +67,8 @@
 		...(project.scenario ? [{ id: 'process' as const, label: 'Process' }] : []),
 		{ id: 'circuit', label: 'Circuit' },
 		{ id: 'symbols', label: 'Symbols' },
-		{ id: 'watch', label: 'Watch' }
+		{ id: 'watch', label: 'Watch' },
+		{ id: 'debug', label: 'Debug' }
 	]);
 
 	// The simulated plant runs in the worker next to the PLC.
@@ -283,7 +286,7 @@
 	}
 
 	function showSolution() {
-		if (lesson && confirm('Replace your program with the reference solution?')) {
+		if (lesson && confirm('Zastąpić Twój program rozwiązaniem wzorcowym?')) {
 			project.ladder.program = lesson.solution();
 			project.ladder.select(null);
 			view = 'program';
@@ -293,7 +296,7 @@
 	function restartLesson() {
 		if (
 			lesson &&
-			confirm('Start this lesson over? Your program, circuit and symbols will be reset.')
+			confirm('Zacząć ćwiczenie od nowa? Program, obwód i symbole wrócą do stanu początkowego.')
 		) {
 			runtime.stop();
 			project = new ProjectState(lesson.starter());
@@ -479,6 +482,15 @@
 					<div class="h-full overflow-auto">
 						<SymbolTable {project} locked={runtime.online} />
 					</div>
+				{:else if view === 'debug'}
+					<DebugView
+						compiled={loaded && runtime.online ? loaded : project.compiled}
+						snapshot={runtime.snapshot}
+						names={project.symbols.reverse}
+						language={project.language}
+						{place}
+						onSelect={(id) => doc.select(id)}
+					/>
 				{:else}
 					<div class="h-full overflow-auto">
 						<WatchTable {project} {runtime} />
@@ -504,6 +516,10 @@
 					blocked={problems.some((p) => p.source !== 'circuit')}
 					onShowSolution={showSolution}
 					onRestart={restartLesson}
+					ladder={doc.program}
+					symbols={project.symbols.map}
+					online={runtime.online}
+					language={project.language}
 				/>
 			{/if}
 			<IoPanel {runtime} labels={terminalLabels} />
@@ -560,6 +576,8 @@
 					</p>
 				{/if}
 			</section>
+
+			<ExplainPanel {doc} {monitor} language={project.language} />
 
 			<CodeView
 				compiled={loaded && runtime.online ? loaded : project.compiled}

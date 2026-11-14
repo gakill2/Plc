@@ -4,7 +4,7 @@
  * writes the PLC inputs (sensors) that the next scan will read.
  */
 
-export type ProcessKind = 'traffic' | 'tank' | 'conveyor';
+export type ProcessKind = 'traffic' | 'tank' | 'conveyor' | 'line';
 
 export interface ProcessIO {
 	output(terminal: string): boolean;
@@ -55,7 +55,50 @@ export interface ConveyorState {
 	sensors: { entry: boolean; tall: boolean; end: boolean };
 }
 
-export type ProcessState = TrafficState | TankState | ConveyorState;
+export interface Workpiece {
+	id: number;
+	/** position of the front edge along the belt, in metres */
+	x: number;
+	drilled: boolean;
+	/** a crack the inspection station finds — must be rejected */
+	cracked: boolean;
+	/** hit by the drill or crushed — always scrap */
+	damaged: boolean;
+}
+
+export interface LineState {
+	kind: 'line';
+	belt: boolean;
+	stopper: number;
+	/** drill stroke: 0 = top, 1 = bottom */
+	drill: number;
+	spindle: boolean;
+	ejector: number;
+	parts: Workpiece[];
+	/** drilling progress of the part under the drill, 0 … 1 */
+	progress: number;
+	good: number;
+	rejected: number;
+	/** good parts pushed off by mistake */
+	wrongRejected: number;
+	/** bad (undrilled, cracked or damaged) parts that reached the end */
+	badDelivered: number;
+	crashes: number;
+	toolBreaks: number;
+	autoFeed: boolean;
+	sensors: {
+		atEntry: boolean;
+		atDrill: boolean;
+		drillTop: boolean;
+		drillBottom: boolean;
+		atCheck: boolean;
+		qualityOk: boolean;
+	};
+	/** last thing that went wrong, for the view */
+	lastFault: string | null;
+}
+
+export type ProcessState = TrafficState | TankState | ConveyorState | LineState;
 
 export interface ProcessModel {
 	readonly kind: ProcessKind;

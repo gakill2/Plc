@@ -8,8 +8,10 @@
 		explanation: string;
 		solved: boolean;
 		onSolved: () => void;
+		/** Called on every answer, right or wrong. */
+		onAnswer?: (right: boolean) => void;
 	};
-	let { question, options, correct, explanation, solved, onSolved }: Props = $props();
+	let { question, options, correct, explanation, solved, onSolved, onAnswer }: Props = $props();
 
 	let chosen = $state<number | null>(null);
 	const answered = $derived(chosen !== null);
@@ -17,6 +19,7 @@
 
 	function choose(i: number) {
 		chosen = i;
+		onAnswer?.(i === correct);
 		if (i === correct) onSolved();
 	}
 </script>

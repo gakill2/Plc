@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import { APP_NAME, APP_TAGLINE } from '#lib/config.js';
 	import StatusLed from '#lib/components/StatusLed.svelte';
+	import ContinueCard from '#lib/learn/ContinueCard.svelte';
 
 	const features = [
 		{
@@ -43,6 +44,10 @@
 		>
 			Start learning
 		</a>
+	</div>
+
+	<div class="mt-6 max-w-xl">
+		<ContinueCard showWhenFresh={false} />
 	</div>
 
 	<ol class="mt-16 flex flex-wrap items-center gap-2 font-mono text-sm text-slate-400">

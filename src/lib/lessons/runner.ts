@@ -15,7 +15,7 @@ export function runLessonTests(lesson: Lesson, program: Instr[]): TestResult[] {
 			plc.load(program);
 		} catch (e) {
 			const message = e instanceof ProgramError ? e.message : String(e);
-			return { name: test.name, passed: false, message: `Program does not load: ${message}` };
+			return { name: test.name, passed: false, message: `Program się nie ładuje: ${message}` };
 		}
 		plc.run();
 
@@ -39,7 +39,7 @@ export function runLessonTests(lesson: Lesson, program: Instr[]): TestResult[] {
 
 			for (let t = 0; t < step.wait; t += SCAN_MS) {
 				plc.scan(SCAN_MS);
-				if (plc.mode === 'FAULT') return fail(`PLC fault: ${plc.fault?.message}`);
+				if (plc.mode === 'FAULT') return fail(`Błąd PLC: ${plc.fault?.message}`);
 				process?.step(SCAN_MS, io);
 				const problem = test.always?.(ctx);
 				if (problem) return fail(problem);
@@ -49,12 +49,12 @@ export function runLessonTests(lesson: Lesson, program: Instr[]): TestResult[] {
 				const actual = plc.getOutput(terminal);
 				if (actual !== expected) {
 					return fail(
-						`After “${step.label}”: expected ${terminal} = ${expected ? 1 : 0}, got ${actual ? 1 : 0}`
+						`Po kroku „${step.label}”: ${terminal} powinno być ${expected ? 1 : 0}, a jest ${actual ? 1 : 0}`
 					);
 				}
 			}
 			const problem = step.check?.(ctx);
-			if (problem) return fail(`After “${step.label}”: ${problem}`);
+			if (problem) return fail(`Po kroku „${step.label}”: ${problem}`);
 		}
 		return { name: test.name, passed: true };
 	});

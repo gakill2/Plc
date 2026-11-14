@@ -42,7 +42,7 @@ describe('runner', () => {
 		const results = runLessonTests(lesson, compile(lesson, wrong).program);
 		expect(results[0]).toMatchObject({
 			passed: false,
-			message: 'After “release Start”: expected Q0.0 = 1, got 0'
+			message: 'Po kroku „puść Start”: Q0.0 powinno być 1, a jest 0'
 		});
 	});
 
@@ -51,6 +51,6 @@ describe('runner', () => {
 		const results = runLessonTests(lesson, [
 			{ op: 'ST', addr: { area: 'I', size: 'X', byte: 0, bit: 0 } }
 		]);
-		expect(results[0].message).toMatch(/does not load/);
+		expect(results[0].message).toMatch(/nie ładuje/);
 	});
 });

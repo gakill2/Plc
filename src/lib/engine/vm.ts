@@ -19,6 +19,12 @@ export class PlcFault extends Error {
 }
 
 /** VM state that survives between scans (edge memory keyed by instruction index). */
+/** Observes execution instruction by instruction — used by the scan-cycle debugger. */
+export interface ExecHook {
+	before(pc: number, stack: readonly boolean[]): void;
+	after(pc: number, next: number, stack: readonly boolean[]): void;
+}
+
 export class VmState {
 	readonly edges = new Map<number, boolean>();
 	/** Probe values recorded by TAP — read by the UI to show power flow. */
@@ -96,7 +102,8 @@ export function execute(
 	mem: Memory,
 	state: VmState,
 	dtMs: number,
-	maxSteps = DEFAULT_MAX_STEPS
+	maxSteps = DEFAULT_MAX_STEPS,
+	hook?: ExecHook
 ): number {
 	const stack: boolean[] = [];
 	let pc = 0;
@@ -125,6 +132,7 @@ export function execute(
 			}
 			const ins = program[pc];
 			let next = pc + 1;
+			hook?.before(pc, stack);
 
 			switch (ins.op) {
 				case 'LD':
@@ -244,6 +252,7 @@ export function execute(
 					break;
 			}
 
+			hook?.after(pc, next, stack);
 			pc = next;
 		}
 	} catch (e) {

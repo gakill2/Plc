@@ -311,7 +311,12 @@ Z tych trzech da się zbudować każdą funkcję logiczną, np. **XOR** — „d
 				correct: 1,
 				explanation: `„I” to AND, czyli styki połączone szeregowo — prąd przejdzie tylko, gdy oba warunki są spełnione.`
 			},
-			{ kind: 'lesson', slug: 'and-or', text: 'Zaprogramuj prasę z oburęcznym sterowaniem.' }
+			{ kind: 'lesson', slug: 'and-or', text: 'Zaprogramuj prasę z oburęcznym sterowaniem.' },
+			{
+				kind: 'lesson',
+				slug: 'bug-double-coil',
+				text: 'Znajdź błąd: dwa przyciski, jedna lampka — a działa tylko jeden.'
+			}
 		]
 	},
 
@@ -390,7 +395,12 @@ Z tych trzech da się zbudować każdą funkcję logiczną, np. **XOR** — „d
 				correct: 0,
 				explanation: `Ten styk to właśnie **podtrzymanie**. Bez niego cewka dostaje prąd tylko przez przycisk Start — puszczasz przycisk, silnik staje.`
 			},
-			{ kind: 'lesson', slug: 'self-holding', text: 'Zaprogramuj start/stop silnika w edytorze.' }
+			{ kind: 'lesson', slug: 'self-holding', text: 'Zaprogramuj start/stop silnika w edytorze.' },
+			{
+				kind: 'lesson',
+				slug: 'bug-set-reset-order',
+				text: 'Znajdź błąd: Stop, który przegrywa ze Startem.'
+			}
 		]
 	},
 
@@ -471,7 +481,12 @@ Poniżej dwa przełączniki „jeden przycisk — włącz/wyłącz”. Górny dz
 				correct: 1,
 				explanation: `Styk P „pamięta” stan z poprzedniego cyklu i przewodzi tylko w tym jednym cyklu, w którym sygnał zmienił się z 0 na 1.`
 			},
-			{ kind: 'lesson', slug: 'toggle', text: 'Zbuduj przełącznik jednym przyciskiem.' }
+			{ kind: 'lesson', slug: 'toggle', text: 'Zbuduj przełącznik jednym przyciskiem.' },
+			{
+				kind: 'lesson',
+				slug: 'bug-flicker',
+				text: 'Znajdź błąd: lampka, która miga przy trzymanym przycisku.'
+			}
 		]
 	},
 
@@ -562,7 +577,12 @@ Każdy timer ma też wyjście **ET** (elapsed time) — ile czasu już upłynę�
 				correct: 1,
 				explanation: `Przerwa na wejściu **zeruje** TON. Odliczanie zaczyna się od początku, więc trzeba znowu 5 s.`
 			},
-			{ kind: 'lesson', slug: 'traffic-light', text: 'Zbuduj sygnalizację świetlną na timerze.' }
+			{ kind: 'lesson', slug: 'traffic-light', text: 'Zbuduj sygnalizację świetlną na timerze.' },
+			{
+				kind: 'lesson',
+				slug: 'bug-timer-edge',
+				text: 'Znajdź błąd: timer, który nigdy nie dolicza.'
+			}
 		]
 	},
 
@@ -792,7 +812,142 @@ W programie odwracamy to z powrotem: skoro wejście Stop to 1 = „wszystko w po
 				correct: 1,
 				explanation: `To zasada **fail-safe**: każda typowa usterka okablowania daje 0 na wejściu, czyli zatrzymanie — maszyna przechodzi w stan bezpieczny.`
 			},
-			{ kind: 'lesson', slug: 'tank-level', text: 'Sprawdź się w regulacji poziomu w zbiorniku.' }
+			{ kind: 'lesson', slug: 'tank-level', text: 'Sprawdź się w regulacji poziomu w zbiorniku.' },
+			{
+				kind: 'lesson',
+				slug: 'bug-stop-nc',
+				text: 'Znajdź błąd: silnik nie rusza, choć Stop jest podłączony podręcznikowo.'
+			}
+		]
+	},
+
+	/* ------------------------------------------------------------------ 12 */
+	{
+		slug: 'sekwencje',
+		title: 'Sterowanie sekwencyjne (kroki)',
+		summary: 'Jak zaprogramować maszynę, która robi „najpierw to, potem tamto”.',
+		minutes: 10,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Większość maszyn działa w **krokach**: napełnij → wymieszaj → spuść, albo zatrzymaj detal → wierć → wypuść. Taki program to **sekwencja**.
+
+Sposób, który zawsze działa:
+
+1. Każdy krok to jeden **marker** (np. \`S1\`, \`S2\`, \`S3\`). Marker = 1 znaczy „jesteśmy w tym kroku”.
+2. **Przejście** do następnego kroku: gdy jesteśmy w kroku *n* **i** spełniony jest warunek przejścia → \`(S)\` krok *n+1*, \`(R)\` krok *n*.
+3. **Akcje** (wyjścia) zależą tylko od kroków: \`┤S1├ → (Napelnianie)\`.
+
+Dzięki temu w każdej chwili aktywny jest dokładnie jeden krok, a każdą akcję łatwo znaleźć.`
+			},
+			{
+				kind: 'table',
+				head: ['Krok', 'Akcja (wyjście)', 'Warunek przejścia dalej'],
+				rows: [
+					['— (spoczynek)', '—', 'wciśnięty Start'],
+					['S1 napełnianie', 'Napelnianie', 'czujnik Pelny'],
+					['S2 pranie', 'Pranie', 'minęły 3 s (TON)'],
+					['S3 spust', 'Spust', 'czujnik Pusty → koniec']
+				]
+			},
+			{
+				kind: 'sim',
+				title: 'Mała pralka w trzech krokach',
+				ladder: () =>
+					program(
+						rung(
+							[
+								contact('NO', 'Start'),
+								contact('NC', 'S1'),
+								contact('NC', 'S2'),
+								contact('NC', 'S3')
+							],
+							[coil('SET', 'S1')],
+							'Start, gdy nic nie pracuje → krok 1'
+						),
+						rung(
+							[contact('NO', 'S1'), contact('NO', 'Pelny')],
+							[coil('SET', 'S2'), coil('RESET', 'S1')],
+							'Krok 1 → 2: zbiornik pełny'
+						),
+						rung(
+							[contact('NO', 'S2'), timer('TON', 'T0', 'T#3s')],
+							[coil('SET', 'S3'), coil('RESET', 'S2')],
+							'Krok 2 → 3: po 3 s prania'
+						),
+						rung(
+							[contact('NO', 'S3'), contact('NO', 'Pusty')],
+							[coil('RESET', 'S3')],
+							'Krok 3 → koniec: pusto'
+						),
+						rung(
+							[contact('NO', 'S1')],
+							[coil('COIL', 'Napelnianie')],
+							'Akcje zależą tylko od kroków'
+						),
+						rung([contact('NO', 'S2')], [coil('COIL', 'Pranie')]),
+						rung([contact('NO', 'S3')], [coil('COIL', 'Spust')])
+					),
+				inputs: [
+					{ address: 'I0.0', label: 'Start' },
+					{ address: 'I0.1', label: 'Pelny', kind: 'toggle' },
+					{ address: 'I0.2', label: 'Pusty', kind: 'toggle' }
+				],
+				outputs: [
+					{ address: 'Q0.0', label: 'Napelnianie', color: 'blue' },
+					{ address: 'Q0.1', label: 'Pranie', color: 'green' },
+					{ address: 'Q0.2', label: 'Spust', color: 'amber' }
+				],
+				symbols: [
+					{ label: 'S1', address: 'M0.0' },
+					{ label: 'S2', address: 'M0.1' },
+					{ label: 'S3', address: 'M0.2' }
+				],
+				trace: [{ address: 'S1' }, { address: 'S2' }, { address: 'S3' }],
+				caption:
+					'Wciśnij Start, potem przełącz Pelny. Po 3 s prania przełącz Pusty. Na wykresie widać, że zawsze świeci jeden krok.'
+			},
+			{
+				kind: 'callout',
+				tone: 'info',
+				title: 'SFC / GRAFCET',
+				text: 'Norma IEC 61131-3 ma do tego osobny język graficzny: **SFC** (Sequential Function Chart), w Europie znany też jako **GRAFCET**. Kroki rysuje się jako prostokąty, przejścia jako kreski z warunkami. W Ladder robisz dokładnie to samo markerami — tak programuje się sekwencje na wielu sterownikach.'
+			},
+			{
+				kind: 'callout',
+				tone: 'warn',
+				title: 'Typowy błąd',
+				text: 'Wyjście sterowane w kilku miejscach (np. cewka Pranie w dwóch networkach) — działa tylko ostatnia cewka. Z krokami każde wyjście ma jedną cewkę, a w jej warunku stoją kroki (połączone LUB, jeśli akcja trwa w kilku krokach).'
+			},
+			{
+				kind: 'quiz',
+				question: 'Dlaczego przejście robi się parą (S) następny krok + (R) bieżący krok?',
+				options: [
+					'Bo inaczej program się nie skompiluje',
+					'Żeby krok pamiętał się sam, choć warunek przejścia (np. czujnik) zaraz zniknie, i żeby aktywny był zawsze tylko jeden krok',
+					'Bo cewki SET są szybsze od zwykłych'
+				],
+				correct: 1,
+				explanation:
+					'Warunek przejścia jest zwykle chwilowy — czujnik albo koniec czasu. SET zapamiętuje nowy krok, a RESET kasuje poprzedni, więc maszyna jest zawsze w dokładnie jednym kroku.'
+			},
+			{
+				kind: 'quiz',
+				question: 'W kroku S2 ma się kręcić silnik, a w S3 też. Jak to zapisać?',
+				options: [
+					'Dwie cewki Silnik: jedna za ┤S2├, druga za ┤S3├',
+					'Jedna cewka Silnik za rozgałęzieniem ┤S2├ LUB ┤S3├',
+					'SET Silnik w S2 i drugi SET w S3'
+				],
+				correct: 1,
+				explanation:
+					'Dwie zwykłe cewki na jednym wyjściu to „podwójna cewka” — wygrywa ostatnia. Jedna cewka z warunkiem LUB działa poprawnie i od razu widać, kiedy wyjście jest włączone.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'drilling-station',
+				text: 'Zaprogramuj stację wiercenia na linii produkcyjnej — prawdziwą sekwencję z czujnikami krańcowymi.'
+			}
 		]
 	}
 ];

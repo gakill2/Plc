@@ -8,3 +8,4 @@ export * from './vm.js';
 export * from './validate.js';
 export * from './plc.js';
 export * from './assembler.js';
+export * from './debug.js';

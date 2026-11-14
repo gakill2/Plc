@@ -3,17 +3,20 @@ import { openEditor } from './helpers';
 
 test('lesson: fail, show the solution, pass, get the tick', async ({ page }) => {
 	await page.goto('/learn', { waitUntil: 'networkidle' });
-	await page.getByRole('link', { name: /Your first rung/ }).click();
-	await page.getByRole('button', { name: 'Check my solution' }).click();
-	await expect(page.getByText(/✗\s*Lamp follows the button/)).toBeVisible();
+	await page.getByRole('link', { name: /Pierwszy szczebel/ }).click();
+	await expect(page.getByText('Krok po kroku · 0/5')).toBeVisible();
+	await page.getByRole('button', { name: 'Sprawdź rozwiązanie' }).click();
+	await expect(page.getByText(/✗\s*Lampka podąża za przyciskiem/)).toBeVisible();
 
 	page.once('dialog', (d) => d.accept());
-	await page.getByRole('button', { name: 'Show solution' }).click();
-	await page.getByRole('button', { name: 'Check my solution' }).click();
-	await expect(page.getByText('Lesson complete!')).toBeVisible();
+	await page.getByRole('button', { name: 'Pokaż rozwiązanie' }).click();
+	await page.getByRole('button', { name: 'Sprawdź rozwiązanie' }).click();
+	await expect(page.getByText('Zaliczone!')).toBeVisible();
+	await expect(page.getByText('Krok po kroku · 5/5')).toBeVisible();
 
-	await page.goto('/learn');
-	await expect(page.getByText(/1 \/ 7 completed/)).toBeVisible();
+	await page.goto('/learn', { waitUntil: 'networkidle' });
+	await expect(page.getByText(/ukończone: 1 \/ 25/)).toBeVisible();
+	await expect(page.getByRole('link', { name: /Kontynuuj naukę/ })).toBeVisible();
 });
 
 test('projects: create, rename, find in the list, delete', async ({ page }) => {

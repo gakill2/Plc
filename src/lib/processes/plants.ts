@@ -40,6 +40,37 @@ export const PLANTS: readonly PlantInfo[] = [
 			{ address: 'Q0.0', name: 'Belt', comment: 'Belt motor' },
 			{ address: 'Q0.1', name: 'Pusher', comment: 'Pushes boxes off the belt' }
 		]
+	},
+	{
+		kind: 'line',
+		name: 'Production line (drilling)',
+		description:
+			'Parts wait at a stopper, get drilled, pass an inspection and bad ones are ejected. A sequence to program step by step.',
+		io: [
+			{
+				address: 'I0.0',
+				name: 'PartAtDrill',
+				comment: 'Part held at the stopper, under the drill'
+			},
+			{ address: 'I0.1', name: 'DrillTop', comment: 'Drill at the top end position' },
+			{ address: 'I0.2', name: 'DrillBottom', comment: 'Drill at the bottom end position' },
+			{ address: 'I0.3', name: 'PartAtEntry', comment: 'Part at the start of the belt' },
+			{ address: 'I0.4', name: 'PartAtCheck', comment: 'Part at the inspection station' },
+			{
+				address: 'I0.5',
+				name: 'QualityOK',
+				comment: 'Part at the inspection is drilled and has no crack'
+			},
+			{ address: 'Q0.0', name: 'Belt', comment: 'Conveyor motor' },
+			{ address: 'Q0.1', name: 'Stopper', comment: 'Extended = parts wait at the drill' },
+			{ address: 'Q0.2', name: 'DrillLower', comment: 'Lowers the drill (off = it goes up)' },
+			{ address: 'Q0.3', name: 'Spindle', comment: 'Drill motor' },
+			{
+				address: 'Q0.4',
+				name: 'Ejector',
+				comment: 'Pushes the part at the inspection off the line'
+			}
+		]
 	}
 ];
 

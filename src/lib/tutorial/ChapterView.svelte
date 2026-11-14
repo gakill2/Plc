@@ -102,7 +102,7 @@
 					>
 					<span>
 						<span class="block text-xs font-semibold tracking-wider text-sky-300 uppercase"
-							>Ćwiczenie w edytorze</span
+							>{lesson.kind === 'debug' ? 'Znajdź błąd' : 'Ćwiczenie w edytorze'}</span
 						>
 						<span class="block font-semibold text-white">{lesson.title}</span>
 						<span class="block text-sm text-slate-400">{block.text}</span>

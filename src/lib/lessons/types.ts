@@ -36,6 +36,8 @@ export interface LessonTest {
 
 export interface Lesson {
 	slug: string;
+	/** build = write the program, debug = find and fix the bug in a given program */
+	kind?: 'build' | 'debug';
 	title: string;
 	level: 'basics' | 'logic' | 'timers' | 'process';
 	summary: string;

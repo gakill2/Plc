@@ -7,6 +7,7 @@ import type {
 	TankState,
 	TrafficState
 } from './types.js';
+import { LineProcess } from './line.js';
 
 /** Traffic light: no physics, the lamps simply show Q0.0 red, Q0.1 yellow, Q0.2 green. */
 export class TrafficProcess implements ProcessModel {
@@ -207,6 +208,8 @@ export class ConveyorProcess implements ProcessModel {
 
 export function createProcess(kind: ProcessKind): ProcessModel {
 	switch (kind) {
+		case 'line':
+			return new LineProcess();
 		case 'traffic':
 			return new TrafficProcess();
 		case 'tank':
@@ -217,4 +220,4 @@ export function createProcess(kind: ProcessKind): ProcessModel {
 }
 
 export const isProcessKind = (v: unknown): v is ProcessKind =>
-	v === 'traffic' || v === 'tank' || v === 'conveyor';
+	v === 'traffic' || v === 'tank' || v === 'conveyor' || v === 'line';

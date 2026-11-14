@@ -13,7 +13,8 @@ import {
 import { watchEntry } from '#lib/monitor/watch.js';
 import type { Project } from '#lib/project/project.js';
 import type { SymbolEntry } from '#lib/symbols/symbols.js';
-import type { ConveyorState, ProcessKind, TankState } from '#lib/processes/types.js';
+import type { ConveyorState, LineState, ProcessKind, TankState } from '#lib/processes/types.js';
+import { plantInfo } from '#lib/processes/plants.js';
 import type { Lesson, LessonStep } from './types.js';
 
 /* ---------- helpers to build lesson projects ---------- */
@@ -72,22 +73,32 @@ const settle = (
 	expect
 });
 
+/** Mistakes on the production line fail a test immediately. */
+const lineSafety = ({ process }: { process: { state(): unknown } | null }): string | null => {
+	const s = process?.state() as LineState;
+	if (s.crashes) return 'detal przesunął się pod opuszczonym wiertłem';
+	if (s.toolBreaks) return 'wiertło weszło w detal bez włączonego wrzeciona';
+	if (s.wrongRejected) return 'zepchnięto dobry detal';
+	if (s.badDelivered) return 'wadliwy detal dojechał do końca linii';
+	return null;
+};
+
 /* ---------- lessons ---------- */
 
 export const LESSONS: Lesson[] = [
 	{
 		slug: 'first-rung',
-		title: 'Your first rung',
+		title: 'Pierwszy szczebel',
 		level: 'basics',
-		summary: 'A button lights a lamp — contacts, coils and the scan cycle.',
+		summary: 'Przycisk zapala lampkę — styki, cewki i cykl skanowania.',
 		instructions: [
-			'A push button `Button` is wired to input `I0.0` and a lamp `Lamp` to output `Q0.0`.',
-			'Make the lamp light while the button is held, and go dark when it is released.',
-			'Add a network with “+ Network”, set the contact to `I0.0` (or `Button`) and the coil to `Q0.0` (or `Lamp`). Run it and press the button in the Circuit view.'
+			'Przycisk `Button` jest podłączony do wejścia `I0.0`, a lampka `Lamp` do wyjścia `Q0.0`.',
+			'Lampka ma świecić, dopóki przycisk jest wciśnięty, i zgasnąć po jego puszczeniu.',
+			'Dodaj network przyciskiem „+ Network”, ustaw styk na `I0.0` (albo `Button`), a cewkę na `Q0.0` (albo `Lamp`). Uruchom PLC i wciśnij przycisk w widoku Circuit.'
 		],
 		hints: [
-			'A normally-open contact `┤ ├` conducts while its bit is 1.',
-			'A coil `( )` writes the power reaching it into its bit on every scan.'
+			'Styk zwierny (NO) `┤ ├` przewodzi, gdy jego bit = 1.',
+			'Cewka `( )` w każdym cyklu zapisuje do swojego bitu to, czy dochodzi do niej zasilanie.'
 		],
 		starter: starter('first-rung', [
 			['pushbutton', 'Button', 'I0.0', { color: 'green' }],
@@ -96,28 +107,28 @@ export const LESSONS: Lesson[] = [
 		solution: () => program(rung([contact('NO', 'Button')], [coil('COIL', 'Lamp')])),
 		tests: [
 			{
-				name: 'Lamp follows the button',
+				name: 'Lampka podąża za przyciskiem',
 				steps: [
-					settle('nothing pressed', {}, { 'Q0.0': false }),
-					settle('press Button', { 'I0.0': true }, { 'Q0.0': true }),
-					settle('release Button', { 'I0.0': false }, { 'Q0.0': false })
+					settle('nic nie wciśnięte', {}, { 'Q0.0': false }),
+					settle('wciśnij Button', { 'I0.0': true }, { 'Q0.0': true }),
+					settle('puść Button', { 'I0.0': false }, { 'Q0.0': false })
 				]
 			}
 		]
 	},
 	{
 		slug: 'and-or',
-		title: 'AND and OR',
+		title: 'AND i OR',
 		level: 'logic',
-		summary: 'Contacts in series are AND, in parallel are OR.',
+		summary: 'Styki szeregowo to AND, równolegle to OR.',
 		instructions: [
-			'A press needs both hands on its buttons: `Left` (`I0.0`) and `Right` (`I0.1`).',
-			'`Press` (`Q0.0`) may run only while BOTH buttons are held.',
-			'`Warning` (`Q0.1`) must light while EITHER button is held.'
+			'Prasa wymaga obu rąk na przyciskach: `Left` (`I0.0`) i `Right` (`I0.1`).',
+			'`Press` (`Q0.0`) może pracować tylko wtedy, gdy OBA przyciski są wciśnięte.',
+			'`Warning` (`Q0.1`) ma świecić, gdy wciśnięty jest KTÓRYKOLWIEK przycisk.'
 		],
 		hints: [
-			'Two contacts one after another in a network = AND.',
-			'Select a contact and use “⑂ Branch” to put another contact in parallel = OR.'
+			'Dwa styki jeden za drugim w networku = AND.',
+			'Zaznacz styk i użyj „⑂ Branch”, żeby dodać drugi styk równolegle = OR.'
 		],
 		starter: starter('and-or', [
 			['pushbutton', 'Left', 'I0.0'],
@@ -135,29 +146,33 @@ export const LESSONS: Lesson[] = [
 			),
 		tests: [
 			{
-				name: 'Truth table',
+				name: 'Tabela prawdy',
 				steps: [
-					settle('no button', { 'I0.0': false, 'I0.1': false }, { 'Q0.0': false, 'Q0.1': false }),
-					settle('Left only', { 'I0.0': true, 'I0.1': false }, { 'Q0.0': false, 'Q0.1': true }),
-					settle('Right only', { 'I0.0': false, 'I0.1': true }, { 'Q0.0': false, 'Q0.1': true }),
-					settle('both buttons', { 'I0.0': true, 'I0.1': true }, { 'Q0.0': true, 'Q0.1': true })
+					settle(
+						'żaden przycisk',
+						{ 'I0.0': false, 'I0.1': false },
+						{ 'Q0.0': false, 'Q0.1': false }
+					),
+					settle('tylko Left', { 'I0.0': true, 'I0.1': false }, { 'Q0.0': false, 'Q0.1': true }),
+					settle('tylko Right', { 'I0.0': false, 'I0.1': true }, { 'Q0.0': false, 'Q0.1': true }),
+					settle('oba przyciski', { 'I0.0': true, 'I0.1': true }, { 'Q0.0': true, 'Q0.1': true })
 				]
 			}
 		]
 	},
 	{
 		slug: 'self-holding',
-		title: 'Start / stop with self-holding',
+		title: 'Start / stop z podtrzymaniem',
 		level: 'logic',
-		summary: 'The most common circuit in industry: a motor that stays on.',
+		summary: 'Najczęstszy układ w przemyśle: silnik, który sam się podtrzymuje.',
 		instructions: [
-			'`Start` (`I0.0`) and `Stop` (`I0.1`) are both normally-open push buttons. `Motor` is on `Q0.0`.',
-			'A short press of Start must start the motor and keep it running after Start is released.',
-			'Stop must switch it off — and Stop wins if both buttons are pressed at once.'
+			'`Start` (`I0.0`) i `Stop` (`I0.1`) to przyciski zwierne (NO). `Motor` jest na `Q0.0`.',
+			'Krótkie wciśnięcie Start ma uruchomić silnik, który pracuje dalej po puszczeniu przycisku.',
+			'Stop ma go wyłączyć — i Stop wygrywa, gdy oba przyciski są wciśnięte naraz.'
 		],
 		hints: [
-			'Put a contact of the motor itself (`Q0.0`) in parallel with Start — that is the “holding” contact.',
-			'Stop must break the circuit: a normally-closed contact `┤/├` of `I0.1` in series.'
+			'Równolegle do Start daj styk samego silnika (`Q0.0`) — to styk „podtrzymania”.',
+			'Stop ma przerywać obwód: styk rozwierny (NC) `┤/├` na `I0.1` szeregowo.'
 		],
 		starter: starter('self-holding', [
 			['pushbutton', 'Start', 'I0.0', { color: 'green' }],
@@ -173,41 +188,41 @@ export const LESSONS: Lesson[] = [
 			),
 		tests: [
 			{
-				name: 'Starts and keeps running',
+				name: 'Rusza i pracuje dalej',
 				steps: [
-					settle('nothing pressed', {}, { 'Q0.0': false }),
-					settle('press Start', { 'I0.0': true }, { 'Q0.0': true }),
-					settle('release Start', { 'I0.0': false }, { 'Q0.0': true })
+					settle('nic nie wciśnięte', {}, { 'Q0.0': false }),
+					settle('wciśnij Start', { 'I0.0': true }, { 'Q0.0': true }),
+					settle('puść Start', { 'I0.0': false }, { 'Q0.0': true })
 				]
 			},
 			{
-				name: 'Stops and stays stopped',
+				name: 'Zatrzymuje się i stoi',
 				steps: [
-					settle('press and release Start', { 'I0.0': true }, {}),
-					settle('release Start', { 'I0.0': false }, { 'Q0.0': true }),
-					settle('press Stop', { 'I0.1': true }, { 'Q0.0': false }),
-					settle('release Stop', { 'I0.1': false }, { 'Q0.0': false })
+					settle('wciśnij i puść Start', { 'I0.0': true }, {}),
+					settle('puść Start', { 'I0.0': false }, { 'Q0.0': true }),
+					settle('wciśnij Stop', { 'I0.1': true }, { 'Q0.0': false }),
+					settle('puść Stop', { 'I0.1': false }, { 'Q0.0': false })
 				]
 			},
 			{
-				name: 'Stop has priority',
-				steps: [settle('press both', { 'I0.0': true, 'I0.1': true }, { 'Q0.0': false })]
+				name: 'Stop ma pierwszeństwo',
+				steps: [settle('wciśnij oba', { 'I0.0': true, 'I0.1': true }, { 'Q0.0': false })]
 			}
 		]
 	},
 	{
 		slug: 'toggle',
-		title: 'Edges: one button, on and off',
+		title: 'Zbocza: jeden przycisk, włącz i wyłącz',
 		level: 'logic',
-		summary: 'Detect a rising edge so a held button counts once.',
+		summary: 'Wykryj zbocze narastające, żeby przytrzymany przycisk liczył się raz.',
 		instructions: [
-			'One push button `Button` (`I0.0`) controls a lamp `Lamp` (`Q0.0`).',
-			'Each press toggles the lamp: press → on, press again → off.',
-			'Holding the button must not make the lamp flicker.'
+			'Jeden przycisk `Button` (`I0.0`) steruje lampką `Lamp` (`Q0.0`).',
+			'Każde wciśnięcie przełącza lampkę: wciśnięcie → świeci, kolejne → gaśnie.',
+			'Przytrzymanie przycisku nie może powodować migania.'
 		],
 		hints: [
-			'A rising-edge contact `┤P├` is true for exactly one scan when its bit goes 0 → 1. Store it in a marker such as `M0.0`.',
-			'Lamp = pulse XOR Lamp: (`M0.0` AND NOT `Q0.0`) OR (NOT `M0.0` AND `Q0.0`).'
+			'Styk zbocza narastającego `┤P├` daje 1 przez dokładnie jeden cykl, gdy bit zmienia się 0 → 1. Zapisz to w markerze, np. `M0.0`.',
+			'Lamp = impuls XOR Lamp: (`M0.0` AND NOT `Q0.0`) OR (NOT `M0.0` AND `Q0.0`).'
 		],
 		starter: starter(
 			'toggle',
@@ -215,7 +230,7 @@ export const LESSONS: Lesson[] = [
 				['pushbutton', 'Button', 'I0.0'],
 				['lamp', 'Lamp', 'Q0.0', { color: 'amber' }]
 			],
-			{ symbols: [symbol('Pulse', 'M0.0', 'One-scan pulse on press')] }
+			{ symbols: [symbol('Pulse', 'M0.0', 'Impuls na jeden cykl po wciśnięciu')] }
 		),
 		solution: () =>
 			program(
@@ -232,31 +247,31 @@ export const LESSONS: Lesson[] = [
 			),
 		tests: [
 			{
-				name: 'Toggles on each press',
+				name: 'Przełącza przy każdym wciśnięciu',
 				steps: [
-					settle('nothing pressed', {}, { 'Q0.0': false }),
-					settle('press', { 'I0.0': true }, { 'Q0.0': true }),
-					{ label: 'hold the button for 1 s', wait: 1000, expect: { 'Q0.0': true } },
-					settle('release', { 'I0.0': false }, { 'Q0.0': true }),
-					settle('press again', { 'I0.0': true }, { 'Q0.0': false }),
-					settle('release again', { 'I0.0': false }, { 'Q0.0': false })
+					settle('nic nie wciśnięte', {}, { 'Q0.0': false }),
+					settle('wciśnij', { 'I0.0': true }, { 'Q0.0': true }),
+					{ label: 'trzymaj przycisk 1 s', wait: 1010, expect: { 'Q0.0': true } },
+					settle('puść', { 'I0.0': false }, { 'Q0.0': true }),
+					settle('wciśnij ponownie', { 'I0.0': true }, { 'Q0.0': false }),
+					settle('puść ponownie', { 'I0.0': false }, { 'Q0.0': false })
 				]
 			}
 		]
 	},
 	{
 		slug: 'traffic-light',
-		title: 'Timers: a traffic light',
+		title: 'Timery: sygnalizacja świetlna',
 		level: 'timers',
-		summary: 'Build a timed sequence with a TON timer and comparisons.',
+		summary: 'Zbuduj sekwencję czasową z timerem TON i porównaniami.',
 		instructions: [
-			'Lamps: `Red` `Q0.0`, `Yellow` `Q0.1`, `Green` `Q0.2`. Watch them in the Process view.',
-			'Run this 8-second cycle forever: red 3 s → red + yellow 1 s → green 3 s → yellow 1 s → red …',
-			'The light starts with red as soon as the PLC runs.'
+			'Lampy: `Red` `Q0.0`, `Yellow` `Q0.1`, `Green` `Q0.2`. Obserwuj je w widoku Process.',
+			'Powtarzaj w kółko 8-sekundowy cykl: czerwone 3 s → czerwone + żółte 1 s → zielone 3 s → żółte 1 s → czerwone …',
+			'Po uruchomieniu PLC sygnalizacja zaczyna od czerwonego.'
 		],
 		hints: [
-			'A timer that restarts itself: `┤/├ M0.0` → `TON T0 PT T#8s` → coil `M0.0`. When ET reaches 8 s, M0.0 is on for one scan and resets the timer.',
-			'Then use CMP boxes on `T0` (its ET in ms): red while `T0 < 4000`, green while `T0 >= 4000` and `T0 < 7000` …'
+			'Timer, który sam się restartuje: `┤/├ M0.0` → `TON T0 PT T#8s` → cewka `M0.0`. Gdy ET dojdzie do 8 s, M0.0 = 1 przez jeden cykl i zeruje timer.',
+			'Potem użyj bloków CMP na `T0` (jego ET w ms): czerwone, gdy `T0 < 4000`, zielone, gdy `T0 >= 4000` i `T0 < 7000` …'
 		],
 		scenario: 'traffic',
 		starter: starter(
@@ -269,8 +284,8 @@ export const LESSONS: Lesson[] = [
 			{
 				scenario: 'traffic',
 				symbols: [
-					symbol('Cycle', 'T0', 'Cycle timer'),
-					symbol('CycleDone', 'M0.0', 'Restarts the cycle')
+					symbol('Cycle', 'T0', 'Timer cyklu'),
+					symbol('CycleDone', 'M0.0', 'Restartuje cykl')
 				],
 				watch: ['Cycle', 'Red', 'Yellow', 'Green']
 			}
@@ -298,14 +313,14 @@ export const LESSONS: Lesson[] = [
 			),
 		tests: [
 			{
-				name: 'Runs the 8 s cycle',
+				name: 'Wykonuje cykl 8 s',
 				steps: [
 					{ label: '1.5 s', wait: 1500, expect: { 'Q0.0': true, 'Q0.1': false, 'Q0.2': false } },
 					{ label: '3.5 s', wait: 2000, expect: { 'Q0.0': true, 'Q0.1': true, 'Q0.2': false } },
 					{ label: '5.5 s', wait: 2000, expect: { 'Q0.0': false, 'Q0.1': false, 'Q0.2': true } },
 					{ label: '7.5 s', wait: 2000, expect: { 'Q0.0': false, 'Q0.1': true, 'Q0.2': false } },
 					{
-						label: '9.5 s (second cycle)',
+						label: '9.5 s (drugi cykl)',
 						wait: 2000,
 						expect: { 'Q0.0': true, 'Q0.1': false, 'Q0.2': false }
 					}
@@ -319,22 +334,22 @@ export const LESSONS: Lesson[] = [
 	},
 	{
 		slug: 'tank-level',
-		title: 'Process: tank level control',
+		title: 'Proces: regulacja poziomu w zbiorniku',
 		level: 'process',
-		summary: 'Two-point control with SET / RESET keeps a tank between sensors.',
+		summary: 'Regulacja dwustawna z SET / RESET utrzymuje poziom między czujnikami.',
 		instructions: [
-			'A tank is drained by a consumer. `Pump` (`Q0.0`) fills it faster than it drains.',
-			'Sensors: `Low` (`I0.0`) is on while the level is at least 20 %, `High` (`I0.1`) while it is at least 80 %.',
-			'Start the pump when the level drops below Low and stop it at High. The tank must never overflow or run dry.'
+			'Zbiornik opróżnia odbiorca. Pompa `Pump` (`Q0.0`) napełnia go szybciej, niż ubywa wody.',
+			'Czujniki: `Low` (`I0.0`) = 1, gdy poziom wynosi co najmniej 20 %, `High` (`I0.1`) = 1 od 80 %.',
+			'Włącz pompę, gdy poziom spadnie poniżej Low, i wyłącz ją przy High. Zbiornik nie może się przelać ani opróżnić.'
 		],
 		hints: [
-			'Use a SET coil to switch the pump on and a RESET coil to switch it off — the pump keeps its state in between.',
-			'Low is a “level reached” sensor: below 20 % it reads 0, so use a normally-closed contact to start the pump.'
+			'Użyj cewki SET do włączenia pompy i RESET do wyłączenia — pomiędzy pompa pamięta swój stan.',
+			'Low to czujnik „poziom osiągnięty”: poniżej 20 % daje 0, więc do startu pompy użyj styku rozwiernego (NC).'
 		],
 		scenario: 'tank',
 		starter: starter('tank-level', [['motor', 'Pump', 'Q0.0']], {
 			scenario: 'tank',
-			symbols: [symbol('Low', 'I0.0', 'Level ≥ 20 %'), symbol('High', 'I0.1', 'Level ≥ 80 %')],
+			symbols: [symbol('Low', 'I0.0', 'Poziom ≥ 20 %'), symbol('High', 'I0.1', 'Poziom ≥ 80 %')],
 			watch: ['Low', 'High', 'Pump']
 		}),
 		solution: () =>
@@ -344,25 +359,25 @@ export const LESSONS: Lesson[] = [
 			),
 		tests: [
 			{
-				name: 'Keeps the level between Low and High for 90 s',
+				name: 'Utrzymuje poziom między Low i High przez 90 s',
 				steps: [
 					{
-						label: '90 s of operation',
+						label: '90 s pracy',
 						wait: 90_000,
 						check: ({ process }) => {
 							const s = process?.state() as TankState;
 							if (s.pumpStarts < 2)
-								return `the pump started only ${s.pumpStarts}× — it should cycle`;
+								return `pompa ruszyła tylko ${s.pumpStarts}× — powinna pracować cyklicznie`;
 							if (s.maxLevel > 85)
-								return `level rose to ${s.maxLevel.toFixed(0)} % — stop the pump at High`;
+								return `poziom doszedł do ${s.maxLevel.toFixed(0)} % — wyłącz pompę przy High`;
 							return null;
 						}
 					}
 				],
 				always: ({ process }) => {
 					const s = process?.state() as TankState;
-					if (s.overflowed) return 'the tank overflowed';
-					if (s.level < 10) return `the tank ran almost dry (${s.level.toFixed(0)} %)`;
+					if (s.overflowed) return 'zbiornik się przelał';
+					if (s.level < 10) return `zbiornik prawie się opróżnił (${s.level.toFixed(0)} %)`;
 					return null;
 				}
 			}
@@ -370,18 +385,18 @@ export const LESSONS: Lesson[] = [
 	},
 	{
 		slug: 'sorting-conveyor',
-		title: 'Process: sorting conveyor',
+		title: 'Proces: taśmociąg sortujący',
 		level: 'process',
-		summary: 'Pulse timers and counters on a real-ish production line.',
+		summary: 'Timery impulsowe i liczniki na prawie prawdziwej linii.',
 		instructions: [
-			'`Run` (`I0.3`) is a selector switch. While it is on, the belt motor `Belt` (`Q0.0`) runs.',
-			'Tall boxes must be pushed off the belt: `TallBox` (`I0.2`) sees a tall box in front of the pusher `Pusher` (`Q0.1`). Short boxes must pass.',
-			'Count the boxes arriving at the end (`EndSensor`, `I0.1`) and light `Full` (`Q0.2`) once 3 boxes have been delivered.',
-			'In the Process view, feed boxes by hand or switch on automatic feeding.'
+			'`Run` (`I0.3`) to przełącznik. Gdy jest włączony, pracuje silnik taśmy `Belt` (`Q0.0`).',
+			'Wysokie pudełka trzeba zepchnąć z taśmy: `TallBox` (`I0.2`) widzi wysokie pudełko przed spychaczem `Pusher` (`Q0.1`). Niskie mają przejechać.',
+			'Licz pudełka na końcu taśmy (`EndSensor`, `I0.1`) i zapal `Full` (`Q0.2`) po 3 dostarczonych.',
+			'W widoku Process dokładaj pudełka ręcznie albo włącz automatyczne podawanie.'
 		],
 		hints: [
-			'A pulse timer `TP` with PT around `T#600ms` turns a short sensor signal into a full push stroke.',
-			'Counter: contact `EndSensor` → `CTU C0` with PV `3` → coil `Full`.'
+			'Timer impulsowy `TP` z PT około `T#600ms` zamienia krótki sygnał czujnika w pełny ruch spychacza.',
+			'Licznik: styk `EndSensor` → `CTU C0` z PV `3` → cewka `Full`.'
 		],
 		scenario: 'conveyor',
 		starter: starter(
@@ -394,10 +409,10 @@ export const LESSONS: Lesson[] = [
 			{
 				scenario: 'conveyor',
 				symbols: [
-					symbol('EntrySensor', 'I0.0', 'Box at the start of the belt'),
-					symbol('EndSensor', 'I0.1', 'Box at the end of the belt'),
-					symbol('TallBox', 'I0.2', 'Tall box in front of the pusher'),
-					symbol('Pusher', 'Q0.1', 'Pushes boxes off the belt')
+					symbol('EntrySensor', 'I0.0', 'Pudełko na początku taśmy'),
+					symbol('EndSensor', 'I0.1', 'Pudełko na końcu taśmy'),
+					symbol('TallBox', 'I0.2', 'Wysokie pudełko przed spychaczem'),
+					symbol('Pusher', 'Q0.1', 'Spycha pudełka z taśmy')
 				],
 				watch: ['Run', 'Belt', 'TallBox', 'Pusher', 'EndSensor']
 			}
@@ -410,29 +425,437 @@ export const LESSONS: Lesson[] = [
 			),
 		tests: [
 			{
-				name: 'Sorts five boxes',
+				name: 'Sortuje pięć pudełek',
 				steps: [
 					{
-						label: 'feed tall, short, short, tall, short',
+						label: 'podaj: wysokie, niskie, niskie, wysokie, niskie',
 						set: { 'I0.3': true },
 						commands: [['feed', { pattern: [true, false, false, true, false], interval: 4000 }]],
 						wait: 40_000,
 						expect: { 'Q0.2': true },
 						check: ({ process }) => {
 							const s = process?.state() as ConveyorState;
-							if (s.wrongRejected) return `${s.wrongRejected} short box(es) were pushed off`;
-							if (s.missedTall) return `${s.missedTall} tall box(es) reached the end`;
-							if (s.delivered !== 3) return `${s.delivered} boxes delivered, expected 3`;
+							if (s.wrongRejected) return `zepchnięto niskie pudełka: ${s.wrongRejected}`;
+							if (s.missedTall) return `wysokie pudełka na końcu taśmy: ${s.missedTall}`;
+							if (s.delivered !== 3) return `dostarczono ${s.delivered} pudełek, a powinno 3`;
 							return null;
 						}
 					}
 				]
 			},
 			{
-				name: 'The belt follows the Run switch',
+				name: 'Taśma słucha przełącznika Run',
 				steps: [
-					settle('Run off', { 'I0.3': false }, { 'Q0.0': false }),
-					settle('Run on', { 'I0.3': true }, { 'Q0.0': true })
+					settle('Run wyłączony', { 'I0.3': false }, { 'Q0.0': false }),
+					settle('Run włączony', { 'I0.3': true }, { 'Q0.0': true })
+				]
+			}
+		]
+	},
+
+	{
+		slug: 'drilling-station',
+		title: 'Proces: stacja wiercenia (sekwencja)',
+		level: 'process',
+		summary: 'Prawdziwa sekwencja maszyny: zatrzymaj detal, wierć, wypuść, sprawdź, odrzuć.',
+		instructions: [
+			'`Start` (`I1.0`) i `Stop` (`I1.1`, podłączony jako NC) włączają i wyłączają linię: stan trzymaj w markerze `Run` (`M1.0`). Gdy `Run` = 1, jedzie taśma `Belt`.',
+			'Zatrzymywacz `Stopper` (`Q0.1`) jest normalnie wysunięty, więc każdy detal czeka pod wiertarką. Widzi go `PartAtDrill` (`I0.0`).',
+			'Wierć: opuść wiertło (`DrillLower`) przy kręcącym się wrzecionie (`Spindle`). Po dojściu do `DrillBottom` wierć jeszcze co najmniej 1 s, potem pozwól wiertłu wrócić do góry.',
+			'Gdy wiertło jest z powrotem w `DrillTop`, schowaj na chwilę zatrzymywacz (ok. 0,6 s), żeby wywiercony detal odjechał — a następny znów się zatrzymał.',
+			'Na stanowisku kontroli `PartAtCheck` widzi detal, a `QualityOK` mówi, czy jest dobry. Wadliwe (pęknięte) zepchnij krótkim ruchem `Ejector`.',
+			'Nigdy nie przesuwaj detalu pod opuszczonym wiertłem i nie opuszczaj wiertła na detal bez wrzeciona — widok Process liczy te błędy.'
+		],
+		hints: [
+			'Myśl krokami i trzymaj każdy krok w markerze: `Lowering` (`M0.0`) i `Drilled` (`M0.1`). SET krok, gdy jego warunek jest spełniony, RESET, gdy zaczyna się następny.',
+			'`┤PartAtDrill├ ┤DrillTop├ ┤/Drilled├ ┤Run├` → `(S) Lowering`; `┤Lowering├` → `(DrillLower)` and `(Spindle)`.',
+			'`┤DrillBottom├` → `TON T0 PT T#1200ms` → `(S) Drilled`, `(R) Lowering`.',
+			'`┤Drilled├ ┤DrillTop├` → `TP T1 PT T#600ms` → `(Release)`; `┤/Release├` → `(Stopper)`; gdy detal odjedzie (`┤Drilled├ ┤/PartAtDrill├`) → `(R) Drilled`.',
+			'Spychacz: `┤PartAtCheck├ ┤/QualityOK├` → `TP T2 PT T#400ms` → `(Ejector)`.'
+		],
+		scenario: 'line',
+		starter: starter(
+			'drilling-station',
+			[
+				['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I1.1', { color: 'red', nc: true }]
+			],
+			{
+				scenario: 'line',
+				symbols: [
+					...(plantInfo('line')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+					symbol('Run', 'M1.0', 'Linia włączona'),
+					symbol('Lowering', 'M0.0', 'Krok: wiercenie'),
+					symbol('Drilled', 'M0.1', 'Krok: detal wywiercony'),
+					symbol('Release', 'M0.2', 'Zatrzymywacz schowany na chwilę')
+				],
+				watch: ['Run', 'PartAtDrill', 'Lowering', 'DrillBottom', 'Drilled', 'Stopper', 'Ejector']
+			}
+		),
+		solution: () =>
+			program(
+				rung(
+					[parallel([[contact('NO', 'Start')], [contact('NO', 'Run')]]), contact('NO', 'Stop')],
+					[coil('COIL', 'Run')]
+				),
+				rung([contact('NO', 'Run')], [coil('COIL', 'Belt')]),
+				rung(
+					[
+						contact('NO', 'PartAtDrill'),
+						contact('NO', 'DrillTop'),
+						contact('NC', 'Drilled'),
+						contact('NO', 'Run')
+					],
+					[coil('SET', 'Lowering')]
+				),
+				rung([contact('NO', 'Lowering')], [coil('COIL', 'DrillLower'), coil('COIL', 'Spindle')]),
+				rung(
+					[contact('NO', 'DrillBottom'), timer('TON', 'T0', 'T#1200ms')],
+					[coil('SET', 'Drilled'), coil('RESET', 'Lowering')]
+				),
+				rung(
+					[contact('NO', 'Drilled'), contact('NO', 'DrillTop'), timer('TP', 'T1', 'T#600ms')],
+					[coil('COIL', 'Release')]
+				),
+				rung([contact('NC', 'Release')], [coil('COIL', 'Stopper')]),
+				rung([contact('NO', 'Drilled'), contact('NC', 'PartAtDrill')], [coil('RESET', 'Drilled')]),
+				rung(
+					[contact('NO', 'PartAtCheck'), contact('NC', 'QualityOK'), timer('TP', 'T2', 'T#400ms')],
+					[coil('COIL', 'Ejector')]
+				)
+			),
+		tests: [
+			{
+				name: 'Wierci i dostarcza cztery detale',
+				steps: [
+					{ label: 'wciśnij Start', set: { 'I1.1': true, 'I1.0': true }, wait: 100 },
+					{
+						label: 'cztery detale, co 5 s',
+						set: { 'I1.0': false },
+						commands: [['feed', { pattern: [false, false, false, false], interval: 5000 }]],
+						wait: 45_000,
+						check: ({ process }) => {
+							const s = process?.state() as LineState;
+							if (s.good !== 4) return `dobrych detali: ${s.good}, a powinno 4`;
+							return null;
+						}
+					}
+				],
+				always: lineSafety
+			},
+			{
+				name: 'Odrzuca pęknięty detal',
+				steps: [
+					{ label: 'wciśnij Start', set: { 'I1.1': true, 'I1.0': true }, wait: 100 },
+					{
+						label: 'dobry, pęknięty, dobry',
+						set: { 'I1.0': false },
+						commands: [['feed', { pattern: [false, true, false], interval: 5000 }]],
+						wait: 40_000,
+						check: ({ process }) => {
+							const s = process?.state() as LineState;
+							if (s.rejected !== 1) return `zepchnięto ${s.rejected} detali, a powinno 1`;
+							if (s.good !== 2) return `dobrych detali: ${s.good}, a powinno 2`;
+							return null;
+						}
+					}
+				],
+				always: lineSafety
+			},
+			{
+				name: 'Stop wyłącza linię',
+				steps: [
+					settle('wciśnij Start', { 'I1.1': true, 'I1.0': true }, { 'Q0.0': true }),
+					settle('puść Start', { 'I1.0': false }, { 'Q0.0': true }),
+					settle('wciśnij Stop', { 'I1.1': false }, { 'Q0.0': false }),
+					settle('puść Stop', { 'I1.1': true }, { 'Q0.0': false })
+				]
+			}
+		]
+	},
+	/* ---------- find the bug ---------- */
+	{
+		slug: 'bug-double-coil',
+		kind: 'debug',
+		title: 'Znajdź błąd: lampka z dwóch miejsc',
+		level: 'logic',
+		summary: 'Dwa przyciski, jedna lampka — a działa tylko jeden przycisk.',
+		instructions: [
+			'Lampka `Lamp` (`Q0.0`) w korytarzu ma się zapalać od dowolnego z dwóch przycisków: `Button1` (`I0.0`) albo `Button2` (`I0.1`).',
+			'**Objaw:** `Button2` działa, a `Button1` nic nie robi — choć w networku 1 wszystko wygląda dobrze.',
+			'Znajdź przyczynę i popraw program tak, żeby oba przyciski działały.'
+		],
+		hints: [
+			'Uruchom PLC, wciśnij `Button1` i zajrzyj do zakładki Debug: co dzieje się z `Q0.0` w networku 1, a co w networku 2 tego samego cyklu?',
+			'Na jedno wyjście tylko jedna cewka. Wygrywa ostatnia zapisana — połącz oba warunki gałęzią LUB przed jedną cewką.'
+		],
+		starter: starter(
+			'bug-double-coil',
+			[
+				['pushbutton', 'Button1', 'I0.0'],
+				['pushbutton', 'Button2', 'I0.1'],
+				['lamp', 'Lamp', 'Q0.0', { color: 'amber' }]
+			],
+			{
+				ladder: program(
+					rung([contact('NO', 'Button1')], [coil('COIL', 'Lamp')], 'Przycisk przy wejściu'),
+					rung([contact('NO', 'Button2')], [coil('COIL', 'Lamp')], 'Przycisk przy schodach')
+				)
+			}
+		),
+		solution: () =>
+			program(
+				rung(
+					[parallel([[contact('NO', 'Button1')], [contact('NO', 'Button2')]])],
+					[coil('COIL', 'Lamp')]
+				)
+			),
+		tests: [
+			{
+				name: 'Każdy przycisk zapala lampkę',
+				steps: [
+					settle('nic nie wciśnięte', {}, { 'Q0.0': false }),
+					settle('tylko Button1', { 'I0.0': true }, { 'Q0.0': true }),
+					settle('tylko Button2', { 'I0.0': false, 'I0.1': true }, { 'Q0.0': true }),
+					settle('puść oba', { 'I0.1': false }, { 'Q0.0': false })
+				]
+			}
+		]
+	},
+	{
+		slug: 'bug-set-reset-order',
+		kind: 'debug',
+		title: 'Znajdź błąd: Stop, który przegrywa',
+		level: 'logic',
+		summary: 'Kolejność networków ma znaczenie — kto pisze ostatni, ten wygrywa.',
+		instructions: [
+			'Silnik `Motor` (`Q0.0`) włącza `Start` (`I0.0`) cewką SET, a wyłącza `Stop` (`I0.1`) cewką RESET.',
+			'**Objaw:** gdy operator trzyma Start, a ktoś w tym czasie wciśnie Stop, silnik dalej pracuje. Stop musi mieć pierwszeństwo.',
+			'Popraw program, nie zmieniając przycisków.'
+		],
+		hints: [
+			'PLC wykonuje networki po kolei, od góry. Gdy oba warunki są spełnione, który zapis do `Motor` jest ostatni?',
+			'Zamień networki kolejnością (zaznacz network i użyj ↑ / ↓) albo dodaj styk NC `Stop` przed `(S) Motor`.'
+		],
+		starter: starter(
+			'bug-set-reset-order',
+			[
+				['pushbutton', 'Start', 'I0.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I0.1', { color: 'red' }],
+				['motor', 'Motor', 'Q0.0']
+			],
+			{
+				ladder: program(
+					rung([contact('NO', 'Stop')], [coil('RESET', 'Motor')], 'Stop'),
+					rung([contact('NO', 'Start')], [coil('SET', 'Motor')], 'Start')
+				)
+			}
+		),
+		solution: () =>
+			program(
+				rung([contact('NO', 'Start')], [coil('SET', 'Motor')]),
+				rung([contact('NO', 'Stop')], [coil('RESET', 'Motor')])
+			),
+		tests: [
+			{
+				name: 'Start i Stop działają',
+				steps: [
+					settle('wciśnij Start', { 'I0.0': true }, { 'Q0.0': true }),
+					settle('puść Start', { 'I0.0': false }, { 'Q0.0': true }),
+					settle('wciśnij Stop', { 'I0.1': true }, { 'Q0.0': false }),
+					settle('puść Stop', { 'I0.1': false }, { 'Q0.0': false })
+				]
+			},
+			{
+				name: 'Stop ma pierwszeństwo',
+				steps: [
+					settle('trzymaj Start', { 'I0.0': true }, { 'Q0.0': true }),
+					settle('wciśnij też Stop', { 'I0.1': true }, { 'Q0.0': false })
+				]
+			}
+		]
+	},
+	{
+		slug: 'bug-flicker',
+		kind: 'debug',
+		title: 'Znajdź błąd: migająca lampka',
+		level: 'logic',
+		summary: 'Przełącznik jednym przyciskiem, który działa „losowo”.',
+		instructions: [
+			'Przycisk `Button` (`I0.0`) ma przełączać lampkę `Lamp` (`Q0.0`): wciśnięcie — świeci, kolejne — gaśnie.',
+			'**Objaw:** po krótkim kliknięciu lampka raz zostaje zapalona, raz nie, a gdy przytrzymasz przycisk, miga.',
+			'Znajdź przyczynę i popraw jeden element.'
+		],
+		hints: [
+			'Ile cykli PLC trwa jedno wciśnięcie przycisku? Sprawdź na wykresie `Pulse` przy trzymanym przycisku.',
+			'`Pulse` ma być 1 przez jeden cykl — potrzebny jest styk zbocza `┤P├`, a nie zwykły styk.'
+		],
+		starter: starter(
+			'bug-flicker',
+			[
+				['pushbutton', 'Button', 'I0.0'],
+				['lamp', 'Lamp', 'Q0.0', { color: 'amber' }]
+			],
+			{
+				symbols: [symbol('Pulse', 'M0.0', 'Ma być impulsem na jeden cykl')],
+				watch: ['Button', 'Pulse', 'Lamp'],
+				ladder: program(
+					rung([contact('NO', 'Button')], [coil('COIL', 'Pulse')], 'Impuls po wciśnięciu'),
+					rung(
+						[
+							parallel([
+								[contact('NO', 'Pulse'), contact('NC', 'Lamp')],
+								[contact('NC', 'Pulse'), contact('NO', 'Lamp')]
+							])
+						],
+						[coil('COIL', 'Lamp')],
+						'Lamp := Pulse XOR Lamp'
+					)
+				)
+			}
+		),
+		solution: () =>
+			program(
+				rung([contact('P', 'Button')], [coil('COIL', 'Pulse')]),
+				rung(
+					[
+						parallel([
+							[contact('NO', 'Pulse'), contact('NC', 'Lamp')],
+							[contact('NC', 'Pulse'), contact('NO', 'Lamp')]
+						])
+					],
+					[coil('COIL', 'Lamp')]
+				)
+			),
+		tests: [
+			{
+				name: 'Przełącza przy każdym wciśnięciu, bez migania',
+				steps: [
+					settle('wciśnij', { 'I0.0': true }, { 'Q0.0': true }),
+					{ label: 'trzymaj przycisk 1 s', wait: 1010, expect: { 'Q0.0': true } },
+					settle('puść', { 'I0.0': false }, { 'Q0.0': true }),
+					settle('wciśnij ponownie', { 'I0.0': true }, { 'Q0.0': false }),
+					{ label: 'trzymaj 1 s', wait: 1010, expect: { 'Q0.0': false } }
+				]
+			}
+		]
+	},
+	{
+		slug: 'bug-timer-edge',
+		kind: 'debug',
+		title: 'Znajdź błąd: timer, który nie odlicza',
+		level: 'timers',
+		summary: 'Lampka miała się zapalić po 3 s — i nigdy się nie zapala.',
+		instructions: [
+			'`Start` (`I0.0`) i `Stop` (`I0.1`) sterują silnikiem `Motor` (`Q0.0`) z podtrzymaniem — to działa.',
+			'Lampka `Running` (`Q0.1`) ma się zapalić 3 s po starcie silnika i zgasnąć po jego zatrzymaniu.',
+			'**Objaw:** silnik pracuje, a `Running` nigdy się nie zapala. Popraw network 2.'
+		],
+		hints: [
+			'Uruchom PLC i obserwuj ET timera `T0` w bloku (albo w Watch). Ile trwa jego wejście IN?',
+			'TON liczy tylko, dopóki IN = 1. Styk zbocza daje 1 przez jeden cykl, więc timer od razu się zeruje — potrzebny jest zwykły styk NO.'
+		],
+		starter: starter(
+			'bug-timer-edge',
+			[
+				['pushbutton', 'Start', 'I0.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I0.1', { color: 'red' }],
+				['motor', 'Motor', 'Q0.0'],
+				['lamp', 'Running', 'Q0.1', { color: 'green' }]
+			],
+			{
+				watch: ['Motor', 'T0', 'Running'],
+				ladder: program(
+					rung(
+						[parallel([[contact('NO', 'Start')], [contact('NO', 'Motor')]]), contact('NC', 'Stop')],
+						[coil('COIL', 'Motor')],
+						'Silnik z podtrzymaniem'
+					),
+					rung(
+						[contact('P', 'Motor'), timer('TON', 'T0', 'T#3s')],
+						[coil('COIL', 'Running')],
+						'Running 3 s po starcie'
+					)
+				)
+			}
+		),
+		solution: () =>
+			program(
+				rung(
+					[parallel([[contact('NO', 'Start')], [contact('NO', 'Motor')]]), contact('NC', 'Stop')],
+					[coil('COIL', 'Motor')]
+				),
+				rung([contact('NO', 'Motor'), timer('TON', 'T0', 'T#3s')], [coil('COIL', 'Running')])
+			),
+		tests: [
+			{
+				name: 'Running zapala się po 3 s pracy silnika',
+				steps: [
+					settle('wciśnij Start', { 'I0.0': true }, { 'Q0.0': true, 'Q0.1': false }),
+					settle('puść Start', { 'I0.0': false }, { 'Q0.0': true }),
+					{ label: 'po 2 s', wait: 2000, expect: { 'Q0.1': false } },
+					{ label: 'po 3,5 s', wait: 1500, expect: { 'Q0.1': true } },
+					settle('wciśnij Stop', { 'I0.1': true }, { 'Q0.0': false, 'Q0.1': false })
+				]
+			}
+		]
+	},
+	{
+		slug: 'bug-stop-nc',
+		kind: 'debug',
+		title: 'Znajdź błąd: silnik nie rusza',
+		level: 'logic',
+		summary: 'Program wygląda podręcznikowo, a maszyna stoi. Winne jest okablowanie… albo nie.',
+		instructions: [
+			'Silnik `Motor` (`Q0.0`) z podtrzymaniem: `Start` (`I0.0`), `Stop` (`I0.1`).',
+			'Zgodnie z zasadą fail-safe przycisk Stop jest **podłączony stykiem NC** — gdy nikt go nie wciska, na `I0.1` jest 1 (zobacz w widoku Circuit i w panelu I/O).',
+			'**Objaw:** silnik w ogóle nie rusza. Popraw program — okablowanie jest dobre.'
+		],
+		hints: [
+			'Zaznacz network i otwórz „Wyjaśnij”: które styki blokują zasilanie, gdy nic nie jest wciśnięte?',
+			'Puszczony Stop daje 1. Styk w programie ma przewodzić, gdy sygnał = 1, czyli ma to być styk NO.'
+		],
+		starter: starter(
+			'bug-stop-nc',
+			[
+				['pushbutton', 'Start', 'I0.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I0.1', { color: 'red', nc: true }],
+				['motor', 'Motor', 'Q0.0']
+			],
+			{
+				ladder: program(
+					rung(
+						[parallel([[contact('NO', 'Start')], [contact('NO', 'Motor')]]), contact('NC', 'Stop')],
+						[coil('COIL', 'Motor')],
+						'Start / stop z podtrzymaniem'
+					)
+				)
+			}
+		),
+		solution: () =>
+			program(
+				rung(
+					[parallel([[contact('NO', 'Start')], [contact('NO', 'Motor')]]), contact('NO', 'Stop')],
+					[coil('COIL', 'Motor')]
+				)
+			),
+		tests: [
+			{
+				name: 'Rusza i zatrzymuje się (Stop podłączony jako NC)',
+				steps: [
+					settle('Stop puszczony (sygnał 1)', { 'I0.1': true }, { 'Q0.0': false }),
+					settle('wciśnij Start', { 'I0.0': true }, { 'Q0.0': true }),
+					settle('puść Start', { 'I0.0': false }, { 'Q0.0': true }),
+					settle('wciśnij Stop (sygnał 0)', { 'I0.1': false }, { 'Q0.0': false }),
+					settle('puść Stop', { 'I0.1': true }, { 'Q0.0': false })
+				]
+			},
+			{
+				name: 'Zerwany przewód Stop zatrzymuje maszynę',
+				steps: [
+					settle('uruchom', { 'I0.1': true, 'I0.0': true }, { 'Q0.0': true }),
+					settle('puść Start', { 'I0.0': false }, { 'Q0.0': true }),
+					settle('przewód Stop przerwany', { 'I0.1': false }, { 'Q0.0': false })
 				]
 			}
 		]

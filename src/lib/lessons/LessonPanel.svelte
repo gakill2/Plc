@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
-	import { markCompleted } from './progress.js';
+	import type { LadderProgram } from '#lib/ladder/model.js';
+	import type { SymbolMap } from '#lib/symbols/symbols.js';
+	import { addressResolver, GUIDES } from './guide.js';
+	import { onMount } from 'svelte';
+	import { completedLessons, markCompleted } from './progress.js';
 	import RichText from './RichText.svelte';
 	import { runLessonTests } from './runner.js';
 	import type { Lesson, TestResult } from './types.js';
@@ -12,19 +16,54 @@
 		blocked: boolean;
 		onShowSolution: () => void;
 		onRestart: () => void;
+		ladder: LadderProgram;
+		symbols: SymbolMap;
+		online: boolean;
+		language: 'ladder' | 'st';
 	};
-	let { lesson, compiled, blocked, onShowSolution, onRestart }: Props = $props();
+	let {
+		lesson,
+		compiled,
+		blocked,
+		onShowSolution,
+		onRestart,
+		ladder,
+		symbols,
+		online,
+		language
+	}: Props = $props();
 
 	let results = $state.raw<TestResult[] | null>(null);
 	let hintsShown = $state(0);
 	let checking = $state(false);
 
+	const LEVELS = {
+		basics: 'podstawy',
+		logic: 'logika',
+		timers: 'timery',
+		process: 'proces'
+	} as const;
 	const passed = $derived(results !== null && results.every((r) => r.passed));
+	let completedBefore = $state(false);
+	onMount(() => (completedBefore = completedLessons().has(lesson.slug)));
+
+	/* live step-by-step guide */
+	const guide = $derived(GUIDES[lesson.slug] ?? []);
+	const ticks = $derived.by(() => {
+		const ctx = {
+			ladder,
+			addr: addressResolver(symbols),
+			online,
+			passed: passed || completedBefore
+		};
+		return guide.map((step) => step.done(ctx));
+	});
+	const nextStep = $derived(ticks.indexOf(false));
 
 	function check() {
 		if (blocked) {
 			results = [
-				{ name: 'Program', passed: false, message: 'Fix the problems listed below first.' }
+				{ name: 'Program', passed: false, message: 'Najpierw popraw błędy z listy Problems.' }
 			];
 			return;
 		}
@@ -39,12 +78,13 @@
 </script>
 
 <section
+	lang="pl"
 	aria-labelledby="lesson-title"
 	class="space-y-3 rounded-lg border border-sky-500/30 bg-sky-500/5 p-3"
 >
 	<div>
 		<p class="text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
-			Lesson · {lesson.level}
+			{lesson.kind === 'debug' ? '🐞 Znajdź błąd' : 'Ćwiczenie'} · {LEVELS[lesson.level]}
 		</p>
 		<h2 id="lesson-title" class="text-sm font-semibold text-white">{lesson.title}</h2>
 	</div>
@@ -53,20 +93,50 @@
 		{#each lesson.instructions as p, i (i)}<p><RichText text={p} /></p>{/each}
 	</div>
 
+	{#if guide.length && language === 'ladder'}
+		<div lang="pl">
+			<p class="mb-1 text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
+				Krok po kroku · {ticks.filter(Boolean).length}/{guide.length}
+			</p>
+			<ol class="space-y-1 text-xs" aria-label="Krok po kroku">
+				{#each guide as step, i (i)}
+					<li
+						class="flex gap-2 rounded px-1.5 py-1 {i === nextStep
+							? 'bg-sky-500/15 text-white ring-1 ring-sky-500/40'
+							: ticks[i]
+								? 'text-slate-400'
+								: 'text-slate-500'}"
+						aria-current={i === nextStep ? 'step' : undefined}
+					>
+						<span
+							class="mt-px grid size-4 shrink-0 place-items-center rounded-full text-[10px] {ticks[
+								i
+							]
+								? 'bg-emerald-500 text-slate-950'
+								: 'border border-slate-600'}"
+							aria-label={ticks[i] ? 'zrobione' : 'do zrobienia'}>{ticks[i] ? '✓' : i + 1}</span
+						>
+						<span class="leading-relaxed"><RichText text={step.text} /></span>
+					</li>
+				{/each}
+			</ol>
+		</div>
+	{/if}
+
 	<div class="flex flex-wrap gap-2">
 		<button
 			class="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-60"
 			disabled={checking}
 			onclick={check}
 		>
-			{checking ? 'Checking…' : 'Check my solution'}
+			{checking ? 'Sprawdzam…' : 'Sprawdź rozwiązanie'}
 		</button>
 		{#if hintsShown < lesson.hints.length}
 			<button
 				class="rounded-md border border-slate-700 px-2.5 py-1.5 text-xs hover:border-slate-500"
 				onclick={() => hintsShown++}
 			>
-				Hint {hintsShown + 1}/{lesson.hints.length}
+				Podpowiedź {hintsShown + 1}/{lesson.hints.length}
 			</button>
 		{/if}
 	</div>
@@ -90,7 +160,7 @@
 					{#if r.message}
 						<div class="mt-0.5 text-[11px] text-red-300/90">
 							{r.message}{#if r.atMs !== undefined}
-								<span class="text-slate-500"> (at {(r.atMs / 1000).toFixed(2)} s)</span>{/if}
+								<span class="text-slate-500"> (w {(r.atMs / 1000).toFixed(2)} s)</span>{/if}
 						</div>
 					{/if}
 				</li>
@@ -98,17 +168,17 @@
 		</ul>
 		{#if passed}
 			<p class="rounded bg-emerald-500/15 px-2 py-1.5 text-xs font-semibold text-emerald-200">
-				Lesson complete! <a href={resolve('/learn')} class="underline">Next lesson →</a>
+				Zaliczone! <a href={resolve('/learn')} class="underline">Dalej na ścieżce →</a>
 			</p>
 		{/if}
 	{/if}
 
 	<div class="flex gap-3 border-t border-slate-800 pt-2 text-[11px]">
 		<button class="text-slate-400 underline hover:text-slate-200" onclick={onShowSolution}
-			>Show solution</button
+			>Pokaż rozwiązanie</button
 		>
 		<button class="text-slate-400 underline hover:text-slate-200" onclick={onRestart}
-			>Restart lesson</button
+			>Zacznij od nowa</button
 		>
 	</div>
 </section>

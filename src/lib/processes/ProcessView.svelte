@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { PlcRuntime } from '#lib/runtime/runtime.svelte.js';
 	import ConveyorView from './ConveyorView.svelte';
+	import LineView from './LineView.svelte';
 	import TankView from './TankView.svelte';
 	import TrafficView from './TrafficView.svelte';
 
@@ -19,6 +20,8 @@
 	<TrafficView {state} />
 {:else if state.kind === 'tank'}
 	<TankView {state} {command} online={runtime.status === 'RUN'} />
+{:else if state.kind === 'line'}
+	<LineView {state} {command} online={runtime.status === 'RUN'} />
 {:else}
 	<ConveyorView {state} {command} online={runtime.status === 'RUN'} />
 {/if}
