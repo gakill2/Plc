@@ -3,6 +3,7 @@ import { checkCircuit, deviceSymbols, type Circuit } from '#lib/circuit/model.js
 import { LadderDocument } from '#lib/ladder/document.svelte.js';
 import { checkSymbols, type SymbolEntry } from '#lib/symbols/symbols.js';
 import type { WatchEntry } from '#lib/monitor/watch.js';
+import type { ProcessKind } from '#lib/processes/types.js';
 import type { Project } from './project.js';
 
 export type ProblemSource = 'program' | 'circuit' | 'symbols';
@@ -18,6 +19,8 @@ export class ProjectState {
 	circuit: Circuit = $state({ plc: { x: 0, y: 0 }, devices: [], wires: [] });
 	userSymbols: SymbolEntry[] = $state([]);
 	watch: WatchEntry[] = $state([]);
+	readonly scenario: ProcessKind | undefined;
+	readonly lesson: string | undefined;
 	readonly ladder: LadderDocument;
 
 	/** Device symbols first — they are what the user sees on the circuit. */
@@ -30,6 +33,8 @@ export class ProjectState {
 		this.circuit = project.circuit;
 		this.userSymbols = project.symbols;
 		this.watch = project.watch;
+		this.scenario = project.scenario;
+		this.lesson = project.lesson;
 		this.ladder = new LadderDocument(project.ladder, () => this.symbols);
 		this.problems = $derived([
 			...this.ladder.compiled.diagnostics.map((d) => ({ ...d, source: 'program' as const })),
@@ -47,7 +52,9 @@ export class ProjectState {
 			ladder: $state.snapshot(this.ladder.program),
 			circuit: $state.snapshot(this.circuit),
 			symbols: $state.snapshot(this.userSymbols),
-			watch: $state.snapshot(this.watch)
+			watch: $state.snapshot(this.watch),
+			scenario: this.scenario,
+			lesson: this.lesson
 		};
 	}
 }

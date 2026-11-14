@@ -6,6 +6,10 @@
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
 	import { createMonitor } from '#lib/ladder/monitor.js';
 	import { demoProject, loadProject, projectKey } from '#lib/project/project.js';
+	import LessonPanel from '#lib/lessons/LessonPanel.svelte';
+	import { getLesson, LESSON_PREFIX } from '#lib/lessons/lessons.js';
+	import ProcessView from '#lib/processes/ProcessView.svelte';
+	import { createProcess } from '#lib/processes/models.js';
 	import { ProjectState, type Problem } from '#lib/project/state.svelte.js';
 	import { PlcRuntime } from '#lib/runtime/runtime.svelte.js';
 	import { resolveSymbol } from '#lib/symbols/symbols.js';
@@ -23,26 +27,39 @@
 	type Props = { projectId: string };
 	let { projectId }: Props = $props();
 
-	type View = 'program' | 'circuit' | 'symbols' | 'watch';
-	const VIEWS: { id: View; label: string }[] = [
-		{ id: 'program', label: 'Program' },
-		{ id: 'circuit', label: 'Circuit' },
-		{ id: 'symbols', label: 'Symbols' },
-		{ id: 'watch', label: 'Watch' }
-	];
+	type View = 'program' | 'process' | 'circuit' | 'symbols' | 'watch';
 
 	let showTrend = $state(true);
 
 	// The workspace is re-created ({#key}) when the project changes, so reading the id once is fine.
 	const key = projectKey(untrack(() => projectId));
+	/** Lesson projects start from the lesson's starter when nothing is saved yet. */
+	const startLesson = untrack(() =>
+		projectId.startsWith(LESSON_PREFIX) ? getLesson(projectId.slice(LESSON_PREFIX.length)) : null
+	);
 	let project = $state(
 		new ProjectState(
 			loadProject(
 				localStorage,
-				untrack(() => projectId)
+				untrack(() => projectId),
+				startLesson ? startLesson.starter : demoProject
 			)
 		)
 	);
+	const lesson = $derived(project.lesson ? getLesson(project.lesson) : null);
+
+	const VIEWS: { id: View; label: string }[] = $derived([
+		{ id: 'program', label: 'Program' },
+		...(project.scenario ? [{ id: 'process' as const, label: 'Process' }] : []),
+		{ id: 'circuit', label: 'Circuit' },
+		{ id: 'symbols', label: 'Symbols' },
+		{ id: 'watch', label: 'Watch' }
+	]);
+
+	// The simulated plant runs in the worker next to the PLC.
+	$effect(() => runtime.setProcess(project.scenario ?? null));
+	/** Input terminals driven by the plant (shown read-only in the I/O panel). */
+	const processSensors = $derived(project.scenario ? createProcess(project.scenario).sensors : []);
 	const doc = $derived(project.ladder);
 	const sim = new CircuitSim();
 	const runtime = new PlcRuntime();
@@ -76,6 +93,7 @@
 			if (d)
 				map.set(w.terminal, map.has(w.terminal) ? `${map.get(w.terminal)}, ${d.label}` : d.label);
 		}
+		for (const t of processSensors) map.set(t, map.has(t) ? `${map.get(t)} · plant` : 'plant');
 		return map;
 	});
 
@@ -148,6 +166,25 @@
 		if ((e.key === 'Delete' || e.key === 'Backspace') && !runtime.online) {
 			e.preventDefault();
 			doc.removeSelected();
+		}
+	}
+
+	function showSolution() {
+		if (lesson && confirm('Replace your program with the reference solution?')) {
+			project.ladder.program = lesson.solution();
+			project.ladder.select(null);
+			view = 'program';
+		}
+	}
+
+	function restartLesson() {
+		if (
+			lesson &&
+			confirm('Start this lesson over? Your program, circuit and symbols will be reset.')
+		) {
+			runtime.stop();
+			project = new ProjectState(lesson.starter());
+			sim.actuated = {};
 		}
 	}
 
@@ -224,6 +261,10 @@
 							<LadderEditor {doc} {monitor} locked={runtime.online} />
 						</div>
 					</div>
+				{:else if view === 'process'}
+					<div class="h-full overflow-auto">
+						<ProcessView {runtime} />
+					</div>
 				{:else if view === 'circuit'}
 					<CircuitEditor {project} {sim} snapshot={runtime.snapshot} locked={runtime.online} />
 				{:else if view === 'symbols'}
@@ -248,6 +289,15 @@
 		</div>
 
 		<aside class="space-y-6 overflow-auto border-l border-slate-800 p-4">
+			{#if lesson}
+				<LessonPanel
+					{lesson}
+					compiled={doc.compiled}
+					blocked={problems.some((p) => p.source !== 'circuit')}
+					onShowSolution={showSolution}
+					onRestart={restartLesson}
+				/>
+			{/if}
 			<IoPanel {runtime} labels={terminalLabels} />
 
 			<section aria-labelledby="problems-title">

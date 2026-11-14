@@ -7,6 +7,7 @@ import type {
 	TraceSignal
 } from './protocol.js';
 import { TraceBuffer } from './trace.js';
+import type { ProcessKind } from '#lib/processes/types.js';
 
 /** UI-side handle to the PLC running in a Web Worker. */
 export class PlcRuntime {
@@ -85,6 +86,14 @@ export class PlcRuntime {
 
 	modify(address: string, value: number, numType?: NumType) {
 		this.#send({ type: 'modify', address, value, numType });
+	}
+
+	setProcess(kind: ProcessKind | null) {
+		this.#send({ type: 'setProcess', kind });
+	}
+
+	processCommand(name: string, value?: unknown) {
+		this.#send({ type: 'processCommand', name, value: $state.snapshot(value) });
 	}
 
 	setTrace(signals: TraceSignal[]) {

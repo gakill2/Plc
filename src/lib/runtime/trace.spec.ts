@@ -89,3 +89,23 @@ describe('TraceBuffer', () => {
 		expect(buf.samples).toEqual([]);
 	});
 });
+
+describe('process in RuntimeCore', () => {
+	it('steps the plant after every scan and reports its state', () => {
+		const core = new RuntimeCore();
+		core.handle({ type: 'setProcess', kind: 'tank' });
+		core.handle({ type: 'load', program: assemble('LDN I0.0\nS Q0.0\nPOP\nLD I0.1\nR Q0.0\nPOP') });
+		core.handle({ type: 'processCommand', name: 'level', value: 15 });
+		expect(core.plc.getInput('I0.0')).toBe(false); // sensor updated at once
+		core.handle({ type: 'run' });
+		core.tick(1000);
+		const s = core.snapshot().process;
+		expect(s).toMatchObject({ kind: 'tank', pump: true, pumpStarts: 1 });
+		expect(s && 'level' in s && s.level).toBeCloseTo(19, 0);
+
+		core.handle({ type: 'reset' });
+		expect(core.snapshot().process).toMatchObject({ level: 50 }); // fresh plant
+		core.handle({ type: 'setProcess', kind: null });
+		expect(core.snapshot().process).toBeNull();
+	});
+});

@@ -1,4 +1,6 @@
 import { parseAddress, Plc, ProgramError, type Address, type NumType } from '#lib/engine/index.js';
+import { createProcess } from '#lib/processes/models.js';
+import type { ProcessIO, ProcessKind, ProcessModel } from '#lib/processes/types.js';
 import type {
 	RuntimeCommand,
 	RuntimeEvent,
@@ -30,6 +32,13 @@ export class RuntimeCore {
 	#traceLast: number[] | null = null;
 	#traceSamples: TraceSample[] = [];
 
+	#processKind: ProcessKind | null = null;
+	#process: ProcessModel | null = null;
+	readonly #io: ProcessIO = {
+		output: (t) => this.plc.getOutput(t),
+		input: (t, v) => this.plc.setInput(t, v)
+	};
+
 	get status(): RuntimeStatus {
 		const mode = this.plc.mode;
 		if (mode === 'RUN' && this.#paused) return 'PAUSED';
@@ -58,6 +67,7 @@ export class RuntimeCore {
 				this.plc.load(cmd.program);
 				this.#paused = false;
 				this.#debtMs = 0;
+				this.#restartProcess();
 				this.#restartTrace();
 				return null;
 			case 'run':
@@ -68,7 +78,7 @@ export class RuntimeCore {
 				return null;
 			case 'step':
 				if (this.plc.mode === 'STOP' && this.plc.run()) this.#paused = true;
-				if (this.status === 'PAUSED' && this.plc.scan(SCAN_MS)) this.#sample();
+				if (this.status === 'PAUSED' && this.plc.scan(SCAN_MS)) this.#afterScan();
 				return null;
 			case 'stop':
 				this.plc.stop();
@@ -79,6 +89,7 @@ export class RuntimeCore {
 				this.plc.reset();
 				this.#paused = false;
 				this.#debtMs = 0;
+				this.#restartProcess();
 				this.#restartTrace();
 				return null;
 			case 'setInput':
@@ -95,6 +106,14 @@ export class RuntimeCore {
 				return null;
 			case 'modify':
 				this.plc.modify(cmd.address, cmd.value, cmd.numType);
+				return null;
+			case 'setProcess':
+				this.#processKind = cmd.kind;
+				this.#restartProcess();
+				return null;
+			case 'processCommand':
+				this.#process?.command(cmd.name, cmd.value);
+				this.#process?.step(0, this.#io); // sensors follow the change at once
 				return null;
 			case 'setTrace':
 				this.#trace = cmd.signals.map((s) => {
@@ -116,7 +135,7 @@ export class RuntimeCore {
 		let scans = 0;
 		while (this.#debtMs >= SCAN_MS && scans < MAX_SCANS_PER_TICK) {
 			if (!this.plc.scan(SCAN_MS)) break;
-			this.#sample();
+			this.#afterScan();
 			this.#debtMs -= SCAN_MS;
 			scans++;
 		}
@@ -133,8 +152,21 @@ export class RuntimeCore {
 			status: this.status,
 			speed: this.#speed,
 			scanMs: SCAN_MS,
-			trace: { epoch: this.#traceEpoch, samples }
+			trace: { epoch: this.#traceEpoch, samples },
+			process: this.#process?.state() ?? null
 		};
+	}
+
+	/** The plant reacts to the outputs of the scan that just ran, then the trace is sampled. */
+	#afterScan() {
+		this.#process?.step(SCAN_MS, this.#io);
+		this.#sample();
+	}
+
+	/** A fresh plant (on load, reset or a new scenario); its sensors are applied immediately. */
+	#restartProcess() {
+		this.#process = this.#processKind ? createProcess(this.#processKind) : null;
+		this.#process?.step(0, this.#io);
 	}
 
 	#restartTrace() {

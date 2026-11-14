@@ -3,6 +3,8 @@ import { demoProgram } from '#lib/ladder/defaults.js';
 import type { LadderProgram } from '#lib/ladder/model.js';
 import { demoWatch, type WatchEntry } from '#lib/monitor/watch.js';
 import type { SymbolEntry } from '#lib/symbols/symbols.js';
+import { isProcessKind } from '#lib/processes/models.js';
+import type { ProcessKind } from '#lib/processes/types.js';
 
 /** Everything that is saved: the program, the wiring and the user's symbols. */
 export interface Project {
@@ -12,6 +14,10 @@ export interface Project {
 	symbols: SymbolEntry[];
 	/** Rows of the watch table (also: which signals are trended). */
 	watch: WatchEntry[];
+	/** Simulated plant attached to the project. */
+	scenario?: ProcessKind;
+	/** Lesson this project belongs to. */
+	lesson?: string;
 }
 
 export const demoProject = (): Project => ({
@@ -44,7 +50,9 @@ export function parseProject(raw: unknown): Project | null {
 			ladder: raw.ladder,
 			circuit: raw.circuit,
 			symbols: Array.isArray(raw.symbols) ? (raw.symbols as SymbolEntry[]) : [],
-			watch: Array.isArray(raw.watch) ? (raw.watch as WatchEntry[]) : demoWatch()
+			watch: Array.isArray(raw.watch) ? (raw.watch as WatchEntry[]) : demoWatch(),
+			scenario: isProcessKind(raw.scenario) ? raw.scenario : undefined,
+			lesson: typeof raw.lesson === 'string' ? raw.lesson : undefined
 		};
 	}
 	// stage 2 saved the bare ladder program
@@ -57,7 +65,11 @@ export function parseProject(raw: unknown): Project | null {
 export const projectKey = (id: string) => `plcsim:project:${id}`;
 const legacyKey = (id: string) => `plcsim:ladder:${id}`;
 
-export function loadProject(storage: Pick<Storage, 'getItem'>, id: string): Project {
+export function loadProject(
+	storage: Pick<Storage, 'getItem'>,
+	id: string,
+	fallback: () => Project = demoProject
+): Project {
 	for (const key of [projectKey(id), legacyKey(id)]) {
 		try {
 			const project = parseProject(JSON.parse(storage.getItem(key) ?? 'null'));
@@ -66,5 +78,5 @@ export function loadProject(storage: Pick<Storage, 'getItem'>, id: string): Proj
 			// corrupted save — try the next one
 		}
 	}
-	return demoProject();
+	return fallback();
 }

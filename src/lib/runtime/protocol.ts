@@ -1,4 +1,5 @@
 import type { Instr, NumType, PlcSnapshot, ProgramIssue } from '#lib/engine/index.js';
+import type { ProcessKind, ProcessState } from '#lib/processes/types.js';
 
 /** A signal recorded for the timing diagram. `bit` reads Q of timers/counters, `number` reads ET/CV. */
 export interface TraceSignal {
@@ -26,7 +27,9 @@ export type RuntimeCommand =
 	| { type: 'force'; address: string; value: boolean | null }
 	| { type: 'clearForces' }
 	| { type: 'modify'; address: string; value: number; numType?: NumType }
-	| { type: 'setTrace'; signals: TraceSignal[] };
+	| { type: 'setTrace'; signals: TraceSignal[] }
+	| { type: 'setProcess'; kind: ProcessKind | null }
+	| { type: 'processCommand'; name: string; value?: unknown };
 
 /** What the UI shows: the CPU mode plus whether the simulation clock is paused. */
 export type RuntimeStatus = 'STOP' | 'RUN' | 'PAUSED' | 'FAULT';
@@ -37,6 +40,8 @@ export interface RuntimeSnapshot extends PlcSnapshot {
 	scanMs: number;
 	/** New trace samples since the previous snapshot. A new epoch means "start over". */
 	trace: { epoch: number; samples: TraceSample[] };
+	/** State of the simulated plant, if the project has one. */
+	process: ProcessState | null;
 }
 
 /** Messages from the PLC worker to the UI. */

@@ -6,7 +6,7 @@ A browser-based PLC simulator for learning industrial automation. Build a circui
 controller, push buttons, sensors, lamps and motors, program it in **Ladder Logic** or
 **Structured Text**, then run it and watch the controller execute your program scan by scan.
 
-**Live demo:** _coming soon_ · **Status:** stage 4 — online monitoring: watch table with forcing, timing diagram
+**Live demo:** _coming soon_ · **Status:** stage 5 — simulated plants (traffic light, tank, sorting conveyor) and 7 auto-graded lessons
 
 ## Planned features
 
@@ -17,7 +17,7 @@ controller, push buttons, sensors, lamps and motors, program it in **Ladder Logi
 - Circuit editor: wire devices to I/O terminals, interact with them while running
 - Watch table with forcing, timing diagram of signals
 - Simulated processes: traffic lights, tank filling, sorting conveyor
-- Lessons with automatic solution checking
+- Lessons with automatic solution checking — every lesson ships a reference solution that the test suite proves passes
 
 See [PLAN.md](./PLAN.md) for the full plan and roadmap.
 

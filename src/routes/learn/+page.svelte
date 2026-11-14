@@ -1,9 +1,67 @@
 <script lang="ts">
-	import PagePlaceholder from '#lib/components/PagePlaceholder.svelte';
+	import { resolve } from '$app/paths';
+	import { LESSONS, lessonProjectId } from '#lib/lessons/lessons.js';
+	import { completedLessons } from '#lib/lessons/progress.js';
+	import { onMount } from 'svelte';
+
+	let done = $state<ReadonlySet<string>>(new Set());
+	onMount(() => (done = completedLessons()));
+
+	const LEVELS = {
+		basics: 'bg-slate-700 text-slate-200',
+		logic: 'bg-sky-500/20 text-sky-200',
+		timers: 'bg-amber-500/20 text-amber-200',
+		process: 'bg-pink-500/20 text-pink-200'
+	} as const;
 </script>
 
-<PagePlaceholder
-	title="Learn"
-	description="Guided lessons from basic contacts to timers and counters, with automatic checking of your solution."
-	stage="stage 5"
-/>
+<svelte:head>
+	<title>Learn · PLC Sim</title>
+</svelte:head>
+
+<section class="mx-auto max-w-4xl px-4 py-12">
+	<h1 class="text-3xl font-bold text-white">Learn</h1>
+	<p class="mt-2 max-w-2xl text-slate-400">
+		Short hands-on lessons, from a single contact to controlling a simulated plant. Each one is
+		checked automatically: your program runs against a set of test cases in a headless PLC.
+	</p>
+	<p class="mt-2 text-sm text-slate-500">{done.size} / {LESSONS.length} completed</p>
+
+	<ol class="mt-8 space-y-3">
+		{#each LESSONS as lesson, i (lesson.slug)}
+			<li>
+				<a
+					href={resolve('/editor/[id]', { id: lessonProjectId(lesson.slug) })}
+					class="flex items-center gap-4 rounded-lg border border-slate-800 bg-slate-900/50 p-4 transition-colors hover:border-slate-600"
+				>
+					<span
+						class="grid size-9 shrink-0 place-items-center rounded-full font-mono text-sm {done.has(
+							lesson.slug
+						)
+							? 'bg-emerald-500 text-slate-950'
+							: 'bg-slate-800 text-slate-300'}"
+					>
+						{done.has(lesson.slug) ? '✓' : i + 1}
+					</span>
+					<div class="min-w-0 flex-1">
+						<div class="flex flex-wrap items-center gap-2">
+							<h2 class="font-semibold text-white">{lesson.title}</h2>
+							<span class="rounded px-1.5 py-0.5 text-[10px] uppercase {LEVELS[lesson.level]}"
+								>{lesson.level}</span
+							>
+							{#if lesson.scenario}
+								<span
+									class="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300 uppercase"
+								>
+									plant: {lesson.scenario}
+								</span>
+							{/if}
+						</div>
+						<p class="mt-0.5 text-sm text-slate-400">{lesson.summary}</p>
+					</div>
+					<span class="text-slate-500" aria-hidden="true">→</span>
+				</a>
+			</li>
+		{/each}
+	</ol>
+</section>
