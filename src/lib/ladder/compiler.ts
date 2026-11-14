@@ -7,6 +7,7 @@ import {
 	type Address,
 	type Instr,
 	type MemoryConfig,
+	type AddrOperand,
 	type Operand
 } from '#lib/engine/index.js';
 import { resolveSymbol, type SymbolMap } from '#lib/symbols/symbols.js';
@@ -109,6 +110,13 @@ export function compileLadder(ladder: LadderProgram, options: CompileOptions = {
 		return a.index;
 	};
 
+	const destination = (id: string, text: string, what: string): AddrOperand | null => {
+		const o = operand(id, text, what);
+		if (o.kind === 'addr') return o;
+		if (text.trim()) report(id, `${what}: needs an address such as MW10, not a constant`);
+		return null;
+	};
+
 	/** Pushes a boolean value, AND-ing it with the power on the stack if there is any. */
 	const value = (started: boolean, push: () => void) => {
 		push();
@@ -158,6 +166,21 @@ export function compileLadder(ladder: LadderProgram, options: CompileOptions = {
 					: null;
 				emit(reset ? { op: 'LD', addr: reset } : { op: 'LDC', value: false });
 				emit({ op: el.type, counter: c, pv });
+				return true;
+			}
+			case 'move': {
+				powered(started);
+				const src = operand(el.id, el.src, 'MOVE input');
+				const dst = destination(el.id, el.dst, 'MOVE output');
+				if (dst) emit({ op: 'MOVE', src, dst });
+				return true;
+			}
+			case 'math': {
+				powered(started);
+				const a = operand(el.id, el.a, `${el.fn} input 1`);
+				const b = operand(el.id, el.b, `${el.fn} input 2`);
+				const dst = destination(el.id, el.dst, `${el.fn} output`);
+				if (dst) emit({ op: 'MATH', fn: el.fn, a, b, dst });
 				return true;
 			}
 			case 'parallel': {

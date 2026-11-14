@@ -27,6 +27,7 @@
 
 <Selectable id={el.id} label="{el.type} contact {el.operand}" class="h-16 w-24">
 	<input
+		list={view.listId}
 		class="{operandInput} absolute inset-x-1 top-0.5"
 		value={el.operand}
 		disabled={view.locked}

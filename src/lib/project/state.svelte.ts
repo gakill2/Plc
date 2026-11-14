@@ -1,5 +1,11 @@
 import { DEFAULT_MEMORY_CONFIG } from '#lib/engine/index.js';
-import { checkCircuit, deviceSymbols, type Circuit } from '#lib/circuit/model.js';
+import {
+	checkCircuit,
+	deviceSymbols,
+	normalizeTerminal,
+	type Circuit
+} from '#lib/circuit/model.js';
+import { analyze, crossReference, type Warning, type XrefEntry } from '#lib/analysis/analysis.js';
 import { LadderDocument } from '#lib/ladder/document.svelte.js';
 import { checkSymbols, type SymbolEntry } from '#lib/symbols/symbols.js';
 import type { WatchEntry } from '#lib/monitor/watch.js';
@@ -40,6 +46,10 @@ export class ProjectState {
 	readonly compiled: CompiledLadder;
 
 	readonly problems: Problem[];
+	/** Where every address is read and written. */
+	readonly xref: XrefEntry[];
+	/** Non-blocking hints: double coils, unused wiring, typos… */
+	readonly warnings: Warning[];
 
 	constructor(project: Project) {
 		this.circuit = project.circuit;
@@ -60,6 +70,28 @@ export class ProjectState {
 				source: 'circuit' as const
 			}))
 		]);
+		this.xref = $derived(crossReference(this.compiled.program, this.compiled.sourceMap));
+		this.warnings = $derived(
+			this.compiled.diagnostics.length
+				? []
+				: analyze({
+						xref: this.xref,
+						language: this.language,
+						names: this.symbols.reverse,
+						wired: this.wiredTerminals
+					})
+		);
+	}
+
+	/** Terminals that have a device connected in the circuit. */
+	get wiredTerminals(): string[] {
+		const devices = this.circuit.devices.map((d) => d.id);
+		const out: string[] = [];
+		for (const w of this.circuit.wires) {
+			const t = devices.includes(w.device) ? normalizeTerminal(w.terminal) : null;
+			if (t && !out.includes(t)) out.push(t);
+		}
+		return out;
 	}
 
 	/** Puts the editable parts of a snapshot back (undo / redo). Scenario and lesson never change. */

@@ -10,7 +10,16 @@ import {
 	type Node,
 	type Rung
 } from './model.js';
-import { addBranch, findNode, findRung, insertAfter, moveRung, removeNode } from './ops.js';
+import {
+	addBranch,
+	cloneWithNewIds,
+	findNode,
+	findRung,
+	insertAfter,
+	insertBefore,
+	moveRung,
+	removeNode
+} from './ops.js';
 
 type SymbolsGetter = () => { map: SymbolMap; reverse: SymbolMap };
 const NO_SYMBOLS: { map: SymbolMap; reverse: SymbolMap } = Object.freeze({
@@ -22,6 +31,10 @@ const NO_SYMBOLS: { map: SymbolMap; reverse: SymbolMap } = Object.freeze({
 export class LadderDocument {
 	program: LadderProgram = $state({ version: 1, rungs: [] });
 	selectedId: string | null = $state(null);
+	/** Where palette elements and pasted elements go relative to the selection. */
+	insertMode: 'after' | 'before' = $state('after');
+	/** Internal clipboard: a plain copy of a rung, element or coil. */
+	clipboard: Node | null = $state.raw(null);
 
 	#symbols: SymbolsGetter = () => NO_SYMBOLS;
 
@@ -46,6 +59,11 @@ export class LadderDocument {
 		if (symbols) this.#symbols = symbols;
 	}
 
+	/** [address, name] pairs of all symbols — for operand autocomplete. */
+	get symbolList(): [string, string][] {
+		return [...this.#symbols().reverse];
+	}
+
 	/** Address of a symbol name, or symbol name of an address — shown under operands. */
 	alias(operand: string): string | null {
 		const { map, reverse } = this.#symbols();
@@ -65,12 +83,69 @@ export class LadderDocument {
 		this.selectedId = r.id;
 	}
 
-	/** Inserts in series after the selection (or at the end of the selected / last rung). */
-	insert(element: Element) {
+	/**
+	 * Inserts in series after (or before, see `insertMode`) the selection. With a whole rung
+	 * selected, the element goes to the end (or the start) of that rung.
+	 */
+	insert(element: Element, mode = this.insertMode) {
 		const target = this.#targetRung();
-		const after = this.selectedId && this.selectedId !== target.id ? this.selectedId : null;
-		insertAfter(target, after, element);
+		const anchor = this.selectedId && this.selectedId !== target.id ? this.selectedId : null;
+		if (mode === 'before') insertBefore(target, anchor, element);
+		else insertAfter(target, anchor, element);
 		this.selectedId = element.id;
+	}
+
+	/** Changes the variant of the selected contact, coil, timer or counter (e.g. NO → NC). */
+	setType(type: string) {
+		const node = this.selected;
+		if (
+			node &&
+			(node.kind === 'contact' ||
+				node.kind === 'coil' ||
+				node.kind === 'timer' ||
+				node.kind === 'counter')
+		) {
+			Object.assign(node, { type });
+		}
+	}
+
+	get canCopy(): boolean {
+		const k = this.selected?.kind;
+		return !!k && k !== 'series';
+	}
+
+	copy(): boolean {
+		if (!this.canCopy) return false;
+		this.clipboard = $state.snapshot(this.selected) as Node;
+		return true;
+	}
+
+	paste(): boolean {
+		const clip = this.clipboard;
+		if (!clip || clip.kind === 'series') return false;
+		const copy = cloneWithNewIds(clip);
+		if (copy.kind === 'rung') {
+			const index = this.selectedRung
+				? this.program.rungs.indexOf(this.selectedRung) + 1
+				: this.program.rungs.length;
+			this.program.rungs.splice(index, 0, copy);
+			this.selectedId = copy.id;
+		} else if (copy.kind === 'coil') {
+			this.addCoil(copy);
+		} else {
+			this.insert(copy);
+		}
+		return true;
+	}
+
+	/** Copy + paste right after the original. */
+	duplicate(): boolean {
+		if (!this.copy()) return false;
+		const mode = this.insertMode;
+		this.insertMode = 'after';
+		const ok = this.paste();
+		this.insertMode = mode;
+		return ok;
 	}
 
 	addCoil(c: Coil) {

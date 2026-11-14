@@ -1,6 +1,7 @@
 import {
 	contact,
 	newId,
+	type Node,
 	series,
 	type Coil,
 	type Element,
@@ -170,4 +171,53 @@ export function moveRung(program: LadderProgram, id: string, delta: -1 | 1): voi
 	if (from < 0 || to < 0 || to >= program.rungs.length) return;
 	const [r] = program.rungs.splice(from, 1);
 	program.rungs.splice(to, 0, r);
+}
+
+/**
+ * Inserts an element in series before `targetId`. If the target is a branch (series), the element
+ * becomes its first item; if it is missing, the element goes to the start of the rung.
+ */
+export function insertBefore(rung: Rung, targetId: string | null, element: Element): void {
+	if (targetId) {
+		const found = findElement(rung.logic, targetId);
+		if (found) {
+			found.parent.items.splice(found.index, 0, element);
+			return;
+		}
+		const branch = findSeries(rung.logic, targetId);
+		if (branch) {
+			branch.items.unshift(element);
+			return;
+		}
+	}
+	rung.logic.items.unshift(element);
+}
+
+/** A deep copy with fresh ids everywhere — for copy & paste and duplicating. */
+export function cloneWithNewIds<T extends Node>(node: T): T {
+	const copy = structuredClone(node) as T;
+	const reid = (n: Node): void => {
+		switch (n.kind) {
+			case 'rung':
+				n.id = newId('r');
+				reid(n.logic);
+				n.coils.forEach(reid);
+				return;
+			case 'series':
+				n.id = newId('s');
+				n.items.forEach(reid);
+				return;
+			case 'parallel':
+				n.id = newId('p');
+				n.branches.forEach(reid);
+				return;
+			case 'coil':
+				n.id = newId('c');
+				return;
+			default:
+				n.id = newId('e');
+		}
+	};
+	reid(copy);
+	return copy;
 }

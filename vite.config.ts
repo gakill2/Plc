@@ -27,6 +27,7 @@ export default defineConfig({
 			include: [
 				'src/lib/engine/**/*.ts',
 				'src/lib/ladder/**/*.ts',
+				'src/lib/analysis/**/*.ts',
 				'src/lib/runtime/core.ts',
 				'src/lib/circuit/model.ts',
 				'src/lib/symbols/**/*.ts',

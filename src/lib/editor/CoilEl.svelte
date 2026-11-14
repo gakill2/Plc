@@ -18,6 +18,7 @@
 
 <Selectable id={coil.id} label="{coil.type} coil {coil.operand}" class="h-16 w-24">
 	<input
+		list={view.listId}
 		class="{operandInput} absolute inset-x-1 top-0.5"
 		value={coil.operand}
 		disabled={view.locked}

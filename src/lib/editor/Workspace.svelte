@@ -25,6 +25,8 @@
 	import CodeView from './CodeView.svelte';
 	import IoPanel from './IoPanel.svelte';
 	import LadderEditor from './LadderEditor.svelte';
+	import XrefPanel from './XrefPanel.svelte';
+	import { findRung } from '#lib/ladder/ops.js';
 	import Palette from './Palette.svelte';
 	import RuntimeToolbar from './RuntimeToolbar.svelte';
 	import SymbolTable from './SymbolTable.svelte';
@@ -219,6 +221,19 @@
 		if (p.source === 'program') doc.select(p.id);
 	}
 
+	/** Jumps to a cross-reference / warning owner: a ladder node id or an ST "L<line>". */
+	function jumpTo(owner: string | null) {
+		view = 'program';
+		if (owner && project.language === 'ladder') doc.select(owner);
+	}
+
+	function place(owner: string): string {
+		const line = /^L(\d+)$/.exec(owner);
+		if (line) return `line ${line[1]}`;
+		const rung = findRung(doc.program, owner);
+		return rung ? `N${doc.program.rungs.indexOf(rung) + 1}` : '?';
+	}
+
 	function onKeydown(e: KeyboardEvent) {
 		const target = e.target as HTMLElement;
 		if (target.closest('input, select, textarea, .cm-editor')) return;
@@ -235,6 +250,14 @@
 		}
 		if (view !== 'program' || project.language !== 'ladder') return;
 		if (e.key === 'Escape') doc.select(null);
+		if (mod && !runtime.online && !window.getSelection()?.toString()) {
+			const key = e.key.toLowerCase();
+			const action =
+				key === 'c' ? doc.copy : key === 'v' ? doc.paste : key === 'd' ? doc.duplicate : null;
+			if (action && action.call(doc)) e.preventDefault();
+			else if (key === 'd') e.preventDefault(); // never open the bookmark dialog here
+			if (action) return;
+		}
 		if ((e.key === 'Delete' || e.key === 'Backspace') && !runtime.online) {
 			e.preventDefault();
 			doc.removeSelected();
@@ -428,7 +451,7 @@
 									Online — live values from the PLC. Stop it to edit the program.
 								</p>
 							{/if}
-							<LadderEditor {doc} {monitor} locked={runtime.online} />
+							<LadderEditor {doc} {monitor} locked={runtime.online} warnings={project.warnings} />
 						</div>
 					</div>
 				{:else if view === 'process'}
@@ -496,6 +519,26 @@
 						{/each}
 					</ul>
 				{/if}
+				{#if project.warnings.length}
+					<h3 class="mt-3 mb-1 text-xs font-semibold tracking-wider text-amber-400 uppercase">
+						Warnings ({project.warnings.length})
+					</h3>
+					<ul class="space-y-1 text-xs" aria-label="Warnings">
+						{#each project.warnings as w, i (i)}
+							<li>
+								<button
+									class="w-full rounded bg-amber-400/10 px-2 py-1 text-left text-amber-100 hover:bg-amber-400/20"
+									onclick={() => jumpTo(w.id)}
+								>
+									{#if w.id && project.language === 'ladder'}
+										<span class="text-[10px] text-amber-400">{place(w.id)}</span>
+									{/if}
+									{w.message}
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
 				{#if runtime.loadError}
 					<p class="mt-2 rounded bg-red-500/10 px-2 py-1 text-xs text-red-200">
 						{runtime.loadError.message}
@@ -506,6 +549,14 @@
 			<CodeView
 				compiled={loaded && runtime.online ? loaded : project.compiled}
 				selectedId={doc.selectedId}
+			/>
+
+			<XrefPanel
+				entries={project.xref}
+				names={project.symbols.reverse}
+				{place}
+				selectedId={project.language === 'ladder' ? doc.selectedId : null}
+				onJump={jumpTo}
 			/>
 
 			<button

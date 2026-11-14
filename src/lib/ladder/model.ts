@@ -1,4 +1,4 @@
-import type { CmpOp } from '#lib/engine/index.js';
+import type { CmpOp, MathFn } from '#lib/engine/index.js';
 
 /*
  * Ladder program model.
@@ -61,7 +61,25 @@ export interface Series {
 	items: Element[];
 }
 
-export type Element = Contact | Compare | TimerBox | CounterBox | Parallel;
+/** MOVE: copies IN to OUT while the box is powered (EN). */
+export interface MoveBox {
+	id: string;
+	kind: 'move';
+	src: string;
+	dst: string;
+}
+
+/** ADD / SUB / MUL / DIV / MOD: OUT := IN1 fn IN2 while powered. ENO is 0 on division by zero. */
+export interface MathBox {
+	id: string;
+	kind: 'math';
+	fn: MathFn;
+	a: string;
+	b: string;
+	dst: string;
+}
+
+export type Element = Contact | Compare | TimerBox | CounterBox | MoveBox | MathBox | Parallel;
 
 export interface Coil {
 	id: string;
@@ -104,6 +122,22 @@ export const contact = (type: ContactType = 'NO', operand = 'I0.0'): Contact => 
 	kind: 'contact',
 	type,
 	operand
+});
+
+export const moveBox = (src = '0', dst = 'MW0'): MoveBox => ({
+	id: newId('e'),
+	kind: 'move',
+	src,
+	dst
+});
+
+export const mathBox = (fn: MathFn = 'ADD', a = 'MW0', b = '1', dst = 'MW0'): MathBox => ({
+	id: newId('e'),
+	kind: 'math',
+	fn,
+	a,
+	b,
+	dst
 });
 
 export const compare = (cmp: CmpOp = '>=', a = 'MW0', b = '0'): Compare => ({
