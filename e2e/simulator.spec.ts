@@ -3,7 +3,14 @@ import { openEditor, output, pressDevice } from './helpers';
 
 test('landing page leads to the demo', async ({ page }) => {
 	await page.goto('/');
-	await expect(page.getByRole('heading', { name: 'PLC Sim' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: /Learn how a PLC thinks/ })).toBeVisible();
+	await page
+		.getByRole('button', { name: /Start push button/ })
+		.dispatchEvent('pointerdown', { pointerId: 1 });
+	await page
+		.getByRole('button', { name: /Start push button/ })
+		.dispatchEvent('pointerup', { pointerId: 1 });
+	await expect(page.getByText(/scan [1-9]/)).toBeVisible();
 	await page.getByRole('link', { name: 'Open the demo' }).click();
 	await expect(page).toHaveURL(/\/editor\/demo$/);
 	await expect(page.getByText('Network 1')).toBeVisible();
