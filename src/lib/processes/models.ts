@@ -11,6 +11,7 @@ import { LineProcess } from './line.js';
 import { CraneProcess } from './crane.js';
 import { OvenProcess } from './oven.js';
 import { RemoteProcess } from './remote.js';
+import { DriveProcess } from './driveplant.js';
 
 /** Traffic light: no physics, the lamps simply show Q0.0 red, Q0.1 yellow, Q0.2 green. */
 export class TrafficProcess implements ProcessModel {
@@ -225,6 +226,8 @@ export function createProcess(kind: ProcessKind): ProcessModel {
 			return new CraneProcess();
 		case 'remote':
 			return new RemoteProcess();
+		case 'drive':
+			return new DriveProcess();
 	}
 }
 
@@ -235,4 +238,5 @@ export const isProcessKind = (v: unknown): v is ProcessKind =>
 	v === 'line' ||
 	v === 'oven' ||
 	v === 'crane' ||
-	v === 'remote';
+	v === 'remote' ||
+	v === 'drive';

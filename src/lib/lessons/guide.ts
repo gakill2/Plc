@@ -766,6 +766,35 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		checkIt
 	],
 
+	'drive-profidrive': [
+		{
+			text: 'Sekwencja załączenia: gdy `Run` = 0, wysyłaj `STW1 := 16#047E;` (w gałęzi ELSE) — napęd przejdzie do „gotowy do załączenia”.',
+			done: (c) => /ELSE\s+STW1\s*:=\s*16#047E/i.test(c.st ?? '')
+		},
+		{
+			text: 'Błąd z napędu: `Fault := (ZSW1 AND 16#0008) <> 0;` i `AND NOT Fault` w podtrzymaniu `Run`.',
+			done: (c) =>
+				/ZSW1\s+AND\s+16#0*8\b/i.test(c.st ?? '') && /Run\s*:=[^;]*NOT\s+Fault/i.test(c.st ?? '')
+		},
+		{
+			text: 'Kwitowanie: `IF Ack THEN STW1 := STW1 OR 16#0080; END_IF;`',
+			done: (c) => /STW1\s+OR\s+16#0*80\b/i.test(c.st ?? '')
+		},
+		{
+			text: 'Prędkość: `Fast` → `NSOLL_A := 16#4000` (50 Hz), inaczej `16#2000` (25 Hz).',
+			done: (c) =>
+				/16#4000/i.test(c.st ?? '') && /16#2000/i.test(c.st ?? '') && /IF\s+Fast/i.test(c.st ?? '')
+		},
+		{
+			text: 'Lampka pracy ze statusu napędu: `LampRun := (ZSW1 AND 16#0004) <> 0;`',
+			done: (c) => /LampRun\s*:=[^;]*ZSW1[^;]*16#0*4\b/i.test(c.st ?? '')
+		},
+		runIt(
+			'w widoku Process obserwuj stan S1 → S2 → S3 → S4 i bity STW1 / ZSW1; wywołaj błąd i skwituj go.'
+		),
+		checkIt
+	],
+
 	/* ---------- commissioning ---------- */
 	'commissioning-conveyor': [
 		testIo,

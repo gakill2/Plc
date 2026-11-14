@@ -19,7 +19,7 @@ test('a foreman ticket opens a lesson, is graded and unlocks the next one', asyn
 
 	await page.goto('/work');
 	await expect(page.getByRole('link', { name: /Prasa: sterowanie oburęczne/ })).toBeVisible();
-	await expect(page.getByText('Zamknięte: 1 / 21')).toBeVisible();
+	await expect(page.getByText('Zamknięte: 1 / 22')).toBeVisible();
 });
 
 test('a tip pops up on the first timer, glossary terms explain themselves', async ({ page }) => {

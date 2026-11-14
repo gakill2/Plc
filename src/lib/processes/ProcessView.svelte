@@ -4,6 +4,7 @@
 	import CraneView from './CraneView.svelte';
 	import OvenView from './OvenView.svelte';
 	import RemoteView from './RemoteView.svelte';
+	import DriveView from './DriveView.svelte';
 	import LineView from './LineView.svelte';
 	import TankView from './TankView.svelte';
 	import TrafficView from './TrafficView.svelte';
@@ -27,6 +28,8 @@
 	<LineView {state} {command} online={runtime.status === 'RUN'} />
 {:else if state.kind === 'oven'}
 	<OvenView {state} {command} online={runtime.status === 'RUN'} />
+{:else if state.kind === 'drive'}
+	<DriveView {state} {command} />
 {:else if state.kind === 'remote'}
 	<RemoteView {state} {command} online={runtime.status === 'RUN'} />
 {:else if state.kind === 'crane'}

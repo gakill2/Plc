@@ -853,6 +853,94 @@ alarm := raw = 32767;`
 		]
 	},
 
+	/* ------------------------------------------------------------------ podstawy automatyki */
+	{
+		slug: 'podstawy-automatyki',
+		title: 'Podstawy automatyki: sprzężenie zwrotne i obiekty regulacji',
+		summary:
+			'Układ otwarty i zamknięty, typowe obiekty (inercja, opóźnienie, całkowanie, oscylacje), odczyt K, T i τ z odpowiedzi skokowej i pierwsze nastawy regulatora.',
+		minutes: 12,
+		blocks: [
+			{
+				kind: 'text',
+				text: `**Sterowanie w układzie otwartym**: wysyłasz rozkaz i nie sprawdzasz efektu (grzałka na 50 % „i jakoś to będzie”). **Regulacja w układzie zamkniętym**: mierzysz wielkość regulowaną (PV), porównujesz z zadaną (SP), a **uchyb** e = SP − PV decyduje o sterowaniu. To jest **sprzężenie zwrotne** — działa nawet wtedy, gdy obiekt się zmienia albo przychodzą zakłócenia (otwarte drzwi pieca, zimny wsad).
+
+Zanim dobierzesz regulator, poznaj **obiekt**. Najprostszy eksperyment: zmień skokowo sterowanie i zapisz, co się dzieje — to **odpowiedź skokowa**.`
+			},
+			{
+				kind: 'table',
+				head: ['Obiekt', 'Odpowiedź na skok', 'Przykład'],
+				rows: [
+					[
+						'Proporcjonalny z inercją',
+						'rośnie wykładniczo i się ustala',
+						'temperatura pieca, prędkość taśmy'
+					],
+					[
+						'Z opóźnieniem (martwy czas τ)',
+						'przez chwilę nic, potem reakcja',
+						'transport materiału taśmą, długa rura'
+					],
+					[
+						'Całkujący',
+						'rośnie bez końca (aż do ograniczenia)',
+						'poziom w zbiorniku przy stałym dopływie, pozycja osi'
+					],
+					[
+						'Oscylacyjny II rzędu',
+						'przestrzeliwuje i się buja',
+						'ramię dźwigu, słabo tłumiony napęd'
+					]
+				]
+			},
+			{ kind: 'step-lab' },
+			{
+				kind: 'text',
+				text: `**Jak czytać wykres** obiektu z inercją i opóźnieniem:
+
+- **K** (wzmocnienie) — o ile zmieniło się wyjście po ustaleniu, na jednostkę skoku wejścia,
+- **τ** (opóźnienie) — ile czasu nic się nie działo,
+- **T** (stała czasowa) — czas od końca opóźnienia do osiągnięcia **63 %** zmiany końcowej.
+
+Im większy stosunek **τ / T**, tym trudniej regulować: regulator „nie widzi” skutków swoich decyzji. Dlatego krótkie przewody pomiarowe, czujnik blisko elementu wykonawczego i szybkie pomiary to połowa sukcesu.
+
+**Reguła SIMC** daje bezpieczne nastawy regulatora PI wprost z K, T i τ: **Kp = T / (K · 2τ)**, **Ti = min(T, 8τ)**. To dobry punkt startu — potem stroisz na obiekcie.`
+			},
+			{
+				kind: 'callout',
+				tone: 'tip',
+				title: 'Zasady na obiekcie',
+				text: 'Zmieniaj jedną nastawę naraz. Za duże Kp → oscylacje; za małe Ti → przeregulowanie i „bujanie” całki. Obiekt całkujący (poziom) często wystarczy regulator P albo dwustawny z histerezą. Przy regulatorze zawsze sprawdź kierunek działania: czy wzrost sterowania podnosi czy obniża wartość mierzoną.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Po skoku mocy temperatura przez 3 s się nie zmienia, potem rośnie i po kolejnych 12 s osiąga 63 % zmiany. Ile wynoszą τ i T?',
+				options: [
+					'τ = 3 s, T = 12 s',
+					'τ = 15 s, T = 12 s',
+					'τ = 3 s, T = 15 s',
+					'τ = 0, T = 15 s'
+				],
+				correct: 0,
+				explanation:
+					'Opóźnienie to czas bez reakcji (3 s), stałą czasową liczy się od końca opóźnienia do 63 % (12 s).'
+			},
+			{
+				kind: 'quiz',
+				question: 'Który obiekt jest całkujący?',
+				options: [
+					'Piec: przy stałej mocy temperatura się ustala',
+					'Zbiornik: przy stałej nadwyżce dopływu poziom rośnie bez końca',
+					'Taśma: prędkość ustala się po rampie',
+					'Wentylator: przepływ zależy od prędkości'
+				],
+				correct: 1,
+				explanation:
+					'Wyjście obiektu całkującego to suma (całka) wejścia w czasie — nie ma stanu ustalonego przy niezerowym wejściu.'
+			}
+		]
+	},
 	/* ------------------------------------------------------------------ regulacja */
 	{
 		slug: 'regulacja',
@@ -1639,6 +1727,214 @@ W PLC Sim falownik dodasz w widoku Circuit (*Frequency inverter*). Ma przycisk *
 			}
 		]
 	},
+	/* ------------------------------------------------------------------ falownik od środka */
+	{
+		slug: 'falownik-wnetrze',
+		title: 'Falownik od środka: prostownik, obwód DC, IGBT i PWM',
+		summary:
+			'Skąd falownik bierze zmienną częstotliwość, dlaczego napięcie rośnie razem z nią (U/f) i czym się różni sterowanie wektorowe.',
+		minutes: 10,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Falownik ma trzy części:
+
+- **Prostownik** — sześć diod zamienia sieć 3 × 400 V AC na napięcie stałe.
+- **Obwód pośredni DC** — kondensatory wygładzają napięcie do ok. **560 V** (400 V × √2). To magazyn energii falownika.
+- **Falownik właściwy** — sześć tranzystorów **IGBT** przełącza obwód DC na zaciski silnika kilka tysięcy razy na sekundę (częstotliwość nośna 4 … 16 kHz).
+
+Tranzystory nie „robią” sinusoidy — dają prostokątne impulsy o pełnym napięciu DC. Sztuczka to **PWM** (modulacja szerokości impulsów): szerokość impulsów zmienia się jak sinusoida, a indukcyjność uzwojeń silnika wygładza prąd. Zmieniając tempo tej sinusoidy, zmieniamy częstotliwość, a więc prędkość silnika.`
+			},
+			{ kind: 'pwm' },
+			{
+				kind: 'text',
+				text: `**Prędkość silnika asynchronicznego**: n = 60 · f / p · (1 − s), gdzie p to liczba par biegunów, a s to poślizg (kilka procent). Silnik 4-biegunowy (p = 2) przy 50 Hz kręci się ok. 1450 obr/min, przy 25 Hz — ok. 720.
+
+**U/f = const**: strumień magnetyczny w silniku zależy od stosunku napięcia do częstotliwości. Przy 25 Hz falownik daje więc ok. połowę napięcia. Gdyby dał pełne 400 V, silnik by się nasycił i pobierał ogromny prąd. Powyżej 50 Hz napięcia już nie przybywa — to **osłabienie pola**, moment maleje.`
+			},
+			{
+				kind: 'table',
+				head: ['Tryb sterowania', 'Jak działa', 'Gdzie'],
+				rows: [
+					[
+						'U/f (skalarny)',
+						'napięcie proporcjonalne do częstotliwości, bez modelu silnika',
+						'pompy, wentylatory, proste taśmy'
+					],
+					[
+						'Wektorowy bez enkodera (SLVC)',
+						'model silnika wylicza strumień i moment z prądów',
+						'taśmy, mieszadła, duży moment przy niskich obrotach'
+					],
+					[
+						'Wektorowy z enkoderem',
+						'model + rzeczywista prędkość z enkodera',
+						'dźwigi, nawijarki, moment przy zerowej prędkości'
+					],
+					[
+						'Serwo',
+						'silnik synchroniczny z magnesami, enkoder, pętla położenia',
+						'osie CNC, roboty, pozycjonowanie'
+					]
+				]
+			},
+			{
+				kind: 'callout',
+				tone: 'warn',
+				title: 'Praktyka: kabel silnikowy',
+				text: 'Strome zbocza impulsów PWM to zakłócenia (EMC). Kabel od falownika do silnika ma być **ekranowany**, ekran podłączony obejmą na 360° po obu stronach, a przewody sygnałowe prowadzone osobno. Po wyłączeniu falownika kondensatory DC są naładowane jeszcze kilka minut — czas rozładowania jest na tabliczce.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Silnik 4-biegunowy, tabliczka: 1450 obr/min przy 50 Hz. Ile mniej więcej przy 30 Hz?',
+				options: ['ok. 1450 obr/min', 'ok. 870 obr/min', 'ok. 2400 obr/min', 'ok. 300 obr/min'],
+				correct: 1,
+				explanation: 'Prędkość jest proporcjonalna do częstotliwości: 1450 · 30 / 50 ≈ 870 obr/min.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Dlaczego przy 10 Hz falownik nie podaje na silnik pełnych 400 V?',
+				options: [
+					'Żeby oszczędzać energię',
+					'Strumień ~ U/f: pełne napięcie przy niskiej częstotliwości nasyciłoby silnik i dało ogromny prąd',
+					'Bo tranzystory IGBT nie wytrzymają',
+					'Bo tak wymaga norma bezpieczeństwa'
+				],
+				correct: 1,
+				explanation:
+					'Charakterystyka U/f utrzymuje stały strumień. Przy 10 Hz napięcie to ok. 80 V (plus niewielkie podbicie na start, tzw. boost).'
+			}
+		]
+	},
+	/* ------------------------------------------------------------------ falownik w sieci */
+	{
+		slug: 'falownik-siec',
+		title: 'Falownik w sieci: PROFIdrive, parametry i diagnoza błędów',
+		summary:
+			'Uruchomienie napędu, słowo sterujące i statusowe, maszyna stanów PROFIdrive oraz skąd się biorą przetężenie, przepięcie i przegrzanie.',
+		minutes: 14,
+		blocks: [
+			{
+				kind: 'text',
+				text: `**Uruchomienie napędu** zaczyna się od danych silnika z tabliczki: napięcie, prąd, moc, częstotliwość i prędkość znamionowa (w SINAMICS G120 to parametry P0304 … P0311). Potem identyfikacja silnika (napęd mierzy rezystancje i indukcyjności) i parametry aplikacji:
+
+- **P1080 / P1082** — minimalna i maksymalna prędkość,
+- **P1120 / P1121** — czas rampy rozpędzania i hamowania,
+- źródło rozkazów i wartości zadanej: zaciski (DI/AI) albo **sieć**.
+
+W poprzednim rozdziale sterowałeś falownikiem z zacisków (RUN, AI1). Na większych maszynach napęd siedzi na **Profinecie** i wymienia z PLC cykliczny **telegram**. Najprostszy, standardowy **telegram 1** to dwa słowa w każdą stronę.`
+			},
+			{
+				kind: 'table',
+				head: ['Słowo', 'Kierunek', 'Znaczenie'],
+				rows: [
+					[
+						'STW1',
+						'PLC → napęd',
+						'słowo sterujące: załącz, OFF1/OFF2/OFF3, zezwolenia, kwitowanie'
+					],
+					[
+						'NSOLL_A',
+						'PLC → napęd',
+						'prędkość zadana: 16#4000 = 100 % prędkości odniesienia, ujemna = wstecz'
+					],
+					['ZSW1', 'napęd → PLC', 'słowo statusowe: gotowy, praca, błąd, prędkość osiągnięta'],
+					['NIST_A', 'napęd → PLC', 'prędkość rzeczywista, ta sama skala']
+				]
+			},
+			{
+				kind: 'text',
+				text: `Napęd PROFIdrive ma **maszynę stanów**. Po włączeniu jest w **S1 — blokada załączenia**. Żeby go uruchomić, PLC musi wysłać:
+
+1. **16#047E** — wszystkie zezwolenia, ale ON = 0 → napęd przechodzi do **S2 — gotowy do załączenia**,
+2. **16#047F** — ON = 1 → **S3**, a dzięki bitowi 3 (zezwolenie na pracę) od razu **S4 — praca**, silnik rusza rampą.
+
+Zatrzymanie: **OFF1** (ON = 0, czyli znowu 047E) hamuje rampą P1121, **OFF2** (bit 1 = 0) wyłącza impulsy i silnik wybiega, **OFF3** (bit 2 = 0) to szybkie zatrzymanie. Błąd kwituje się **zboczem bitu 7**.`
+			},
+			{
+				kind: 'code',
+				title: 'Sterowanie napędem w ST',
+				code: `IF Run THEN
+  STW1 := 16#047F;              // ON
+ELSE
+  STW1 := 16#047E;              // OFF1 i gotowość
+END_IF;
+IF Ack THEN
+  STW1 := STW1 OR 16#0080;      // kwitowanie błędu
+END_IF;
+NSOLL_A := 16#2000;             // 50 %
+Running := (ZSW1 AND 16#0004) <> 0;
+Fault   := (ZSW1 AND 16#0008) <> 0;`
+			},
+			{ kind: 'drive-lab' },
+			{
+				kind: 'table',
+				head: ['Błąd', 'Typowa przyczyna', 'Co zrobić'],
+				rows: [
+					[
+						'Przetężenie (F30001)',
+						'za krótka rampa rozpędzania przy dużej bezwładności, zwarcie w kablu, zablokowany silnik',
+						'wydłużyć P1120, sprawdzić kabel i izolację, mechanikę'
+					],
+					[
+						'Przepięcie DC (F30002)',
+						'za krótka rampa hamowania — silnik oddaje energię do obwodu DC',
+						'wydłużyć P1121, rezystor hamujący (chopper) albo regulator Vdc'
+					],
+					[
+						'Przegrzanie silnika (F07011)',
+						'przeciążenie, zbyt długa praca na niskich obrotach z własnym wentylatorem',
+						'sprawdzić obciążenie, chłodzenie, dobór silnika'
+					],
+					[
+						'Brak wartości zadanej z sieci (F01910)',
+						'przerwana komunikacja Profinet',
+						'sprawdzić sieć; napęd zatrzymuje się sam (watchdog)'
+					]
+				]
+			},
+			{
+				kind: 'callout',
+				tone: 'tip',
+				title: 'Diagnoza krok po kroku',
+				text: 'Przy każdym błędzie napędu zapisz: kod błędu, prędkość i prąd w chwili błędu, co maszyna robiła (rozpędzanie, hamowanie, praca). Napęd przechowuje historię błędów z wartościami — w uruchomieniu to pierwsze miejsce, do którego się zagląda.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'PLC wysyła od razu 16#047F po włączeniu zasilania, a napęd stoi w „blokadzie załączenia”. Dlaczego?',
+				options: [
+					'Zła prędkość zadana',
+					'Brakuje przejścia przez 047E (ON = 0) — napęd wymaga zbocza ON',
+					'Napęd ma błąd przegrzania',
+					'Telegram 1 nie obsługuje startu'
+				],
+				correct: 1,
+				explanation:
+					'Z S1 do S2 napęd przechodzi tylko przy ON = 0 (i bez OFF2/OFF3). Dopiero potem ON = 1 go załącza.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Wentylator z dużym wirnikiem wybija przepięciem DC przy każdym zatrzymaniu. Najprostsza poprawka?',
+				options: [
+					'Skrócić rampę hamowania',
+					'Wydłużyć rampę hamowania P1121 albo dodać rezystor hamujący',
+					'Zwiększyć prędkość maksymalną',
+					'Wyłączać napęd przez OFF3'
+				],
+				correct: 1,
+				explanation:
+					'Przy szybkim hamowaniu silnik pracuje jak prądnica i ładuje kondensatory DC. Dłuższa rampa albo rezystor (chopper) odbierają tę energię.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'drive-profidrive',
+				text: 'Steruj napędem przez Profinet: sekwencja 047E/047F, prędkość, status z ZSW1 i kwitowanie błędu.'
+			}
+		]
+	},
 	/* ------------------------------------------------------------------ komunikacja */
 	{
 		slug: 'komunikacja',
@@ -1740,6 +2036,246 @@ END_IF;`
 			}
 		]
 	},
+	/* ------------------------------------------------------------------ sieci OT w praktyce */
+	{
+		slug: 'sieci-ot',
+		title: 'Sieci OT w praktyce: IP, maski, switche, VLAN, diagnoza',
+		summary:
+			'Adresacja maszyny, podsieci i brama, switche zarządzalne i VLAN-y, topologia pierścienia oraz jak w 5 minut znaleźć, dlaczego coś się nie łączy.',
+		minutes: 15,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Każde urządzenie w sieci Ethernet ma **adres IP** (np. 192.168.10.21) i **maskę podsieci** (np. 255.255.255.0, czyli **/24**). Maska mówi, ile pierwszych bitów adresu to **numer sieci**, a ile — numer urządzenia w tej sieci.
+
+Dwa urządzenia rozmawiają **bezpośrednio** tylko wtedy, gdy są w **tej samej podsieci**. Do innych sieci (biuro, serwer SCADA, internet) pakiety idą przez **bramę domyślną** — router albo firewall.
+
+W sieciach maszyn używa się adresów **prywatnych**: 10.x.x.x, 172.16–31.x.x, 192.168.x.x.`
+			},
+			{ kind: 'subnet' },
+			{
+				kind: 'table',
+				head: ['Plan adresacji maszyny (przykład)', 'Adres', 'Uwagi'],
+				rows: [
+					['PLC', '192.168.10.1/24', 'brama 192.168.10.254, jeśli ma rozmawiać z biurem'],
+					['Panel HMI', '192.168.10.10', ''],
+					['Falowniki', '192.168.10.21 … 29', 'IP nadaje PLC po nazwie Profinet'],
+					['Wyspy I/O', '192.168.10.31 … 39', 'jw.'],
+					['Laptop serwisowy', '192.168.10.200', 'adres spoza zakresu urządzeń!'],
+					['Router / firewall', '192.168.10.254', 'jedyna droga do sieci biurowej']
+				]
+			},
+			{
+				kind: 'text',
+				text: `**Switche.** Switch niezarządzalny po prostu łączy porty. **Zarządzalny** pozwala m.in.:
+
+- dzielić porty na **VLAN-y** — osobne sieci logiczne na jednym sprzęcie (np. VLAN 10 maszyna, VLAN 20 biuro). Urządzenia w różnych VLAN-ach się nie widzą, nawet z adresami z tej samej podsieci;
+- tworzyć **pierścień** z redundancją: protokół **MRP** (Media Redundancy Protocol) blokuje jedno łącze, a gdy kabel zostanie przerwany, odblokowuje je w czasie poniżej 200 ms;
+- diagnozować: stan portów, błędy CRC (uszkodzony kabel), kto jest na którym porcie, SNMP do systemów monitoringu.
+
+**Profinet** szuka urządzeń **po nazwie** (np. „drive-conveyor”), a adres IP nadaje im sam sterownik na podstawie projektu. Po wymianie falownika trzeba więc nadać nowemu urządzeniu **nazwę** — z narzędzia inżynierskiego (DCP) albo automatycznie, jeśli w projekcie włączono wymianę urządzenia bez nośnika wymiennego.`
+			},
+			{
+				kind: 'callout',
+				tone: 'tip',
+				title: 'Diagnoza w 5 krokach',
+				text: '1) **Link** — świeci dioda na porcie? 2) **Adres i maska** — urządzenie jest w tej podsieci? 3) **ping** z laptopa w tej samej sieci. 4) **Konflikt adresów** — `arp -a` pokazuje dwa adresy MAC na zmianę? 5) **Profinet** — zgadza się nazwa urządzenia? Dopiero potem VLAN-y, firewall i routing.'
+			},
+			{ kind: 'net-doctor' },
+			{
+				kind: 'quiz',
+				question: 'PLC 192.168.10.1/24 i panel 192.168.1.10/24. Czy się połączą bez routera?',
+				options: [
+					'Tak, obie to sieci 192.168',
+					'Nie — przy masce /24 to różne podsieci (192.168.10.0 i 192.168.1.0)',
+					'Tak, jeśli są na jednym switchu',
+					'Tylko przez Profinet'
+				],
+				correct: 1,
+				explanation:
+					'Maska /24 porównuje trzy pierwsze liczby. 10 ≠ 1, więc potrzebny byłby router.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Ile urządzeń zmieścisz w sieci /28?',
+				options: ['16', '14', '28', '254'],
+				correct: 1,
+				explanation: '/28 to 4 bity na hosty: 16 adresów, minus adres sieci i broadcast = 14.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Po wymianie falownika ping do jego adresu działa, ale PLC zgłasza błąd urządzenia Profinet. Najbardziej prawdopodobna przyczyna?',
+				options: [
+					'Zła maska w PLC',
+					'Nowy falownik nie ma nazwy urządzenia z projektu',
+					'Uszkodzony kabel',
+					'Zła prędkość zadana'
+				],
+				correct: 1,
+				explanation:
+					'Profinet identyfikuje urządzenie po nazwie. Adres IP może być „jakiś”, a nazwa się nie zgadza — PLC nie nawiąże wymiany danych.'
+			}
+		]
+	},
+	/* ------------------------------------------------------------------ systemy nad PLC */
+	{
+		slug: 'scada-iiot',
+		title: 'Nad sterownikiem: SCADA, OPC UA, MQTT i historian',
+		summary:
+			'Model warstwowy zakładu (Purdue), czym różni się SCADA od HMI, jak dane z PLC trafiają do serwerów: OPC UA, MQTT, historian, MES.',
+		minutes: 12,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Sterownik to dopiero początek drogi danych. Zakład opisuje się **modelem warstwowym** (Purdue / ISA-95):`
+			},
+			{
+				kind: 'table',
+				head: ['Poziom', 'Co tam jest', 'Przykład'],
+				rows: [
+					['0 · Proces', 'czujniki, napędy, zawory', 'czujnik temperatury, falownik'],
+					['1 · Sterowanie', 'PLC, sterowniki bezpieczeństwa', 'CPU linii'],
+					['2 · Nadzór', 'HMI, SCADA, inżynierka', 'panel maszyny, stacja operatorska SCADA'],
+					[
+						'3 · Operacje',
+						'historian, MES, serwery w DMZ',
+						'raporty zmianowe, OEE, receptury, śledzenie partii'
+					],
+					['4 · Biznes', 'ERP, poczta, biuro', 'zamówienia, magazyn, księgowość']
+				]
+			},
+			{
+				kind: 'text',
+				text: `**HMI** to panel przy jednej maszynie. **SCADA** (Supervisory Control And Data Acquisition) zbiera dane z wielu sterowników: synoptyka całego zakładu, alarmy, trendy, archiwum, użytkownicy i uprawnienia.
+
+**Historian** zapisuje wartości procesowe w czasie (tysiące tagów, lata historii) i pozwala odpowiedzieć na pytanie „co się działo w nocy o 3:14”. **MES** zarządza produkcją: zlecenia, receptury, partie, wydajność (OEE).
+
+Jak dane wychodzą ze sterownika?
+
+- **OPC UA** — standard komunikacji przemysłowej klient–serwer. PLC (serwer) udostępnia **przestrzeń adresową**: drzewo węzłów z typami, jednostkami i opisami. Klient (SCADA, MES) czyta, pisze albo **subskrybuje** zmiany. Ma wbudowane szyfrowanie, certyfikaty i użytkowników. Port 4840.
+- **MQTT** — lekki protokół **publikuj–subskrybuj** przez **brokera**. Urządzenia publikują wartości pod **tematami** (np. plant/line1/oven/temp), a odbiorcy subskrybują to, czego potrzebują. Popularny w IIoT i chmurze; specyfikacja **Sparkplug B** porządkuje tematy i format danych dla przemysłu.
+- Protokoły producentów (S7, EtherNet/IP) i Modbus — wciąż wszędzie, szczególnie w starszych instalacjach.`
+			},
+			{ kind: 'mqtt' },
+			{
+				kind: 'table',
+				head: ['', 'OPC UA', 'MQTT'],
+				rows: [
+					['Model', 'klient–serwer (plus pub/sub)', 'publikuj–subskrybuj przez brokera'],
+					[
+						'Dane',
+						'bogaty model: typy, jednostki, struktura, metody',
+						'dowolny ładunek (JSON, Sparkplug B)'
+					],
+					['Gdzie', 'PLC ↔ SCADA / MES w zakładzie', 'wiele urządzeń → chmura / platforma IIoT'],
+					[
+						'Bezpieczeństwo',
+						'certyfikaty, szyfrowanie, użytkownicy',
+						'TLS i uwierzytelnianie na brokerze'
+					]
+				]
+			},
+			{
+				kind: 'callout',
+				tone: 'tip',
+				title: 'Dobra praktyka w PLC',
+				text: 'Nie udostępniaj na zewnątrz całej pamięci sterownika. Przygotuj osobny blok danych z tym, co ma iść do SCADA i MES (stany, liczniki, alarmy, receptura) i tylko jego wystaw przez OPC UA. Zapis z zewnątrz — tylko do wybranych zmiennych, z kontrolą w programie.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Na którym poziomie modelu Purdue zwykle stoi historian i serwery MES?',
+				options: ['0 · proces', '1 · sterowanie', '3 · operacje (często w DMZ)', '4 · biznes'],
+				correct: 2,
+				explanation: 'Poziom 3 — między halą a biurem. Biuro czyta dane z tych serwerów, nie z PLC.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Subskrypcja MQTT „plant/+/oven/temp”. Która wiadomość do niej trafi?',
+				options: [
+					'plant/line1/oven/temp',
+					'plant/line1/oven/zone1/temp',
+					'plant/temp',
+					'line1/oven/temp'
+				],
+				correct: 0,
+				explanation: '+ zastępuje dokładnie jeden poziom tematu.'
+			}
+		]
+	},
+	/* ------------------------------------------------------------------ cyberbezpieczeństwo OT */
+	{
+		slug: 'cyber-ot',
+		title: 'Cyberbezpieczeństwo OT: strefy, kanały i zdalny dostęp',
+		summary:
+			'Dlaczego sieć maszyn nie może być „płaska”, strefy i kanały wg IEC 62443, DMZ, firewall, zdalny serwis i codzienne nawyki automatyka.',
+		minutes: 10,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Sterowniki projektowano do pracy w zamkniętych sieciach. Wiele protokołów przemysłowych (Modbus, starsze S7, Profinet) **nie ma uwierzytelniania**: kto jest w sieci, ten może odczytać i zmienić program. Dlatego ochrona OT opiera się na **architekturze sieci**.
+
+Norma **IEC 62443** dzieli instalację na **strefy** (zones) — grupy urządzeń o podobnym poziomie zaufania — i **kanały** (conduits), czyli kontrolowane połączenia między nimi. Typowy układ:
+
+- **sieć maszyn (OT)** — PLC, HMI, napędy, podzielone na strefy np. per linia,
+- **DMZ przemysłowa** — serwery, które rozmawiają z obiema stronami: historian, SCADA, serwer przesiadkowy do zdalnego serwisu, serwer aktualizacji,
+- **biuro (IT)** — poczta, ERP, internet.
+
+Między strefami stoi **firewall** z zasadą **domyślnie blokuj**. Biuro nigdy nie łączy się bezpośrednio z PLC.`
+			},
+			{ kind: 'firewall' },
+			{
+				kind: 'table',
+				head: ['Nawyk', 'Dlaczego'],
+				rows: [
+					[
+						'Zmieniaj domyślne hasła (HMI, switche, napędy, web serwery PLC)',
+						'lista domyślnych haseł jest publiczna'
+					],
+					[
+						'Włącz ochronę dostępu do CPU (hasło, poziom dostępu)',
+						'bez tego każdy laptop w sieci wgra program'
+					],
+					[
+						'Wyłączaj nieużywane usługi i porty (web serwer, FTP, porty switcha)',
+						'mniej drzwi do sprawdzenia'
+					],
+					[
+						'Laptop serwisowy tylko do OT, bez poczty i przeglądania',
+						'najczęstsza droga wirusa do sieci maszyn'
+					],
+					[
+						'Pendrive’y skanowane na stacji kontrolnej',
+						'przypadek Stuxnet zaczął się od nośnika USB'
+					],
+					[
+						'Kopie zapasowe programów i konfiguracji, offline',
+						'po ataku ransomware to jedyny szybki powrót'
+					]
+				]
+			},
+			{
+				kind: 'callout',
+				tone: 'info',
+				title: 'Poziomy bezpieczeństwa (SL)',
+				text: 'IEC 62443 opisuje poziomy SL 1 … 4: od ochrony przed przypadkowym błędem (SL 1) po ochronę przed zaawansowanym, celowym atakiem z dużymi zasobami (SL 4). Dla każdej strefy wyznacza się poziom docelowy i dobiera zabezpieczenia.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Serwisant producenta potrzebuje zdalnie podejrzeć program PLC. Jak to zrobić dobrze?',
+				options: [
+					'Przekierować port 102 z internetu na PLC',
+					'VPN z MFA do serwera przesiadkowego w DMZ, włączany na czas zlecenia i logowany',
+					'Dać mu TeamViewer na panelu HMI',
+					'Wysłać mu program mailem'
+				],
+				correct: 1,
+				explanation:
+					'Zdalny dostęp kończy się w DMZ, jest uwierzytelniony, czasowy i rejestrowany. Nigdy bezpośrednio z internetu do sieci maszyn.'
+			}
+		]
+	},
 	/* ------------------------------------------------------------------ bezpieczeństwo maszyn */
 	{
 		slug: 'bezpieczenstwo-maszyn',
@@ -1808,6 +2344,79 @@ Projekt zaczyna się od **oceny ryzyka** (PN-EN ISO 12100): jakie zagrożenia ma
 				kind: 'lesson',
 				slug: 'two-hand-press',
 				text: 'Zaprogramuj logikę sterowania oburęcznego typu III: jednoczesność 0,5 s i nowy cykl po puszczeniu obu przycisków.'
+			}
+		]
+	},
+	/* ------------------------------------------------------------------ szafa sterownicza */
+	{
+		slug: 'szafa-sterownicza',
+		title: 'Szafa sterownicza: zasilanie 24 V, zabezpieczenia, EMC i dokumentacja',
+		summary:
+			'Dobór zasilacza, zabezpieczenia obwodów, kolory przewodów, uziemienie i ekranowanie, oznaczenia aparatów i czytanie schematu.',
+		minutes: 12,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Szafa sterownicza to „dom” sterownika. Typowy podział od góry:
+
+- **zasilanie główne**: rozłącznik główny, zabezpieczenia silnikowe, styczniki, falowniki (część mocy),
+- **sterowanie**: zasilacz **24 V DC**, zabezpieczenia obwodów 24 V, PLC i moduły I/O, przekaźniki, listwy zaciskowe do obiektu,
+- **sieć**: switch, router / firewall, czasem UPS dla PLC i panelu.
+
+Część mocy i część sygnałowa są **rozdzielone**: kable silnikowe i sygnałowe w osobnych korytkach, krzyżują się pod kątem prostym.`
+			},
+			{ kind: 'cabinet' },
+			{
+				kind: 'table',
+				head: ['Kolor przewodu (PN-EN 60204-1)', 'Zastosowanie'],
+				rows: [
+					['czarny', 'obwody główne AC i DC'],
+					['czerwony', 'obwody sterowania AC'],
+					['niebieski (ciemny)', 'obwody sterowania DC (24 V)'],
+					['pomarańczowy', 'obwody zasilane z zewnątrz, nieodłączane wyłącznikiem głównym'],
+					['jasnoniebieski', 'przewód neutralny N'],
+					['zielono-żółty', 'przewód ochronny PE — tylko do tego']
+				]
+			},
+			{
+				kind: 'text',
+				text: `**Zabezpieczenia**: każdy obwód 24 V ma swój bezpiecznik albo kanał **elektronicznego zabezpieczenia** (zadziała przy przeciążeniu, a zasilacz nie „siądzie” dla całej szafy). Wyłączniki nadprądowe AC mają charakterystyki **B** (obciążenia rezystancyjne), **C** (silniki małej mocy, zasilacze z prądem rozruchu), **D** (duże prądy rozruchowe). Silnik chroni wyłącznik silnikowy albo przekaźnik termiczny nastawiony na prąd znamionowy.
+
+**Uziemienie i ekranowanie**: obudowa, drzwi i płyta montażowa połączone z PE. Ekran kabla silnikowego — obejmą na 360° po obu stronach. Ekran kabla analogowego 4–20 mA / 0–10 V — zwykle jednostronnie po stronie szafy, żeby nie płynęły nim prądy wyrównawcze.
+
+**Oznaczenia aparatów** (tradycyjne, wg dawnych norm i wciąż wszędzie na schematach): **-Q** wyłącznik, **-F** bezpiecznik, **-K** stycznik / przekaźnik, **-S** łącznik, przycisk, **-H** lampka, **-M** silnik, **-T** lub **-G** zasilacz, **-U** falownik, **-A** sterownik. Na schemacie EPLAN-owskim kod **=** to funkcja / instalacja, **+** to miejsce (np. +S1 szafa 1), a odsyłacze typu „/12.3” mówią, na której stronie i w której kolumnie jest drugi koniec połączenia albo styk aparatu.`
+			},
+			{
+				kind: 'callout',
+				tone: 'warn',
+				title: 'Zanim otworzysz szafę',
+				text: 'Prace pod napięciem tylko z uprawnieniami (w Polsce świadectwo kwalifikacyjne SEP: E — eksploatacja, D — dozór). Wyłącz, zabezpiecz przed załączeniem (kłódka LOTO), sprawdź brak napięcia. Pamiętaj o obwodach zasilanych z zewnątrz (pomarańczowe) i o kondensatorach falowników.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Kabel analogowy 4–20 mA z czujnika do szafy: jak podłączyć ekran?',
+				options: [
+					'Nie podłączać',
+					'Zwykle jednostronnie, po stronie szafy (na szynę PE / ekranową)',
+					'Do minusa zasilacza',
+					'Do przewodu N'
+				],
+				correct: 1,
+				explanation:
+					'Jednostronne uziemienie ekranu sygnałów wolnozmiennych ogranicza prądy wyrównawcze w ekranie. Kable silnikowe falowników — obustronnie, 360°.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Na schemacie przy cewce -K3 jest odsyłacz „/14.2”. Co to znaczy?',
+				options: [
+					'Prąd cewki 14,2 A',
+					'Styk tego przekaźnika jest na stronie 14 w kolumnie 2',
+					'Przekaźnik ma 14 styków',
+					'Napięcie cewki 14,2 V'
+				],
+				correct: 1,
+				explanation:
+					'Odsyłacze strona.kolumna wiążą cewkę z jej stykami rozrysowanymi w innych miejscach schematu.'
 			}
 		]
 	}

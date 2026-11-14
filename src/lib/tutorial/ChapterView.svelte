@@ -7,6 +7,14 @@
 	import ControlDemo from './ControlDemo.svelte';
 	import ModbusDemo from './ModbusDemo.svelte';
 	import SafetyDemo from './SafetyDemo.svelte';
+	import PwmDemo from './PwmDemo.svelte';
+	import DriveLab from './DriveLab.svelte';
+	import SubnetCalc from './SubnetCalc.svelte';
+	import NetDoctor from './NetDoctor.svelte';
+	import MqttDemo from './MqttDemo.svelte';
+	import FirewallLab from './FirewallLab.svelte';
+	import StepLab from './StepLab.svelte';
+	import CabinetCalc from './CabinetCalc.svelte';
 	import WiringDemo from './WiringDemo.svelte';
 	import MiniSim from './MiniSim.svelte';
 	import PlcOverview from './PlcOverview.svelte';
@@ -104,6 +112,22 @@
 			<ModbusDemo />
 		{:else if block.kind === 'safety'}
 			<SafetyDemo />
+		{:else if block.kind === 'pwm'}
+			<PwmDemo />
+		{:else if block.kind === 'drive-lab'}
+			<DriveLab />
+		{:else if block.kind === 'subnet'}
+			<SubnetCalc />
+		{:else if block.kind === 'net-doctor'}
+			<NetDoctor />
+		{:else if block.kind === 'mqtt'}
+			<MqttDemo />
+		{:else if block.kind === 'firewall'}
+			<FirewallLab />
+		{:else if block.kind === 'step-lab'}
+			<StepLab />
+		{:else if block.kind === 'cabinet'}
+			<CabinetCalc />
 		{:else if block.kind === 'lesson'}
 			{@const lesson = getLesson(block.slug)}
 			{#if lesson}

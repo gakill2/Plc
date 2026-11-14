@@ -451,6 +451,25 @@ export const TICKETS: Ticket[] = [
 				'Sterowanie oburęczne typu III: jednoczesność 0,5 s, przerwanie przy puszczeniu, nowy cykl po puszczeniu obu.',
 			tip: 'W prawdziwej maszynie tę funkcję realizuje przekaźnik lub sterownik bezpieczeństwa z certyfikatem — Twój program w PLC może ją powielać do diagnostyki, ale nie zastępować.'
 		}
+	},
+	{
+		id: 'z22',
+		week: 3,
+		lesson: 'drive-profidrive',
+		from: FOREMAN,
+		machine: 'Taśma 5 (napęd na Profinecie)',
+		priority: 'awaria',
+		title: 'Nowy napęd na sieci nie chce ruszyć',
+		message:
+			'Wymieniliśmy stary falownik na nowy, podłączony przez Profinet. Integrator napisał program, napęd świeci się na zielono, a na Start nic. Na wyświetlaczu: „blokada załączenia”.',
+		costPerHour: 1500,
+		debrief: {
+			cause:
+				'Program wysyłał od razu 16#047F. Napęd PROFIdrive z blokady załączenia wychodzi tylko przy ON = 0 (16#047E), dopiero potem przyjmuje ON.',
+			lesson:
+				'Sterowanie napędem po sieci to maszyna stanów: S1 blokada → S2 gotowy → S3 → S4 praca. Status czytaj z ZSW1, nie zakładaj, że napęd zrobił to, co kazałeś.',
+			tip: 'Przy uruchomieniu napędu sieciowego najpierw podejrzyj STW1 i ZSW1 w tablicy zmiennych (w HEX). Para 047E / 047F w STW1 i bity „gotowy” / „praca” w ZSW1 (tu: 16#0231 i 16#0237) to widok, który warto znać na pamięć.'
+		}
 	}
 ];
 

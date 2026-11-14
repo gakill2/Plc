@@ -15,7 +15,7 @@ test('lesson: fail, show the solution, pass, get the tick', async ({ page }) => 
 	await expect(page.getByText('Krok po kroku · 5/5')).toBeVisible();
 
 	await page.goto('/learn', { waitUntil: 'networkidle' });
-	await expect(page.getByText(/ukończone: 1 \/ 43/)).toBeVisible();
+	await expect(page.getByText(/ukończone: 1 \/ 51/)).toBeVisible();
 	await expect(page.getByRole('link', { name: /Kontynuuj naukę/ })).toBeVisible();
 });
 

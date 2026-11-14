@@ -170,6 +170,46 @@ export const TERMS: Record<string, Term> = {
 		text: 'Nagłówek Modbus TCP: ID transakcji, protokół, długość, ID jednostki.',
 		chapter: 'komunikacja'
 	},
+	VLAN: {
+		name: 'Virtual LAN',
+		text: 'Osobna sieć logiczna na wspólnym switchu. Urządzenia w różnych VLAN-ach się nie widzą.',
+		chapter: 'sieci-ot'
+	},
+	MRP: {
+		name: 'Media Redundancy Protocol',
+		text: 'Pierścień Profinet: jedno łącze zablokowane, po przerwaniu kabla przełączenie < 200 ms.',
+		chapter: 'sieci-ot'
+	},
+	DCP: {
+		name: 'Discovery and Configuration Protocol',
+		text: 'Profinet: wyszukiwanie urządzeń i nadawanie nazw oraz adresów IP.',
+		chapter: 'sieci-ot'
+	},
+	ARP: {
+		name: 'Address Resolution Protocol',
+		text: 'Zamienia adres IP na adres MAC w sieci lokalnej. Polecenie arp -a pokazuje tablicę.',
+		chapter: 'sieci-ot'
+	},
+	OPC: {
+		name: 'Open Platform Communications',
+		text: 'OPC UA: standard komunikacji klient–serwer z modelem danych i wbudowanym bezpieczeństwem (port 4840).',
+		chapter: 'scada-iiot'
+	},
+	MQTT: {
+		name: 'Message Queuing Telemetry Transport',
+		text: 'Lekki protokół publikuj–subskrybuj przez brokera, popularny w IIoT.',
+		chapter: 'scada-iiot'
+	},
+	MES: {
+		name: 'Manufacturing Execution System',
+		text: 'System zarządzania produkcją: zlecenia, receptury, partie, OEE.',
+		chapter: 'scada-iiot'
+	},
+	DMZ: {
+		name: 'Demilitarized Zone',
+		text: 'Strefa buforowa między biurem a siecią maszyn — tu stoją serwery, z którymi rozmawiają obie strony.',
+		chapter: 'cyber-ot'
+	},
 	SSR: {
 		name: 'Solid State Relay',
 		text: 'Przekaźnik półprzewodnikowy — bez styków, do częstego przełączania (np. grzałek).',

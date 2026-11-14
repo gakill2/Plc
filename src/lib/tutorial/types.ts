@@ -48,7 +48,15 @@ export type Block =
 	| { kind: 'analog' }
 	| { kind: 'control'; initial?: 'onoff' | 'pid' }
 	| { kind: 'modbus' }
-	| { kind: 'safety' };
+	| { kind: 'safety' }
+	| { kind: 'pwm' }
+	| { kind: 'drive-lab' }
+	| { kind: 'subnet' }
+	| { kind: 'net-doctor' }
+	| { kind: 'mqtt' }
+	| { kind: 'firewall' }
+	| { kind: 'step-lab' }
+	| { kind: 'cabinet' };
 
 export interface Chapter {
 	slug: string;

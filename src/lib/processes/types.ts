@@ -1,10 +1,12 @@
+import type { DriveParams, DriveState } from '#lib/drive/drive.js';
 /*
  * Simulated plants. A process model runs in the PLC worker right after every scan:
  * it reads the PLC outputs (actuators), advances its physics by the scan time and
  * writes the PLC inputs (sensors) that the next scan will read.
  */
 
-export type ProcessKind = 'traffic' | 'tank' | 'conveyor' | 'line' | 'oven' | 'crane' | 'remote';
+export type ProcessKind =
+	'traffic' | 'tank' | 'conveyor' | 'line' | 'oven' | 'crane' | 'remote' | 'drive';
 
 export interface ProcessIO {
 	output(terminal: string): boolean;
@@ -150,8 +152,25 @@ export interface RemoteState {
 	runCmd: boolean;
 }
 
+export interface DrivePlantState {
+	kind: 'drive';
+	drive: DriveState;
+	stw: number;
+	nsoll: number;
+	zsw: number;
+	nist: number;
+	params: DriveParams;
+}
+
 export type ProcessState =
-	TrafficState | TankState | ConveyorState | LineState | OvenState | CraneState | RemoteState;
+	| TrafficState
+	| TankState
+	| ConveyorState
+	| LineState
+	| OvenState
+	| CraneState
+	| RemoteState
+	| DrivePlantState;
 
 export interface ProcessModel {
 	readonly kind: ProcessKind;

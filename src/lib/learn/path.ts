@@ -25,7 +25,7 @@ const STAGES: [firstChapter: string, title: string][] = [
 	['structured-text', 'Etap 4 · Tekst strukturalny i dobre praktyki'],
 	['sekwencje', 'Etap 5 · Sekwencje i procesy'],
 	['panel-hmi', 'Etap 6 · Praca na obiekcie: HMI, uruchomienie, napędy'],
-	['komunikacja', 'Etap 7 · Sieci i bezpieczeństwo maszyn']
+	['komunikacja', 'Etap 7 · Infrastruktura: sieci, IT/OT, bezpieczeństwo i szafa']
 ];
 
 export function learningPath(): PathStage[] {

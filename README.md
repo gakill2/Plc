@@ -43,8 +43,16 @@ it and watch the controller execute your program scan by scan — or let it driv
   a test to cause a visible symptom.
 - **More plants** — overhead crane (encoder, inertia, limit switches, hoist interlock), electric
   oven (first order + dead time, thermostat) and a remote I/O station on a fieldbus with a heartbeat.
-- **Networks and machine safety** — an interactive Modbus TCP frame builder, a two-channel safety
-  relay with feedback monitoring and the ISO 13849-1 risk graph.
+- **Infrastructure track** — fieldbus and Modbus TCP frame builder, OT networking (subnet
+  calculator and a „network doctor” game with seven real-world faults), SCADA / OPC UA / MQTT with a
+  live topic broker, OT security zones with a firewall exercise, control cabinet (24 V supply
+  sizing, voltage drop, wiring colours, designations) and machine safety (two-channel safety relay,
+  ISO 13849-1 risk graph).
+- **Drives in depth** — inside the inverter (interactive sine-triangle PWM, U/f), a PROFIdrive
+  drive plant (STW1 / ZSW1, state machine 047E → 047F) and a drive lab where a flywheel braked too
+  fast trips on DC overvoltage.
+- **Control basics** — open vs closed loop, typical plants, a step-response lab: read K, T and the
+  dead time off a curve, get SIMC PI settings and see the closed loop.
 - **Story mode „Zgłoszenia”** — work orders from a shift foreman wrap the lessons into three weeks
   on a plant. Each ticket is graded with stars (attempts, hints), shows the downtime it cost and
   ends with a debrief; stars move you up from _Praktykant_ to _Starszy automatyk_.

@@ -20,6 +20,7 @@ import type { SymbolEntry } from '#lib/symbols/symbols.js';
 import type {
 	ConveyorState,
 	CraneState,
+	DrivePlantState,
 	LineState,
 	OvenState,
 	ProcessKind,
@@ -207,6 +208,69 @@ Ejector := eject.Q;
 `
 	};
 }
+
+/* ---------- PROFIdrive lesson ---------- */
+
+/** The drive is in this state and runs at about this frequency. */
+const driveAt =
+	(state: string, hz: number): Check =>
+	({ process }) => {
+		const d = (process?.state() as DrivePlantState).drive;
+		if (d.state !== state)
+			return `napęd jest w stanie ${d.state}${d.fault ? ` (${d.fault})` : ''}, a powinien w ${state}`;
+		return Math.abs(d.hz - hz) < 0.6
+			? null
+			: `napęd kręci ${d.hz.toFixed(1)} Hz, a powinien ${hz} Hz`;
+	};
+
+const DRIVE_ST_STARTER = `(* Napęd na Profinecie, telegram 1:
+   STW1 (QW4) i NSOLL_A (QW6) do napędu, ZSW1 (IW4) i NIST_A (IW6) z napędu.
+   16#4000 = 100 % = 50 Hz *)
+VAR
+  Run : BOOL;
+END_VAR
+
+Run := (Start OR Run) AND Stop;
+
+IF Run THEN
+  STW1 := 16#047F;
+ELSE
+  STW1 := 0;
+END_IF;
+NSOLL_A := 16#2000;
+
+LampRun := Run;
+`;
+
+const DRIVE_ST_SOLUTION = `(* Napęd na Profinecie, telegram 1:
+   STW1 (QW4) i NSOLL_A (QW6) do napędu, ZSW1 (IW4) i NIST_A (IW6) z napędu.
+   16#4000 = 100 % = 50 Hz *)
+VAR
+  Run   : BOOL;
+  Fault : BOOL;
+END_VAR
+
+Fault := (ZSW1 AND 16#0008) <> 0;      // ZSW1 bit 3: błąd napędu
+Run := (Start OR Run) AND Stop AND NOT Fault;
+
+IF Run THEN
+  STW1 := 16#047F;                      // ON: S2 → S3 → S4 (praca)
+ELSE
+  STW1 := 16#047E;                      // OFF1: rampą do zera, potem gotowość (S2)
+END_IF;
+IF Ack THEN
+  STW1 := STW1 OR 16#0080;              // bit 7: kwitowanie błędu (zbocze)
+END_IF;
+
+IF Fast THEN
+  NSOLL_A := 16#4000;                   // 100 % = 50 Hz
+ELSE
+  NSOLL_A := 16#2000;                   // 50 % = 25 Hz
+END_IF;
+
+LampRun := (ZSW1 AND 16#0004) <> 0;     // ZSW1 bit 2: praca
+LampFault := Fault;
+`;
 
 /** Mistakes on the production line fail a test immediately. */
 const lineSafety = ({ process }: { process: { state(): unknown } | null }): string | null => {
@@ -2076,6 +2140,104 @@ export const LESSONS: Lesson[] = [
 				steps: [
 					{ label: 'Right przyklejony', set: { 'I0.1': true }, wait: 2000 },
 					{ label: 'Left', set: { 'I0.0': true }, wait: 300, expect: { 'Q0.0': false } }
+				]
+			}
+		]
+	},
+	{
+		slug: 'drive-profidrive',
+		title: 'Falownik na Profinecie: słowo sterujące',
+		level: 'process',
+		scenario: 'drive',
+		summary:
+			'Sterujesz napędem jak SINAMICS: 047E, 047F, prędkość 16#4000, status z ZSW1 i kwitowanie błędu.',
+		instructions: [
+			'Napęd jest podłączony **przez sieć** (telegram 1): piszesz `STW1` (`QW4`) i `NSOLL_A` (`QW6`), czytasz `ZSW1` (`IW4`) i `NIST_A` (`IW6`). Program jest w **Structured Text**. Widok Process pokazuje stan napędu i bity obu słów.',
+			'**Objaw:** po Start napęd nie rusza i stoi w „S1 · Blokada załączenia”. Napęd PROFIdrive wymaga sekwencji: najpierw `16#047E` (gotowy, OFF1), dopiero potem `16#047F` (ON). Gdy `Run` = 0, wysyłaj `16#047E` — to też jest zatrzymanie rampą.',
+			'Prędkość: `Fast` (`I0.3`) = 100 % = `16#4000` (50 Hz), inaczej 50 % = `16#2000`.',
+			'Status z napędu, nie z programu: `LampRun` gdy w `ZSW1` jest bit 2 (praca, maska `16#0004`), `LampFault` gdy bit 3 (błąd, `16#0008`). Błąd ma kasować `Run`, a przycisk `Ack` (`I0.2`) — dodawać do słowa bit 7 (`STW1 OR 16#0080`).'
+		],
+		hints: [
+			'`IF Run THEN STW1 := 16#047F; ELSE STW1 := 16#047E; END_IF;`',
+			'`Fault := (ZSW1 AND 16#0008) <> 0;` — liczysz to przed podtrzymaniem i dopisujesz `AND NOT Fault`.',
+			'`IF Ack THEN STW1 := STW1 OR 16#0080; END_IF;` — kwitowanie działa na zboczu bitu 7.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'drive-profidrive',
+			scenario: 'drive',
+			language: 'st',
+			st: DRIVE_ST_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I0.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I0.1', { color: 'red', nc: true }],
+				['pushbutton', 'Ack', 'I0.2', { color: 'blue' }],
+				['switch', 'Fast', 'I0.3'],
+				['lamp', 'LampRun', 'Q0.0', { color: 'green' }],
+				['lamp', 'LampFault', 'Q0.1', { color: 'red' }]
+			]),
+			symbols: (plantInfo('drive')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+			watch: [
+				watchEntry('STW1', 'HEX', true),
+				watchEntry('ZSW1', 'HEX', true),
+				watchEntry('NSOLL_A', 'DEC', true),
+				watchEntry('NIST_A', 'DEC', true)
+			]
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: DRIVE_ST_SOLUTION,
+		tests: [
+			{
+				name: 'Start: sekwencja 047E → 047F, napęd kręci 25 Hz',
+				steps: [
+					{ label: 'Stop puszczony', set: { 'I0.1': true }, wait: 200 },
+					{ label: 'Start', set: { 'I0.0': true }, wait: 100 },
+					{
+						label: 'puść Start, 3 s',
+						set: { 'I0.0': false },
+						wait: 3000,
+						check: driveAt('S4', 25),
+						expect: { 'Q0.0': true }
+					}
+				]
+			},
+			{
+				name: 'Fast: 100 % = 50 Hz, Stop: rampą do zera i gotowość',
+				steps: [
+					{ label: 'Stop puszczony', set: { 'I0.1': true }, wait: 200 },
+					{ label: 'start', set: { 'I0.0': true }, wait: 100 },
+					{
+						label: 'Fast, 4 s',
+						set: { 'I0.0': false, 'I0.3': true },
+						wait: 4000,
+						check: driveAt('S4', 50)
+					},
+					{
+						label: 'Stop, 4 s',
+						set: { 'I0.1': false },
+						wait: 4000,
+						check: driveAt('S2', 0),
+						expect: { 'Q0.0': false }
+					}
+				]
+			},
+			{
+				name: 'Błąd napędu: lampka, kwitowanie i ponowny start',
+				steps: [
+					{ label: 'Stop puszczony', set: { 'I0.1': true }, wait: 200 },
+					{ label: 'start', set: { 'I0.0': true }, wait: 100 },
+					{ label: 'praca', set: { 'I0.0': false }, wait: 2000 },
+					{
+						label: 'błąd napędu',
+						commands: [['fault', true]],
+						wait: 2000,
+						expect: { 'Q0.1': true, 'Q0.0': false }
+					},
+					{ label: 'Ack', set: { 'I0.2': true }, wait: 200 },
+					{ label: 'puść Ack', set: { 'I0.2': false }, wait: 200, expect: { 'Q0.1': false } },
+					{ label: 'Start', set: { 'I0.0': true }, wait: 100 },
+					{ label: 'puść Start, 3 s', set: { 'I0.0': false }, wait: 3000, check: driveAt('S4', 25) }
 				]
 			}
 		]

@@ -116,6 +116,18 @@ export const PLANTS: readonly PlantInfo[] = [
 			{ address: 'Q2.0', name: 'RunCmd', comment: 'Command to the station: run the pump' },
 			{ address: 'Q2.1', name: 'ResetCmd', comment: 'Command to the station: reset the fault' }
 		]
+	},
+	{
+		kind: 'drive',
+		name: 'Frequency inverter on Profinet (PROFIdrive)',
+		description:
+			'A drive with standard telegram 1: control word and speed setpoint out, status word and actual speed back. PROFIdrive state machine, ramps, DC link and motor overload.',
+		io: [
+			{ address: 'IW4', name: 'ZSW1', comment: 'Status word from the drive' },
+			{ address: 'IW6', name: 'NIST_A', comment: 'Actual speed, 16#4000 = 100 % = 50 Hz' },
+			{ address: 'QW4', name: 'STW1', comment: 'Control word to the drive' },
+			{ address: 'QW6', name: 'NSOLL_A', comment: 'Speed setpoint, 16#4000 = 100 % = 50 Hz' }
+		]
 	}
 ];
 
