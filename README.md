@@ -54,6 +54,11 @@ it and watch the controller execute your program scan by scan — or let it driv
   and the cabinet's I/O list. The rack sits between the plant and the PLC, so a wrong address or
   a 4–20 mA transmitter on a 0–10 V channel shows the same symptoms as on a real commissioning
   (32767, an offset zero, a dead output). Lesson: get a finished program running in a new cabinet.
+- **Reading schematics (EPLAN style)** — a four-page schematic of a conveyor: power circuit, 24 V
+  supply with fuses, PLC inputs and outputs, IEC 81346 device tags, clickable cross references
+  `/page.column`, a contact mirror under the coil, the device list and the terminal diagram. Six
+  tasks, the last ones with a multimeter: measure along the output circuit and find the broken
+  wire.
 - **Motion control (PLCopen)** — a servo axis with a positioning drive: the PLCopen state machine
   (Disabled, Standstill, Homing, Discrete / Continuous Motion, Stopping, ErrorStop), trapezoid
   profiles, homing on a reference switch, software and hardware limits, following error, a

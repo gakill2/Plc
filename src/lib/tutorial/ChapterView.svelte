@@ -17,6 +17,7 @@
 	import FirewallLab from './FirewallLab.svelte';
 	import StepLab from './StepLab.svelte';
 	import CabinetCalc from './CabinetCalc.svelte';
+	import SchematicLab from './SchematicLab.svelte';
 	import WiringDemo from './WiringDemo.svelte';
 	import MiniSim from './MiniSim.svelte';
 	import PlcOverview from './PlcOverview.svelte';
@@ -128,6 +129,8 @@
 			<FirewallLab />
 		{:else if block.kind === 'step-lab'}
 			<StepLab />
+		{:else if block.kind === 'schematic'}
+			<SchematicLab />
 		{:else if block.kind === 'cabinet'}
 			<CabinetCalc />
 		{:else if block.kind === 'lesson'}

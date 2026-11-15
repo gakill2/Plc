@@ -2864,6 +2864,65 @@ Część mocy i część sygnałowa są **rozdzielone**: kable silnikowe i sygna
 			}
 		]
 	},
+	/* ------------------------------------------------------------------ schematy */
+	{
+		slug: 'schematy',
+		title: 'Czytanie schematu elektrycznego (EPLAN): oznaczenia, odsyłacze, szukanie usterki',
+		summary:
+			'Jak jest zbudowana dokumentacja szafy, co znaczy =T1+S1-K1 i /4.2, lustro styków, listwy zaciskowe — i jak multimetrem znaleźć przerwę według schematu.',
+		minutes: 12,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Na uruchomieniu i w serwisie schemat to Twoja mapa. Dokumentacja z EPLAN (albo innego programu E-CAD) ma zwykle stały układ: strona tytułowa, spis treści, **obwody mocy** (zasilanie, silniki), **obwody sterowania 24 V**, **przeglądy PLC** (każda karta z opisem każdego kanału), **schematy listew zaciskowych**, **schematy kabli** i **lista części**. Każda strona ma **kolumny 1–8** (czasem też wiersze A–F) i tabelkę z nazwą obiektu i numerem strony.
+
+**Oznaczenia** według IEC 81346 (EN 81346):
+- \`=\` **funkcja / instalacja** (=T1 — taśma 1), \`+\` **miejsce** (+S1 — szafa 1), \`-\` **produkt** (-K1 — stycznik 1). Pełna nazwa: \`=T1+S1-K1\`, na stronie zwykle samo \`-K1\`,
+- litery klasy: **Q** łączenie mocy (wyłączniki, styczniki w nowszym podejściu), **K** przekaźniki i styczniki, **F** zabezpieczenia, **S** przyciski i łączniki, **B** czujniki, **M** silniki, **H** sygnalizacja, **X** listwy zaciskowe, **A** zespoły (PLC, moduły), **T** zasilacze i transformatory, **W** kable,
+- **numery zacisków aparatu**: styki główne 1-2, 3-4, 5-6; pomocnicze NO 13-14, NC 11-12 (21-22, …); cewka A1-A2.
+
+**Odsyłacze** \`/4.2\` = strona 4, kolumna 2. Cewka stycznika i jego styki są narysowane tam, gdzie pracują — cewka na stronie wyjść PLC, styki główne w obwodzie mocy, styk pomocniczy na stronie wejść. Pod cewką jest **lustro styków**: lista wszystkich jego styków z odsyłaczami. Szyny zasilania mają odsyłacz, skąd przychodzą (2L+ ← -F2 /2.4).`
+			},
+			{
+				kind: 'text',
+				text: `**Szukanie usterki według schematu** — metoda, która zawsze działa:
+
+1. Zacznij od **objawu na PLC**: czy wyjście jest wystawione (dioda na karcie, tablica obserwacji)? Czy wejście dochodzi?
+2. Na schemacie znajdź **cały tor sygnału**: wyjście karty → zacisk listwy → kabel → aparat → powrót do M.
+3. **Mierz od źródła w stronę odbiornika** (albo dziel tor na pół): napięcie względem M w kolejnych punktach. Tam, gdzie 24 V przechodzi w 0 V, jest przerwa — między dwoma ostatnimi punktami.
+4. Sprawdź, czy przyczyna nie jest **wspólna**: przepalony bezpiecznik (wszystkie wejścia z jednego obwodu nagle 0), brak M, wyzwolony wyłącznik.
+5. Po naprawie popraw dokumentację, jeśli różniła się od szafy — następny serwisant Ci podziękuje.`
+			},
+			{
+				kind: 'quiz',
+				question: 'Na schemacie przy styku stoi „-K3  13-14  /6.4”. Co to znaczy?',
+				options: [
+					'Styk zwierny 13-14 przekaźnika/stycznika -K3; jego cewka jest na stronie 6 w kolumnie 4',
+					'Bezpiecznik 13-14 A na stronie 6',
+					'Zacisk 13 listwy -K3',
+					'Kabel nr 13 o długości 6,4 m'
+				],
+				correct: 0,
+				explanation:
+					'K = przekaźnik / stycznik, 13-14 = styk pomocniczy zwierny, /6.4 = odsyłacz do miejsca, gdzie narysowano cewkę (lub inny styk tego aparatu).'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Nagle wszystkie przyciski i czujniki pokazują 0 na wejściach PLC, a Stop (NC) zatrzymał maszynę. Od czego zaczniesz?',
+				options: [
+					'Od wymiany karty wejść',
+					'Od wspólnego zasilania tych wejść: bezpiecznik obwodu 24 V wejść (np. -F2) i potencjał 2L+ na listwie',
+					'Od programu PLC',
+					'Od każdego czujnika po kolei'
+				],
+				correct: 1,
+				explanation:
+					'Wspólny objaw = wspólna przyczyna. Schemat pokazuje, który bezpiecznik zasila te obwody — jeden pomiar zamiast dziesięciu.'
+			},
+			{ kind: 'schematic' }
+		]
+	},
 	/* ------------------------------------------------------------------ sprzęt */
 	{
 		slug: 'sprzet',

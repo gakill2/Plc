@@ -56,7 +56,8 @@ export type Block =
 	| { kind: 'mqtt' }
 	| { kind: 'firewall' }
 	| { kind: 'step-lab' }
-	| { kind: 'cabinet' };
+	| { kind: 'cabinet' }
+	| { kind: 'schematic' };
 
 export interface Chapter {
 	slug: string;

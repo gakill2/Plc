@@ -302,6 +302,11 @@ export const EN_TITLES: Record<string, { title: string; summary: string }> = {
 		summary:
 			'Sizing the power supply, circuit protection, wire colours, earthing and shielding, device tags and reading a schematic.'
 	},
+	'chapter:schematy': {
+		title: 'Reading an electrical schematic (EPLAN): tags, cross references, troubleshooting',
+		summary:
+			'How cabinet documentation is organised, what =T1+S1-K1 and /4.2 mean, the contact mirror, terminal strips — and finding a broken wire with a multimeter and the schematic.'
+	},
 	'chapter:sprzet': {
 		title: 'Hardware configuration: modules, addresses and analog cards',
 		summary:
