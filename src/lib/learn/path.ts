@@ -1,4 +1,6 @@
 import { LESSONS } from '#lib/lessons/lessons.js';
+import type { Locale } from '#lib/i18n/i18n.svelte.js';
+import { EN_STAGES, EN_TITLES } from './titles.en.js';
 import { CHAPTERS, quizCount } from '#lib/tutorial/chapters.js';
 import { chapterDone } from '#lib/tutorial/progress.js';
 
@@ -25,15 +27,29 @@ const STAGES: [firstChapter: string, title: string][] = [
 	['structured-text', 'Etap 4 · Tekst strukturalny i dobre praktyki'],
 	['sekwencje', 'Etap 5 · Sekwencje i procesy'],
 	['panel-hmi', 'Etap 6 · Praca na obiekcie: HMI, uruchomienie, napędy'],
-	['komunikacja', 'Etap 7 · Infrastruktura: sieci, IT/OT, bezpieczeństwo i szafa']
+	['komunikacja', 'Etap 7 · Infrastruktura: sieci, IT/OT, bezpieczeństwo i szafa'],
+	['sprzet', 'Etap 8 · W pracy: sprzęt, cudzy kod, projekt końcowy']
 ];
 
-export function learningPath(): PathStage[] {
+/** Title and summary in the interface language (the content itself stays Polish). */
+export function localized<T extends { kind: string; slug: string; title: string; summary: string }>(
+	item: T,
+	locale: Locale
+): T {
+	const en = locale === 'en' ? EN_TITLES[`${item.kind}:${item.slug}`] : undefined;
+	return en ? { ...item, ...en } : item;
+}
+
+export function learningPath(locale: Locale = 'pl'): PathStage[] {
 	const stages: PathStage[] = [];
 	const used = new Set<string>();
 	for (const chapter of CHAPTERS) {
 		const stage = STAGES.find(([first]) => first === chapter.slug);
-		if (stage || stages.length === 0) stages.push({ title: stage?.[1] ?? 'Start', steps: [] });
+		if (stage || stages.length === 0)
+			stages.push({
+				title: (locale === 'en' && stage ? EN_STAGES[stage[0]] : stage?.[1]) ?? 'Start',
+				steps: []
+			});
 		const steps = stages[stages.length - 1].steps;
 		steps.push({
 			kind: 'chapter',
@@ -67,7 +83,9 @@ export function learningPath(): PathStage[] {
 				debug: l.kind === 'debug'
 			}))
 		);
-	return stages;
+	return locale === 'pl'
+		? stages
+		: stages.map((s) => ({ ...s, steps: s.steps.map((x) => localized(x, locale)) }));
 }
 
 export interface Progress {

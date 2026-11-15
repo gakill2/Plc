@@ -20,6 +20,10 @@ function context(
 	const fbd = which === 'solution' ? (lesson.solutionFbd?.() ?? project.fbd) : project.fbd;
 	const stl = which === 'solution' ? (lesson.solutionStl ?? project.stl) : project.stl;
 	const hw = which === 'solution' ? (lesson.solutionHw?.() ?? project.hw) : project.hw;
+	const safety =
+		which === 'solution'
+			? (lesson.solutionSafety ?? project.safety?.program)
+			: project.safety?.program;
 	return {
 		ladder,
 		circuit,
@@ -29,6 +33,7 @@ function context(
 		fbd,
 		stl,
 		hw,
+		safety,
 		addr: addressResolver(map),
 		online: false,
 		passed: false

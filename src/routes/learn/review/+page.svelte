@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { i18n, t } from '#lib/i18n/i18n.svelte.js';
+	import PolishNote from '#lib/learn/PolishNote.svelte';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import Quiz from '#lib/tutorial/Quiz.svelte';
@@ -42,26 +44,24 @@
 </script>
 
 <svelte:head>
-	<title>Powtórka · PLC Sim</title>
+	<title>{t('learn.review')} · PLC Sim</title>
 </svelte:head>
 
-<section class="mx-auto max-w-2xl px-4 py-12" lang="pl">
-	<a href={resolve('/learn')} class="text-sm text-slate-400 hover:text-white">← Nauka</a>
-	<h1 class="mt-3 text-3xl font-bold text-white">Powtórka</h1>
-	<p class="mt-2 text-slate-400">
-		{SIZE} pytań z rozdziałów, które już zacząłeś. Częściej wracają te, na które odpowiedziałeś źle, i
-		te, których dawno nie widziałeś. Liczy się pierwsza odpowiedź.
-	</p>
+<section class="mx-auto max-w-2xl px-4 py-12" lang={i18n.locale}>
+	<a href={resolve('/learn')} class="text-sm text-slate-400 hover:text-white"
+		>← {t('learn.title')}</a
+	>
+	<h1 class="mt-3 text-3xl font-bold text-white">{t('learn.review')}</h1>
+	<p class="mt-2 text-slate-400">{t('review.intro', { n: SIZE })}</p>
+	<PolishNote />
 
 	{#if ready && questions.length === 0}
-		<p class="mt-8 text-slate-400">Brak pytań — zacznij pierwszy rozdział.</p>
+		<p class="mt-8 text-slate-400">{t('review.empty')}</p>
 	{:else if finished}
 		<div class="mt-8 rounded-lg border border-slate-800 bg-slate-900/60 p-6 text-center">
 			<p class="text-4xl font-bold text-white">{score} / {questions.length}</p>
 			<p class="mt-2 text-slate-400">
-				{score === questions.length
-					? 'Świetnie — wszystko za pierwszym razem.'
-					: 'Pytania z błędną odpowiedzią wrócą w następnej powtórce.'}
+				{score === questions.length ? t('review.perfect') : t('review.again')}
 			</p>
 			<ul class="mt-4 space-y-1 text-left text-sm">
 				{#each questions as q (q.id)}
@@ -77,13 +77,15 @@
 			</ul>
 			<button
 				class="mt-6 rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400"
-				onclick={start}>Nowa powtórka</button
+				onclick={start}>{t('review.new')}</button
 			>
 		</div>
 	{:else if current}
 		<div class="mt-8 mb-3 flex items-center justify-between text-xs text-slate-400">
-			<span>Pytanie {index + 1} / {questions.length} · {current.chapterTitle}</span>
-			<span>{score} poprawnych</span>
+			<span
+				>{t('review.question', { n: index + 1, total: questions.length })} · {current.chapterTitle}</span
+			>
+			<span>{t('review.correct', { n: score })}</span>
 		</div>
 		{#key current.id}
 			<Quiz
@@ -102,7 +104,7 @@
 				disabled={!answered}
 				onclick={() => index++}
 			>
-				{index + 1 < questions.length ? 'Następne pytanie →' : 'Wynik'}
+				{index + 1 < questions.length ? `${t('review.next')} →` : t('review.result')}
 			</button>
 		</div>
 	{/if}

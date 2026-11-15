@@ -30,9 +30,10 @@ import type { CompiledLadder } from '#lib/ladder/compiler.js';
 import { compileSt, type StCompileResult } from '#lib/st/compiler.js';
 import { stlToSt, type GeneratedStl } from '#lib/stl/stl.js';
 import { checkHardware, type Hardware } from '#lib/hw/hw.js';
+import type { SafetyConfig } from '#lib/safety/safety.js';
 import type { Project, ProgramLanguage } from './project.js';
 
-export type ProblemSource = 'program' | 'circuit' | 'symbols' | 'hardware';
+export type ProblemSource = 'program' | 'circuit' | 'symbols' | 'hardware' | 'safety';
 
 export interface Problem {
 	id: string;
@@ -71,6 +72,8 @@ export class ProjectState {
 	);
 	/** The rack (hardware-configuration lessons); null: terminals are addresses. */
 	hw: Hardware | null = $state(null);
+	/** F-CPU: safety program and fail-safe I/O (safety lessons); null: a standard CPU. */
+	safety: SafetyConfig | null = $state(null);
 	/** Statement List source. */
 	stl: string = $state('');
 	/** The STL program translated to ST, while STL is the active language. */
@@ -81,17 +84,18 @@ export class ProjectState {
 	readonly sfcSt: GeneratedSt | null = $derived(this.language === 'sfc' ? sfcToSt(this.sfc) : null);
 
 	/** Structured Text compile result, while ST is the active language. */
-	readonly stResult: StCompileResult | null = $derived(
-		this.language === 'st'
-			? compileSt(this.st, { symbols: this.symbols.map, prelude: this.prelude })
-			: this.sfcSt
-				? compileSt(this.sfcSt.source, { symbols: this.symbols.map, prelude: this.prelude })
-				: this.fbdSt
-					? compileSt(this.fbdSt.source, { symbols: this.symbols.map, prelude: this.prelude })
-					: this.stlSt
-						? compileSt(this.stlSt.source, { symbols: this.symbols.map, prelude: this.prelude })
-						: null
-	);
+	readonly stResult: StCompileResult | null = $derived.by(() => {
+		const options = {
+			symbols: this.symbols.map,
+			prelude: this.prelude,
+			...(this.safety ? { safety: $state.snapshot(this.safety) as SafetyConfig } : {})
+		};
+		const src =
+			this.language === 'st'
+				? this.st
+				: (this.sfcSt?.source ?? this.fbdSt?.source ?? this.stlSt?.source ?? null);
+		return src === null ? null : compileSt(src, options);
+	});
 	/** The active program in a common shape — this is what gets downloaded and graded. */
 	readonly compiled: CompiledLadder;
 
@@ -120,6 +124,7 @@ export class ProjectState {
 		this.fbd = project.fbd ?? emptyFbd();
 		this.stl = project.stl ?? '';
 		this.hw = project.hw ?? null;
+		this.safety = project.safety ?? null;
 		this.hmi = project.hmi ?? emptyHmi();
 		this.compiled = $derived(
 			this.sfcSt && this.stResult
@@ -133,7 +138,22 @@ export class ProjectState {
 							: this.ladder.compiled
 		);
 		this.problems = $derived([
-			...this.compiled.diagnostics.map((d) => ({ ...d, source: 'program' as const })),
+			...(this.safety && this.language === 'ladder'
+				? [
+						{
+							id: 'safety:ladder',
+							message:
+								'The safety program needs a standard program in ST, SFC, FBD or STL — switch the language',
+							source: 'safety' as const
+						}
+					]
+				: []),
+			...this.compiled.diagnostics.map((d) => ({
+				...d,
+				source: /^(Safety program|F-I\/O)/.test(d.message)
+					? ('safety' as const)
+					: ('program' as const)
+			})),
 			...this.symbols.issues.map((d) => ({ ...d, source: 'symbols' as const })),
 			...(this.hw ? checkHardware(this.hw) : []).map((d) => ({
 				...d,
@@ -232,6 +252,7 @@ export class ProjectState {
 		this.fbd = p.fbd ?? emptyFbd();
 		this.stl = p.stl ?? '';
 		this.hw = p.hw ?? null;
+		this.safety = p.safety ?? null;
 		this.library = p.library ?? '';
 	}
 
@@ -258,6 +279,7 @@ export class ProjectState {
 					: undefined,
 			stl: this.language === 'stl' || this.stl.trim() ? this.stl : undefined,
 			hw: this.hw ? $state.snapshot(this.hw) : undefined,
+			safety: this.safety ? $state.snapshot(this.safety) : undefined,
 			hmi: $state.snapshot(this.hmi)
 		};
 	}

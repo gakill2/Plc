@@ -10,4 +10,5 @@ export type View =
 	| 'diag'
 	| 'hmi'
 	| 'iocheck'
-	| 'hardware';
+	| 'hardware'
+	| 'safety';

@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test';
 
 test('tutorial: simulator, quiz and progress', async ({ page }) => {
 	await page.goto('/learn/basics', { waitUntil: 'networkidle' });
-	await expect(page.getByText('ukończone:')).toBeVisible();
-	await page.getByRole('link', { name: /Styki i cewki/ }).click();
-	await expect(page.getByRole('heading', { name: 'Styki i cewki' })).toBeVisible();
+	await expect(page.getByText('done:')).toBeVisible();
+	await page.getByRole('link', { name: /Contacts and coils/ }).click();
+	await expect(page.getByRole('heading', { name: 'Contacts and coils' })).toBeVisible();
 
 	const button = page.getByRole('button', { name: 'Wciśnij Przycisk' });
 	await button.dispatchEvent('pointerdown', { pointerId: 1 });
@@ -19,12 +19,12 @@ test('tutorial: simulator, quiz and progress', async ({ page }) => {
 	await expect(page.getByText('Dobrze!')).toBeVisible();
 
 	await page.goto('/learn/basics', { waitUntil: 'networkidle' });
-	await expect(page.getByText(/ukończone:\s*1 \/ 31/)).toBeVisible();
+	await expect(page.getByText(/done:\s*1 \/ 32/)).toBeVisible();
 });
 
 test('glossary search', async ({ page }) => {
 	await page.goto('/learn/glossary', { waitUntil: 'networkidle' });
-	await page.getByLabel('Szukaj w słowniczku').fill('rising');
+	await page.getByLabel('Search the glossary').fill('rising');
 	await expect(page.getByText('zbocze narastające / opadające')).toBeVisible();
 	await expect(page.getByText('stycznik', { exact: true })).toHaveCount(0);
 });

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { localized } from '#lib/learn/path.js';
+	import { i18n, t } from '#lib/i18n/i18n.svelte.js';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { getLesson, lessonProjectId } from '#lib/lessons/lessons.js';
@@ -141,9 +143,11 @@
 					>
 					<span>
 						<span class="block text-xs font-semibold tracking-wider text-sky-300 uppercase"
-							>{lesson.kind === 'debug' ? 'Znajdź błąd' : 'Ćwiczenie w edytorze'}</span
+							>{lesson.kind === 'debug' ? t('learn.findBug') : t('learn.exerciseEditor')}</span
 						>
-						<span class="block font-semibold text-white">{lesson.title}</span>
+						<span class="block font-semibold text-white"
+							>{localized({ ...lesson, kind: 'lesson' }, i18n.locale).title}</span
+						>
 						<span class="block text-sm text-slate-400">{block.text}</span>
 					</span>
 				</a>

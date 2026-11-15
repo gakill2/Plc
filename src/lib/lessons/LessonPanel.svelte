@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { reviewSt } from './review.js';
+	import { localized } from '#lib/learn/path.js';
 	import type { Hardware } from '#lib/hw/hw.js';
-	import { t } from '#lib/i18n/i18n.svelte.js';
+	import { i18n, t } from '#lib/i18n/i18n.svelte.js';
 	import { resolve } from '$app/paths';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
 	import type { LadderProgram } from '#lib/ladder/model.js';
@@ -37,6 +38,7 @@
 		fbd: Fbd;
 		stl: string;
 		hw: Hardware | null;
+		safety: string;
 	};
 	let {
 		lesson,
@@ -54,7 +56,8 @@
 		sfc,
 		fbd,
 		stl,
-		hw
+		hw,
+		safety
 	}: Props = $props();
 
 	let results = $state.raw<TestResult[] | null>(null);
@@ -102,6 +105,7 @@
 			fbd,
 			stl,
 			hw: hw ?? undefined,
+			safety,
 			addr: addressResolver(symbols),
 			online,
 			passed: passed || completedBefore
@@ -159,14 +163,23 @@
 							? t('lesson.commissioning')
 							: t('lesson.exercise')} · {t(LEVELS[lesson.level])}
 		</p>
-		<h2 id="lesson-title" class="text-sm font-semibold text-white">{lesson.title}</h2>
+		<h2 id="lesson-title" class="text-sm font-semibold text-white">
+			{localized({ ...lesson, kind: 'lesson' }, i18n.locale).title}
+		</h2>
 	</div>
 
-	<div class="space-y-2 text-xs leading-relaxed text-slate-300">
+	{#if i18n.locale === 'en'}
+		<p
+			class="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-100"
+		>
+			{t('lesson.polishContent')}
+		</p>
+	{/if}
+	<div class="space-y-2 text-xs leading-relaxed text-slate-300" lang="pl">
 		{#each lesson.instructions as p, i (i)}<p><RichText text={p} /></p>{/each}
 	</div>
 
-	{#if guide.length && (language === 'ladder' || lesson.kind === 'commissioning' || lesson.solutionSt || lesson.solutionSfc || lesson.solutionFbd || lesson.solutionStl || lesson.solutionHw)}
+	{#if guide.length && (language === 'ladder' || lesson.kind === 'commissioning' || lesson.solutionSt || lesson.solutionSfc || lesson.solutionFbd || lesson.solutionStl || lesson.solutionHw || lesson.solutionSafety)}
 		<div lang="pl">
 			<p class="mb-1 text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
 				{t('lesson.steps')} · {ticks.filter(Boolean).length}/{guide.length}

@@ -22,11 +22,14 @@ function compile(lesson: (typeof LESSONS)[number], ladder: LadderProgram) {
 }
 
 /** Structured Text lessons: compiles the source with the starter's symbols. */
-function compileStLesson(lesson: (typeof LESSONS)[number], src: string) {
+function compileStLesson(lesson: (typeof LESSONS)[number], src: string, safetyProgram?: string) {
 	const project = lesson.starter();
 	const { map, issues } = checkSymbols([...deviceSymbols(project.circuit), ...project.symbols]);
 	expect(issues).toEqual([]);
-	const r = compileSt(src, { symbols: map });
+	const safety = project.safety
+		? { ...project.safety, program: safetyProgram ?? project.safety.program }
+		: undefined;
+	const r = compileSt(src, { symbols: map, ...(safety ? { safety } : {}) });
 	return { program: r.program, diagnostics: r.diagnostics, load: r.load };
 }
 
@@ -46,7 +49,7 @@ describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, les
 				: lesson.solutionStl
 					? compileStlLesson(lesson, lesson.solutionStl)
 					: lesson.solutionSt
-						? compileStLesson(lesson, lesson.solutionSt)
+						? compileStLesson(lesson, lesson.solutionSt, lesson.solutionSafety)
 						: compile(lesson, lesson.solution());
 		expect(diagnostics).toEqual([]);
 		const circuit = lesson.solutionCircuit?.() ?? lesson.starter().circuit;

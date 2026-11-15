@@ -4,19 +4,24 @@
 	import { solvedQuizzes } from '#lib/tutorial/progress.js';
 	import { isDone, learningPath, nextStep, type PathStep } from './path.js';
 	import StepLink from './StepLink.svelte';
+	import { i18n, t } from '#lib/i18n/i18n.svelte.js';
 
 	/** "Continue where you left off" — the next step of the learning path. */
 	let { showWhenFresh = true }: { showWhenFresh?: boolean } = $props();
 
-	const stages = learningPath();
-	const total = stages.reduce((n, s) => n + s.steps.length, 0);
-	let next = $state<PathStep | null>(null);
+	const stages = $derived(learningPath(i18n.locale));
+	const total = $derived(stages.reduce((n, s) => n + s.steps.length, 0));
+	let slug = $state<string | null>(null);
+	const next = $derived<PathStep | null>(
+		stages.flatMap((s) => s.steps).find((s) => `${s.kind}:${s.slug}` === slug) ?? null
+	);
 	let done = $state(0);
 	let ready = $state(false);
 
 	onMount(() => {
 		const p = { solvedQuizzes: solvedQuizzes(), lessonsDone: completedLessons() };
-		next = nextStep(stages, p);
+		const n = nextStep(stages, p);
+		slug = n ? `${n.kind}:${n.slug}` : null;
 		done = stages.flatMap((s) => s.steps).filter((s) => isDone(s, p)).length;
 		ready = true;
 	});
@@ -32,9 +37,12 @@
 				class="grid size-11 shrink-0 place-items-center rounded-full bg-emerald-500 text-lg text-slate-950"
 				aria-hidden="true">▶</span
 			>
-			<span class="min-w-0 flex-1" lang="pl">
+			<span class="min-w-0 flex-1" lang={i18n.locale}>
 				<span class="block text-xs text-emerald-300"
-					>{done === 0 ? 'Zacznij naukę' : 'Kontynuuj naukę'} · {done}/{total} kroków</span
+					>{done === 0 ? t('learn.start') : t('learn.continue')} · {t('learn.steps', {
+						done,
+						total
+					})}</span
 				>
 				<span class="block font-semibold text-white"
 					>{next.kind === 'chapter' ? '📘' : next.debug ? '🐞' : '🛠'} {next.title}</span
@@ -44,8 +52,8 @@
 			<span class="text-slate-400" aria-hidden="true">→</span>
 		</StepLink>
 	{:else}
-		<p class="rounded-xl border border-emerald-500/40 p-4 text-sm text-emerald-200" lang="pl">
-			🎉 Cała ścieżka ukończona ({total}/{total}). Spróbuj własnego projektu z linią produkcyjną.
+		<p class="rounded-xl border border-emerald-500/40 p-4 text-sm text-emerald-200">
+			{t('learn.allDone', { total })}
 		</p>
 	{/if}
 {/if}

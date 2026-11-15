@@ -78,7 +78,9 @@ export const DEVICES: Record<DeviceType, DeviceSpec> = {
 		io: 'input',
 		momentary: false,
 		defaultLabel: 'EStop',
-		defaultNc: true
+		defaultNc: true,
+		// a real e-stop has two NC contacts: channel 2 for a fail-safe (1oo2) input
+		extraPorts: [{ id: 'ch2', io: 'input', suffix: '_Ch2', label: 'CH2' }]
 	},
 	limit: {
 		type: 'limit',

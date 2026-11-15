@@ -3,7 +3,7 @@ import { openEditor } from './helpers';
 
 test('lesson: fail, show the solution, pass, get the tick', async ({ page }) => {
 	await page.goto('/learn', { waitUntil: 'networkidle' });
-	await page.getByRole('link', { name: /Pierwszy szczebel/ }).click();
+	await page.getByRole('link', { name: /Your first rung/ }).click();
 	await expect(page.getByText('Step by step · 0/5')).toBeVisible();
 	await page.getByRole('button', { name: 'Check solution' }).click();
 	await expect(page.getByText(/✗\s*Lampka podąża za przyciskiem/)).toBeVisible();
@@ -15,8 +15,8 @@ test('lesson: fail, show the solution, pass, get the tick', async ({ page }) => 
 	await expect(page.getByText('Step by step · 5/5')).toBeVisible();
 
 	await page.goto('/learn', { waitUntil: 'networkidle' });
-	await expect(page.getByText(/ukończone: 1 \/ 67/)).toBeVisible();
-	await expect(page.getByRole('link', { name: /Kontynuuj naukę/ })).toBeVisible();
+	await expect(page.getByText(/done: 1 \/ 69/)).toBeVisible();
+	await expect(page.getByRole('link', { name: /Continue learning/ })).toBeVisible();
 });
 
 test('projects: create, rename, find in the list, delete', async ({ page }) => {

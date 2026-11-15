@@ -96,6 +96,8 @@ export interface StProgram {
 	cyclic?: { intervalMs: number; body: Stmt[] } & Span;
 	/** ORGANIZATION_BLOCK OB100 / OB121 / OB80: startup, programming error, time error */
 	obs?: ({ ob: ErrorOb; body: Stmt[] } & Span)[];
+	/** the safety program (F-CPU): runs first, only its own data and the F-outputs */
+	safety?: { vars: VarDecl[]; body: Stmt[] } & Span;
 }
 
 /** Organisation blocks the CPU calls on events. */

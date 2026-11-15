@@ -3,6 +3,9 @@
 	import { onMount } from 'svelte';
 	import { CHAPTERS, quizCount } from '#lib/tutorial/chapters.js';
 	import { chapterDone, solvedQuizzes } from '#lib/tutorial/progress.js';
+	import { localized } from '#lib/learn/path.js';
+	import { i18n, t } from '#lib/i18n/i18n.svelte.js';
+	const chapters = $derived(CHAPTERS.map((c) => localized({ ...c, kind: 'chapter' }, i18n.locale)));
 
 	let solved = $state<ReadonlySet<string>>(new Set());
 	onMount(() => (solved = solvedQuizzes()));
@@ -12,24 +15,21 @@
 </script>
 
 <svelte:head>
-	<title>Podstawy PLC — samouczek · PLC Sim</title>
+	<title>{t('learn.basics')} · PLC Sim</title>
 </svelte:head>
 
-<section class="mx-auto max-w-4xl px-4 py-12" lang="pl">
+<section class="mx-auto max-w-4xl px-4 py-12" lang={i18n.locale}>
 	<a href={resolve('/learn')} class="text-sm text-slate-400 hover:text-white">← Learn</a>
-	<h1 class="mt-3 text-3xl font-bold text-white">Podstawy PLC</h1>
-	<p class="mt-2 max-w-2xl text-slate-400">
-		Samouczek od zera: czym jest sterownik, jak działa cykl programu, styki, cewki, timery, liczniki
-		i tekst strukturalny. Każdy rozdział ma działający symulator, pytania sprawdzające i ćwiczenie w
-		edytorze.
-	</p>
+	<h1 class="mt-3 text-3xl font-bold text-white">{t('learn.basics')}</h1>
+	<p class="mt-2 max-w-2xl text-slate-400">{t('learn.basicsIntro')}</p>
 	<div class="mt-4 flex flex-wrap items-center gap-4 text-sm">
-		<span class="text-slate-400">{CHAPTERS.length} rozdziałów · ok. {total} minut</span>
+		<span class="text-slate-400">{t('learn.chaptersTime', { n: CHAPTERS.length, min: total })}</span
+		>
 		<span class="text-slate-400"
-			>ukończone: <b class="text-white">{done} / {CHAPTERS.length}</b></span
+			>{t('learn.done')}: <b class="text-white">{done} / {CHAPTERS.length}</b></span
 		>
 		<a href={resolve('/learn/glossary')} class="text-sky-300 underline hover:text-sky-200"
-			>Słowniczek PL – EN</a
+			>{t('learn.glossary')}</a
 		>
 	</div>
 	<div class="mt-3 h-1.5 max-w-md overflow-hidden rounded bg-slate-800">
@@ -40,7 +40,7 @@
 	</div>
 
 	<ol class="mt-8 space-y-2">
-		{#each CHAPTERS as c, i (c.slug)}
+		{#each chapters as c, i (c.slug)}
 			{@const isDone = chapterDone(c.slug, quizCount(c), solved)}
 			<li>
 				<a

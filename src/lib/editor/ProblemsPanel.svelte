@@ -19,7 +19,8 @@
 		program: 'problems.program',
 		circuit: 'problems.circuit',
 		symbols: 'problems.symbols',
-		hardware: 'problems.hardware'
+		hardware: 'problems.hardware',
+		safety: 'problems.safety'
 	} as const;
 </script>
 

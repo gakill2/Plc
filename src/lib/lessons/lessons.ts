@@ -756,6 +756,129 @@ function mixerHardware(good: boolean): Hardware {
 	};
 }
 
+/* ---------- F-CPU: e-stop and contactor monitoring in the safety program ---------- */
+
+const F_STD_STARTER = `(* Taśma T1 — program standardowy (CPU 1516F) *)
+VAR
+  run : BOOL;
+END_VAR
+
+IF Start AND Stop THEN run := TRUE; END_IF;
+IF NOT Stop THEN run := FALSE; END_IF;
+RunRequest := run;
+
+// poprzedni programista: e-stop „obsłużony” w programie standardowym
+K1 := run AND EStop AND EStop_Ch2;
+ResetLamp := FALSE;
+`;
+
+const F_STD_SOLUTION = `(* Taśma T1 — program standardowy (CPU 1516F) *)
+VAR
+  run : BOOL;
+END_VAR
+
+IF Start AND Stop THEN run := TRUE; END_IF;
+IF NOT Stop THEN run := FALSE; END_IF;
+// po zatrzymaniu awaryjnym żądanie gaśnie: kwitowanie nie uruchamia taśmy, dopiero nowy Start
+IF NOT eStop1.Q THEN run := FALSE; END_IF;
+RunRequest := run;
+
+// program standardowy tylko czyta dane F — lampka „wymagany reset”
+ResetLamp := eStop1.ACK_REQ OR fdbK1.ACK_REQ OR F_EStop_ACK_REQ;
+`;
+
+const F_SAFETY_STARTER = `// Program bezpieczeństwa: zatrzymanie awaryjne kat. 0 i nadzór stycznika K1
+// F_EStop — dwukanałowy e-stop (1oo2) z czasem rozbieżności, przygotowany przez sterownik.
+// TODO: ESTOP1 i FDBACK, wyjście K1
+`;
+
+const F_SAFETY_SOLUTION = `// Program bezpieczeństwa: zatrzymanie awaryjne kat. 0 i nadzór stycznika K1
+VAR
+  eStop1 : ESTOP1;
+  fdbK1 : FDBACK;
+END_VAR
+
+// e-stop: wyłączenie od razu, po odblokowaniu tylko po kwitowaniu
+eStop1(E_STOP := F_EStop, ACK_NEC := TRUE, ACK := Ack);
+
+// stycznik: włączenie = zgoda F I żądanie z programu standardowego; styk zwrotny NC
+fdbK1(ON := eStop1.Q AND RunRequest, FEEDBACK := NOT K1_FB, QBAD_FIO := F_EStop_QBAD,
+   ACK := Ack, FDB_TIME := T#500ms);
+K1 := fdbK1.Q;
+`;
+
+function fConveyor(): Project {
+	return {
+		version: 2,
+		lesson: 'f-estop',
+		language: 'st',
+		st: F_STD_STARTER,
+		ladder: { version: 1, rungs: [] },
+		safety: {
+			inputs: [{ name: 'F_EStop', ch1: 'EStop', ch2: 'EStop_Ch2', discrepancyMs: 200 }],
+			outputs: ['K1'],
+			ackRei: 'Ack',
+			program: F_SAFETY_STARTER
+		},
+		circuit: field([
+			{
+				type: 'pushbutton',
+				label: 'Start',
+				x: 0,
+				y: 30,
+				extra: { color: 'green' },
+				wires: { main: 'I0.0' }
+			},
+			{
+				type: 'pushbutton',
+				label: 'Stop',
+				x: 0,
+				y: 190,
+				extra: { color: 'red', nc: true },
+				wires: { main: 'I0.1' }
+			},
+			{
+				type: 'pushbutton',
+				label: 'Ack',
+				x: 0,
+				y: 350,
+				extra: { color: 'blue' },
+				wires: { main: 'I0.3' }
+			},
+			{
+				type: 'estop',
+				label: 'EStop',
+				x: 0,
+				y: 510,
+				extra: { nc: true },
+				wires: { main: 'I8.0', ch2: 'I8.1' }
+			},
+			{ type: 'contactor', label: 'K1', x: 720, y: 20, wires: { main: 'Q8.0', aux: 'I0.2' } },
+			{
+				type: 'lamp',
+				label: 'ResetLamp',
+				x: 720,
+				y: 250,
+				extra: { color: 'blue' },
+				wires: { main: 'Q0.1' }
+			}
+		]),
+		symbols: [
+			symbol('RunRequest', 'M10.0', 'Żądanie pracy z programu standardowego (nie-bezpieczne)')
+		],
+		watch: [
+			watchEntry('K1', undefined, true),
+			watchEntry('RunRequest', undefined, true),
+			watchEntry('ResetLamp', undefined, true)
+		]
+	};
+}
+
+const press = (label: string): LessonStep[] => [
+	{ label: `${label}`, actuate: { [label]: true }, wait: 100 },
+	{ label: `puść ${label}`, actuate: { [label]: false }, wait: 100 }
+];
+
 /** The filtered value in MW20 is close to the real temperature. */
 const avgNear =
 	(tol: number): Check =>
@@ -4177,6 +4300,103 @@ export const LESSONS: Lesson[] = [
 						expect: { 'Q1.0': true, 'Q0.0': false, 'Q0.1': false, 'Q0.3': false }
 					},
 					{ label: 'po 20 s', wait: 18_000, check: mixerOk(0) }
+				]
+			}
+		]
+	},
+	{
+		slug: 'f-estop',
+		title: 'Sterownik bezpieczeństwa: e-stop i nadzór stycznika w programie F',
+		level: 'process',
+		fieldTests: true,
+		summary:
+			'Przenieś zatrzymanie awaryjne z programu standardowego do programu bezpieczeństwa F-CPU: ESTOP1, dwukanałowe wejście z rozbieżnością, FDBACK dla zgrzanego stycznika.',
+		instructions: [
+			'Taśma T1 stoi na **CPU 1516F**. Poprzedni programista „obsłużył” e-stop w zwykłym programie — to niedopuszczalne: program standardowy może się zawiesić, ktoś go zmieni online, a e-stop ma działać zawsze. Kompilator to wie: `K1` jest **wyjściem F** i program standardowy nie może go pisać.',
+			'Otwórz widok **Bezpieczeństwo F**. E-stop ma dwa styki NC na wejściach `I8.0` i `I8.1` — sterownik ocenia je **1oo2** z czasem rozbieżności 200 ms i podaje wartość `F_EStop` (1 = można pracować). Gdy kanały się różnią dłużej — **pasywacja**: `F_EStop = 0`, `F_EStop_QBAD = 1`, aż do naprawy i kwitowania `Ack`.',
+			'**Program bezpieczeństwa:** `ESTOP1` (E_STOP := `F_EStop`, ACK_NEC := TRUE, ACK := `Ack`) i `FDBACK` dla stycznika: ON := zgoda z `ESTOP1` **I** `RunRequest` z programu standardowego, FEEDBACK := **NOT** `K1_FB` (FDBACK oczekuje styku NC, a K1 ma pomocniczy NO), FDB_TIME := T#500ms. Wyjście: `K1 := fdbK1.Q`.',
+			'**Program standardowy:** usuń zapis `K1`, steruj tylko `RunRequest` i lampką `ResetLamp` (żądanie kwitowania z `ESTOP1`, `FDBACK` i wejścia F). Po kwitowaniu taśma **nie może ruszyć sama** — dopiero nowy Start (EN ISO 13850).',
+			'Podpis F w widoku zmienia się przy każdej zmianie programu bezpieczeństwa — tak w odbiorze sprawdza się, że w maszynie jest ten sam program F, który zatwierdzono.'
+		],
+		hints: [
+			'W programie F: `VAR eStop1 : ESTOP1; fdbK1 : FDBACK; END_VAR`, potem `eStop1(E_STOP := F_EStop, ACK_NEC := TRUE, ACK := Ack);`.',
+			'`fdbK1(ON := eStop1.Q AND RunRequest, FEEDBACK := NOT K1_FB, QBAD_FIO := F_EStop_QBAD, ACK := Ack, FDB_TIME := T#500ms); K1 := fdbK1.Q;`',
+			'W standardowym: `IF NOT eStop1.Q THEN run := FALSE; END_IF;` i `ResetLamp := eStop1.ACK_REQ OR fdbK1.ACK_REQ OR F_EStop_ACK_REQ;` — czytać dane F wolno.'
+		],
+		starter: fConveyor,
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: F_STD_SOLUTION,
+		solutionSafety: F_SAFETY_SOLUTION,
+		tests: [
+			{
+				name: 'Po rozruchu: kwitowanie, potem Start i Stop',
+				steps: [
+					{ label: 'rozruch', wait: 200, expect: { 'Q8.0': false, 'Q0.1': true } },
+					...press('Ack'),
+					...press('Start'),
+					{ label: 'praca', wait: 300, expect: { 'Q8.0': true, 'Q0.1': false } },
+					...press('Stop'),
+					{ label: 'stoi', wait: 100, expect: { 'Q8.0': false } }
+				]
+			},
+			{
+				name: 'E-stop: wyłączenie od razu, kwitowanie nie uruchamia taśmy',
+				steps: [
+					...press('Ack'),
+					...press('Start'),
+					{
+						label: 'e-stop wciśnięty',
+						actuate: { EStop: true },
+						wait: 50,
+						expect: { 'Q8.0': false }
+					},
+					{
+						label: 'odblokowany',
+						actuate: { EStop: false },
+						wait: 500,
+						expect: { 'Q8.0': false, 'Q0.1': true }
+					},
+					...press('Ack'),
+					{ label: 'po kwitowaniu', wait: 300, expect: { 'Q8.0': false, 'Q0.1': false } },
+					...press('Start'),
+					{ label: 'nowy Start', wait: 200, expect: { 'Q8.0': true } }
+				]
+			},
+			{
+				name: 'Przerwany przewód w kanale 2: pasywacja aż do naprawy i kwitowania',
+				steps: [
+					...press('Ack'),
+					...press('Start'),
+					{
+						label: 'przewód CH2 przerwany',
+						deviceFaults: [{ kind: 'wire-break', device: 'EStop', port: 'ch2' }],
+						wait: 400,
+						expect: { 'Q8.0': false }
+					},
+					...press('Start'),
+					{ label: 'Start nic nie daje', wait: 100, expect: { 'Q8.0': false } },
+					{ label: 'naprawione', deviceFaults: [], wait: 300 },
+					...press('Start'),
+					{ label: 'wciąż pasywowane', wait: 100, expect: { 'Q8.0': false, 'Q0.1': true } },
+					...press('Ack'),
+					...press('Start'),
+					{ label: 'po reintegracji', wait: 200, expect: { 'Q8.0': true } }
+				]
+			},
+			{
+				name: 'Zgrzany stycznik K1: FDBACK nie pozwala na ponowny start',
+				steps: [
+					...press('Ack'),
+					...press('Start'),
+					{
+						label: 'styki K1 zgrzane',
+						deviceFaults: [{ kind: 'stuck-on', device: 'K1', port: 'aux' }],
+						wait: 100
+					},
+					...press('Stop'),
+					{ label: 'po 1 s', wait: 1000, expect: { 'Q8.0': false } },
+					...press('Start'),
+					{ label: 'Start', wait: 300, expect: { 'Q8.0': false } }
 				]
 			}
 		]

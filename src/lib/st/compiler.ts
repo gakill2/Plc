@@ -1,3 +1,4 @@
+import { SAFETY_LIB, checkSafety, safetySource, type SafetyConfig } from '#lib/safety/safety.js';
 import {
 	DEFAULT_MEMORY_CONFIG,
 	formatAddress,
@@ -35,6 +36,8 @@ export interface StDiagnostic extends Span {
 	message: string;
 	/** the problem is in the library (prelude), not in this source */
 	library?: boolean;
+	/** the problem is in the safety program */
+	safety?: boolean;
 }
 
 /** A value of a declared variable, for the live variable view. */
@@ -156,24 +159,56 @@ export function compileSt(
 		config?: MemoryConfig;
 		/** Library source compiled before the program (function blocks, types); errors in it are reported apart. */
 		prelude?: string;
+		/** F-CPU: the safety program (runs first) and the fail-safe outputs only it may write */
+		safety?: SafetyConfig;
 	} = {}
 ): StCompileResult {
-	const pre = options.prelude ? `${options.prelude}\n` : '';
+	const lib = options.safety ? `${options.prelude ?? ''}\n${SAFETY_LIB}` : options.prelude;
+	const fsec = options.safety ? safetySource(options.safety) : null;
+	const libText = lib ? `${lib}\n` : '';
+	const pre = libText + (fsec?.text ?? '');
 	const preLines = pre ? pre.split('\n').length - 1 : 0;
 	const fullSrc = pre + src;
+	const userSafety = libText.length + (fsec?.userStart ?? 0);
 	const config = options.config ?? DEFAULT_MEMORY_CONFIG;
 	const symbols = options.symbols ?? new Map<string, string>();
 	const { program: parsed, errors } = parse(fullSrc);
 
 	const diagnostics: StDiagnostic[] = [];
 	/** Positions are made relative to the user's source; problems in the library are marked. */
+	const safetyLine = (offset: number) => fullSrc.slice(userSafety, offset).split('\n').length;
 	const report = (message: string, span: Span) =>
 		diagnostics.push(
 			span.from >= pre.length || !pre
 				? { message, from: span.from - pre.length, to: span.to - pre.length }
-				: { message: `Library: ${message}`, from: 0, to: 0, library: true }
+				: fsec && span.from >= userSafety
+					? {
+							message: `Safety program, line ${safetyLine(span.from)}: ${message}`,
+							from: 0,
+							to: 0,
+							library: true,
+							safety: true
+						}
+					: fsec && span.from >= libText.length
+						? { message: `F-I/O: ${message}`, from: 0, to: 0, library: true, safety: true }
+						: { message: `Library: ${message}`, from: 0, to: 0, library: true }
 		);
 	for (const e of errors) report(e.message, e);
+	if (options.safety) {
+		const addr = (text: string) => {
+			try {
+				return formatAddress(parseAddress(symbols.get(text.toUpperCase()) ?? text));
+			} catch {
+				return null;
+			}
+		};
+		for (const i of checkSafety(parsed, options.safety.outputs, addr)) report(i.message, i);
+		// the safety program runs first, in the same cycle: its data and code go in front
+		if (parsed.safety) {
+			parsed.vars = [...parsed.safety.vars, ...parsed.vars];
+			parsed.body = [...parsed.safety.body, ...parsed.body];
+		}
+	}
 	// user FUNCTION_BLOCKs, FUNCTIONs and STRUCTs become flat variables and inlined code
 	const ast = expandPous(parsed, report);
 

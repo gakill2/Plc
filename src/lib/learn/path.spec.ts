@@ -14,7 +14,17 @@ describe('learning path', () => {
 		const lessons = steps.filter((s) => s.kind === 'lesson').map((s) => s.slug);
 		expect([...lessons].sort()).toEqual(LESSONS.map((l) => l.slug).sort());
 		expect(new Set(lessons).size).toBe(lessons.length);
-		expect(stages.map((s) => s.title)).toHaveLength(7);
+		expect(stages.map((s) => s.title)).toHaveLength(8);
+	});
+
+	it('has an English title and summary for every step and stage', () => {
+		const en = learningPath('en');
+		const missing = en
+			.flatMap((s) => s.steps)
+			.filter((s, i) => s.title === steps[i].title && s.summary === steps[i].summary)
+			.map((s) => `${s.kind}:${s.slug}`);
+		expect(missing).toEqual([]);
+		expect(en.every((s, i) => s.title !== stages[i].title)).toBe(true);
 	});
 
 	it('puts each lesson right after the chapter that introduces it', () => {

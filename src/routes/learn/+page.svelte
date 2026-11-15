@@ -6,9 +6,10 @@
 	import { isDone, learningPath, nextStep, type Progress } from '#lib/learn/path.js';
 	import { completedLessons } from '#lib/lessons/progress.js';
 	import { solvedQuizzes } from '#lib/tutorial/progress.js';
+	import { i18n, t } from '#lib/i18n/i18n.svelte.js';
 
-	const stages = learningPath();
-	const total = stages.reduce((n, s) => n + s.steps.length, 0);
+	const stages = $derived(learningPath(i18n.locale));
+	const total = $derived(stages.reduce((n, s) => n + s.steps.length, 0));
 
 	let progress = $state<Progress>({ solvedQuizzes: new Set(), lessonsDone: new Set() });
 	onMount(() => (progress = { solvedQuizzes: solvedQuizzes(), lessonsDone: completedLessons() }));
@@ -23,25 +24,17 @@
 	<title>Learn · PLC Sim</title>
 </svelte:head>
 
-<section class="mx-auto max-w-4xl px-4 py-12" lang="pl">
-	<h1 class="text-3xl font-bold text-white">Nauka PLC</h1>
-	<p class="mt-2 max-w-2xl text-slate-400">
-		Jedna ścieżka od zera do sterowania linią produkcyjną. Na zmianę: <b class="text-slate-200"
-			>📘 rozdział</b
-		>
-		(teoria, działający symulator, pytania) i
-		<b class="text-slate-200">🛠 ćwiczenie w edytorze</b> albo
-		<b class="text-slate-200">🐞 znajdź błąd</b> w gotowym programie, z instrukcją krok po kroku — każdy
-		krok sprawdza się na żywo, a na końcu testy oceniają cały program.
-	</p>
+<section class="mx-auto max-w-4xl px-4 py-12" lang={i18n.locale}>
+	<h1 class="text-3xl font-bold text-white">{t('learn.title')}</h1>
+	<p class="mt-2 max-w-2xl text-slate-400">{t('learn.intro')}</p>
 
 	<div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-slate-400">
-		<span>ukończone: <b class="text-white">{doneCount} / {total}</b></span>
+		<span>{t('learn.done')}: <b class="text-white">{doneCount} / {total}</b></span>
 		<a href={resolve('/learn/glossary')} class="text-sky-300 underline hover:text-sky-200"
-			>Słowniczek PL – EN</a
+			>{t('learn.glossary')}</a
 		>
 		<a href={resolve('/learn/basics')} class="text-sky-300 underline hover:text-sky-200"
-			>Spis rozdziałów</a
+			>{t('learn.contents')}</a
 		>
 	</div>
 	<div class="mt-3 h-1.5 max-w-md overflow-hidden rounded bg-slate-800">
@@ -59,17 +52,14 @@
 		>
 			<span class="text-2xl" aria-hidden="true">🔁</span>
 			<span>
-				<span class="block font-semibold text-white">Powtórka</span>
-				<span class="block text-sm text-slate-400">5 pytań z tego, co już znasz</span>
+				<span class="block font-semibold text-white">{t('learn.review')}</span>
+				<span class="block text-sm text-slate-400">{t('learn.reviewHint')}</span>
 			</span>
 		</a>
 	</div>
 
 	<div class="mt-6 rounded-lg border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-400">
-		<b class="text-slate-200">Gdy coś jest niejasne w edytorze:</b> zaznacz network i otwórz panel
-		<b class="text-sky-300">Wyjaśnij</b> (opis zwykłymi słowami i powód, dla którego coś nie
-		przewodzi), albo zakładkę <b class="text-sky-300">Debug</b> — wykonuje jeden cykl PLC instrukcja po
-		instrukcji.
+		{t('learn.stuck')}
 	</div>
 
 	{#each stages as stage, s (stage.title)}
@@ -103,14 +93,14 @@
 								<span class="font-semibold text-white">{step.title}</span>
 								<span class="text-[10px] text-slate-500 uppercase"
 									>{step.kind === 'chapter'
-										? `rozdział · ${step.minutes} min`
+										? `${t('learn.chapter')} · ${step.minutes} min`
 										: step.debug
-											? 'znajdź błąd'
-											: 'ćwiczenie'}</span
+											? t('learn.findBug')
+											: t('learn.exercise')}</span
 								>
-								{#if done}<span class="sr-only">(ukończone)</span>{/if}
+								{#if done}<span class="sr-only">({t('learn.done')})</span>{/if}
 								{#if current}<span class="rounded bg-sky-500/20 px-1.5 text-[10px] text-sky-200"
-										>teraz</span
+										>{t('learn.now')}</span
 									>{/if}
 							</span>
 							<span class="block text-sm text-slate-400">{step.summary}</span>
@@ -121,10 +111,7 @@
 			{/each}
 		</ol>
 		{#if s === stages.length - 1}
-			<p class="mt-6 text-sm text-slate-500">
-				Potem: własny projekt — w widoku Circuit wybierz instalację (np. linię produkcyjną) i zbuduj
-				program od zera.
-			</p>
+			<p class="mt-6 text-sm text-slate-500">{t('learn.after')}</p>
 		{/if}
 	{/each}
 </section>

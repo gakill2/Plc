@@ -65,7 +65,11 @@ describe('multi-port devices', () => {
 		connect(c, e.id, 'I0.0');
 		expect(inputDrive(c, {}).get('I0.0')).toBe(true);
 		expect(inputDrive(c, { [e.id]: true }).get('I0.0')).toBe(false);
-		expect(portsOf('estop')).toHaveLength(1);
+		// the second NC contact (channel 2) switches together with the first
+		expect(portsOf('estop')).toHaveLength(2);
+		connect(c, e.id, 'I0.1', 'ch2');
+		expect(inputDrive(c, {}).get('I0.1')).toBe(true);
+		expect(inputDrive(c, { [e.id]: true }).get('I0.1')).toBe(false);
 	});
 });
 

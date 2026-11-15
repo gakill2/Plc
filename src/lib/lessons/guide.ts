@@ -34,6 +34,8 @@ export interface GuideContext {
 	stl?: string;
 	/** the rack (hardware lessons) */
 	hw?: Hardware;
+	/** the safety program (F-CPU lessons) */
+	safety?: string;
 	/** the project's operator panel (HMI lessons) */
 	hmi?: Hmi;
 	/** the project's circuit (commissioning lessons check the wiring) */
@@ -934,6 +936,32 @@ export const GUIDES: Record<string, GuideStep[]> = {
 				const ai = c.hw?.modules.find((x) => x.slot === 4)?.ai;
 				return ai?.[1]?.mode === 'RTD' && ai[2]?.mode === 'off' && ai[3]?.mode === 'off';
 			}
+		},
+		checkIt
+	],
+
+	'f-estop': [
+		{
+			text: 'Program standardowy nie pisze `K1` — steruje tylko `RunRequest`.',
+			done: (c) =>
+				!/\bK1\s*:=/i.test((c.st ?? '').replace(/\/\/.*$/gm, '')) &&
+				/RunRequest\s*:=/i.test(c.st ?? '')
+		},
+		{
+			text: 'Program F: `ESTOP1` z `F_EStop` i `ACK_NEC := TRUE`.',
+			done: (c) =>
+				/:\s*ESTOP1\b/i.test(c.safety ?? '') && /E_STOP\s*:=\s*F_EStop/i.test(c.safety ?? '')
+		},
+		{
+			text: 'Program F: `FDBACK` z `FEEDBACK := NOT K1_FB` i `K1 := fdbK1.Q`.',
+			done: (c) =>
+				/:\s*FDBACK\b/i.test(c.safety ?? '') &&
+				/FEEDBACK\s*:=\s*NOT\s+K1_FB/i.test(c.safety ?? '') &&
+				/\bK1\s*:=/i.test(c.safety ?? '')
+		},
+		{
+			text: 'Po kwitowaniu taśma nie rusza sama: `run` gaśnie, gdy `eStop1.Q = 0`.',
+			done: (c) => /eStop1\.Q/i.test((c.st ?? '').replace(/\/\/.*$/gm, ''))
 		},
 		checkIt
 	],

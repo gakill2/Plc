@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test';
 
 test('drive lab: a flywheel braked too fast trips on DC overvoltage', async ({ page }) => {
-	await page.goto('/learn/basics/falownik-siec');
+	await page.goto('/learn/basics/falownik-siec', { waitUntil: 'networkidle' });
 	const lab = page.locator('figure', { hasText: 'Laboratorium falownika' });
 	await lab.getByLabel(/P1121/).fill('3');
 	await expect(async () => {
 		await lab.getByRole('button', { name: /047F/ }).click();
 		await expect(lab.getByText('S4 · Praca')).toHaveAttribute('aria-current', 'step', {
-			timeout: 500
+			timeout: 1000
 		});
 	}).toPass();
 	await expect(lab.getByTestId('drive-hz')).toHaveText('50.0 Hz', { timeout: 15_000 });

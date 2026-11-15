@@ -40,7 +40,7 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
   pusher, each with simple physics; connect one to any project.
-- **36 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
+- **37 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
   to a crane with an encoder, a PID-tuned oven, a remote I/O station and two-hand control. Your
   program runs against test cases in a headless PLC (or through the wired circuit); every lesson
   ships a reference solution that the test suite proves passes, plus a live step-by-step guide.
@@ -54,6 +54,14 @@ it and watch the controller execute your program scan by scan — or let it driv
   and the cabinet's I/O list. The rack sits between the plant and the PLC, so a wrong address or
   a 4–20 mA transmitter on a 0–10 V channel shows the same symptoms as on a real commissioning
   (32767, an offset zero, a dead output). Lesson: get a finished program running in a new cabinet.
+- **Safety PLC (F-CPU)** — a separate safety program in restricted ST (no loops, CASE, arrays,
+  REAL) that runs first in every cycle, two-channel fail-safe inputs with a discrepancy time,
+  passivation and reintegration, the F-instructions `ESTOP1` and `FDBACK`, fail-safe outputs the
+  standard program cannot write (a compile error), and a collective F-signature. The e-stop got a
+  second NC contact. Lesson: move an e-stop out of the standard program, survive a broken channel
+  and a welded contactor, and never restart on reset.
+- **English learning path** — chapter and lesson titles, the learning index, review and glossary
+  follow the interface language; the course content itself is still Polish, and says so.
 - **Brownfield** — a chapter on reading STL and modernising someone else's program: an STL bug
   hunt (AND binds before OR) and a change order on a 2009 press program in AWL — add automatic
   mode and a part counter, find the hidden assumption, and keep the regression tests green.

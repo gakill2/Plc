@@ -94,6 +94,7 @@ export function runLessonTests(
 			for (const [id, on] of Object.entries(step.plantFaults ?? {}))
 				sensors.setPlantFault(process, id, on);
 			for (const [address, value] of Object.entries(step.hmi ?? {})) plc.modify(address, value);
+			if (devices && step.deviceFaults) devices.faults = step.deviceFaults;
 			devices?.actuate(step.actuate ?? {});
 			devices?.apply();
 

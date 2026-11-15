@@ -2526,6 +2526,65 @@ Projekt zaczyna się od **oceny ryzyka** (PN-EN ISO 12100): jakie zagrożenia ma
 			}
 		]
 	},
+	/* ------------------------------------------------------------------ F-CPU */
+	{
+		slug: 'f-cpu',
+		title: 'Sterownik bezpieczeństwa (F-CPU): program F, wejścia 1oo2, pasywacja',
+		summary:
+			'Kiedy przekaźnik bezpieczeństwa nie wystarcza: osobny program bezpieczeństwa, dwukanałowe wejścia, ESTOP1, FDBACK i podpis F.',
+		minutes: 10,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Przy kilku funkcjach bezpieczeństwa przekaźniki zastępuje **sterownik bezpieczeństwa** (F-CPU, np. S7-1500F, albo osobny sterownik safety). Ten sam procesor wykonuje dwa programy:
+
+- **program bezpieczeństwa** (F) — certyfikowany zestaw instrukcji (F-LAD / F-FBD), dane chronione kodami kontrolnymi, wykonywany pierwszy, z nadzorem czasu. Tylko on pisze **wyjścia F**.
+- **program standardowy** — wszystko inne. Może **czytać** dane F (np. „wymagany reset” na HMI), ale nie może ich zmieniać. Dzięki temu błąd czy zmiana online w programie standardowym nie wyłączy e-stopu.
+
+**Wejścia F** są zwykle **dwukanałowe**: e-stop ma dwa styki NC na dwóch wejściach. Moduł ocenia je **1oo2** (*one out of two*): oba zamknięte = można pracować. Jeśli kanały różnią się dłużej niż **czas rozbieżności** (np. 200 ms), to jest usterka — przerwany przewód, zwarcie, zgrzany styk. Kanał przechodzi w **pasywację**: wartość 0, bit QBAD = 1, maszyna stoi. Po naprawie wraca dopiero po **kwitowaniu reintegracji**.
+
+Instrukcje F, które spotkasz najczęściej:
+- **ESTOP1** — zatrzymanie awaryjne: wyjście Q gaśnie od razu, po odblokowaniu wraca tylko po zboczu na ACK (gdy ACK_NEC = 1),
+- **FDBACK** — nadzór stycznika: styk zwrotny (NC) musi nadążyć za wyjściem w czasie FDB_TIME. Zgrzany stycznik = ERROR i brak kolejnego startu,
+- **TWO_H_EN**, **MUTING**, **SFDOOR** — oburęczne, mutowanie kurtyn, drzwi z ryglem.
+
+Każdy program F ma **podpis zbiorczy** (sumę kontrolną). Zmienia się przy każdej zmianie — w protokole odbioru zapisuje się podpis, a na obiekcie sprawdza, czy w CPU jest ten sam.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Jeden kanał e-stopu ma przerwany przewód, a drugi działa. Co robi wejście F z oceną 1oo2?',
+				options: [
+					'Nic — drugi kanał wystarczy, maszyna pracuje dalej',
+					'Po czasie rozbieżności pasywuje kanał: wartość 0, QBAD = 1, maszyna stoi do naprawy i kwitowania',
+					'Zatrzymuje CPU',
+					'Przełącza się na pracę jednokanałową'
+				],
+				correct: 1,
+				explanation:
+					'Pojedyncza usterka musi być wykryta i doprowadzić do stanu bezpiecznego (kategoria 3/4). Działający drugi kanał nie jest powodem do pracy dalej — następna usterka byłaby już niebezpieczna.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Po odblokowaniu e-stopu i kwitowaniu taśma od razu rusza sama. Czy to w porządku?',
+				options: [
+					'Tak — kwitowanie to zgoda operatora',
+					'Nie — reset funkcji bezpieczeństwa nie może uruchomić maszyny; potrzebny osobny, świadomy Start',
+					'Tak, jeśli na HMI jest ostrzeżenie',
+					'Tylko w trybie ręcznym'
+				],
+				correct: 1,
+				explanation:
+					'EN ISO 13850 i EN 60204-1: kasowanie zatrzymania awaryjnego nie może wywołać ponownego startu. Program standardowy musi skasować żądanie pracy, gdy funkcja bezpieczeństwa zadziała.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'f-estop',
+				text: 'Przenieś e-stop z programu standardowego do programu F: ESTOP1, pasywacja kanału i zgrzany stycznik.'
+			}
+		]
+	},
 	/* ------------------------------------------------------------------ szafa sterownicza */
 	{
 		slug: 'szafa-sterownicza',

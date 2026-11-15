@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SafetyView from '#lib/safety/SafetyView.svelte';
 	import HardwareView from '#lib/hw/HardwareView.svelte';
 	import StlView from '#lib/stl/StlView.svelte';
 	import { DEMO_STL } from '#lib/stl/examples.js';
@@ -99,6 +100,7 @@
 		'library',
 		...(project.scenario ? (['process'] as const) : []),
 		...(project.hw ? (['hardware'] as const) : []),
+		...(project.safety ? (['safety'] as const) : []),
 		'circuit',
 		...(lesson?.kind === 'commissioning' || machine ? (['iocheck'] as const) : []),
 		'hmi',
@@ -348,6 +350,7 @@
 			if (lesson.solutionFbd) project.fbd = lesson.solutionFbd();
 			if (lesson.solutionStl) project.stl = lesson.solutionStl;
 			if (lesson.solutionHw) project.hw = lesson.solutionHw();
+			if (lesson.solutionSafety && project.safety) project.safety.program = lesson.solutionSafety;
 			project.ladder.select(null);
 			view = 'program';
 		}
@@ -531,6 +534,13 @@
 					</div>
 				{:else if view === 'hardware' && project.hw}
 					<HardwareView hw={project.hw} locked={runtime.online} problems={project.problems} />
+				{:else if view === 'safety' && project.safety}
+					<SafetyView
+						safety={project.safety}
+						online={runtime.online}
+						problems={project.problems}
+						valueOf={liveValue}
+					/>
 				{:else if view === 'iocheck'}
 					<IoCheck
 						symbols={project.userSymbols}
@@ -604,6 +614,7 @@
 					fbd={project.fbd}
 					stl={project.stl}
 					hw={project.hw}
+					safety={project.safety?.program ?? ''}
 				/>
 			{:else if machine}
 				<OnCallPanel

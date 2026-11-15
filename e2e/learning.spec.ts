@@ -30,7 +30,7 @@ test('explain panel and scan-cycle debugger', async ({ page }) => {
 
 test('production line plant runs a part through the drill', async ({ page }) => {
 	await page.goto('/learn', { waitUntil: 'networkidle' });
-	await page.getByRole('link', { name: /Proces: stacja wiercenia/ }).click();
+	await page.getByRole('link', { name: /Plant: a drilling station/ }).click();
 	await expect(page.getByRole('list', { name: 'Step by step' })).toBeVisible();
 	page.once('dialog', (d) => d.accept());
 	await page.getByRole('button', { name: 'Show solution' }).click();
@@ -55,7 +55,7 @@ test('production line plant runs a part through the drill', async ({ page }) => 
 
 test('find-the-bug lesson and the review quiz', async ({ page }) => {
 	await page.goto('/learn', { waitUntil: 'networkidle' });
-	await page.getByRole('link', { name: /Znajdź błąd: lampka z dwóch miejsc/ }).click();
+	await page.getByRole('link', { name: /Find the bug: a lamp from two places/ }).click();
 	await expect(page.getByText('🐞 Find the bug · logic')).toBeVisible();
 	await page.getByRole('button', { name: 'Check solution' }).click();
 	await expect(page.getByText(/✗\s*Każdy przycisk zapala lampkę/)).toBeVisible();
@@ -64,23 +64,23 @@ test('find-the-bug lesson and the review quiz', async ({ page }) => {
 	).toBeVisible();
 
 	await page.goto('/learn/review', { waitUntil: 'networkidle' });
-	await expect(page.getByText('Pytanie 1 / 5')).toBeVisible();
+	await expect(page.getByText('Question 1 / 5')).toBeVisible();
 	for (let i = 0; i < 5; i++) {
 		await page
 			.getByRole('region', { name: 'Pytanie sprawdzające' })
 			.getByRole('button')
 			.first()
 			.click();
-		await page.getByRole('button', { name: /^(Następne pytanie →|Wynik)$/ }).click();
+		await page.getByRole('button', { name: /^(Next question →|Result)$/ }).click();
 	}
 	await expect(page.getByText(/^\d \/ 5$/)).toBeVisible();
-	await expect(page.getByRole('button', { name: 'Nowa powtórka' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'New review' })).toBeVisible();
 });
 
 test('capstone: FAT protocol and code review', async ({ page }) => {
 	test.setTimeout(90_000);
 	await page.goto('/learn', { waitUntil: 'networkidle' });
-	await page.getByRole('link', { name: /Projekt końcowy: mieszalnik MX2/ }).click();
+	await page.getByRole('link', { name: /Final project: the MX2 mixer/ }).click();
 	await expect(page.getByText(/🏁 Final project/)).toBeVisible();
 	await page.getByRole('button', { name: 'Check solution' }).click();
 	await expect(page.getByText(/FAT protocol · 0\/7/)).toBeVisible({ timeout: 30_000 });

@@ -1,3 +1,4 @@
+import type { Fault } from '#lib/circuit/model.js';
 import type { Hardware } from '#lib/hw/hw.js';
 import type { Plc } from '#lib/engine/index.js';
 import type { LadderProgram } from '#lib/ladder/model.js';
@@ -30,6 +31,8 @@ export interface LessonStep {
 	 * Commissioning lessons: operate devices of the circuit by label (press S1, trip K1 …).
 	 * Values stay until changed by a later step.
 	 */
+	/** faults of field devices from this step on (a wire break, a welded contact …) */
+	deviceFaults?: Fault[];
 	actuate?: Record<string, boolean>;
 	/** Values written like an operator panel does, e.g. `{ 'M10.0': 1 }` (an HMI button). */
 	hmi?: Record<string, number>;
@@ -83,6 +86,8 @@ export interface Lesson {
 	/** Analog noise and range limits on the plant's sensors. */
 	realism?: boolean;
 	/** FBD lessons: the reference diagram */
+	/** reference safety program (F-CPU lessons) */
+	solutionSafety?: string;
 	/** reference hardware configuration (hardware lessons) */
 	solutionHw?: () => Hardware;
 	/** reference solution in Statement List (STL lessons) */

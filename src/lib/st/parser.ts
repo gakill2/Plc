@@ -35,7 +35,8 @@ const BLOCK_END = new Set([
 	'CYCLIC_INTERRUPT',
 	'END_CYCLIC_INTERRUPT',
 	'ORGANIZATION_BLOCK',
-	'END_ORGANIZATION_BLOCK'
+	'END_ORGANIZATION_BLOCK',
+	'END_F_PROGRAM'
 ]);
 
 /**
@@ -677,6 +678,33 @@ export function parse(src: string): ParseResult {
 		}
 	}
 
+	/* ---------- safety program (F_PROGRAM sections, put in front by the compiler) ---------- */
+
+	let safety: StProgram['safety'];
+	while (isKw('F_PROGRAM')) {
+		const head = next();
+		const fvars = varBlocks().map((d) => {
+			const out: VarDecl & { section?: string } = { ...d };
+			delete out.section;
+			return out as VarDecl;
+		});
+		const fbody = statements();
+		try {
+			expectKw('END_F_PROGRAM');
+		} catch (e) {
+			if (e instanceof StSyntaxError) errors.push(e);
+			else throw e;
+			while (peek().kind !== 'eof' && !isKw('END_F_PROGRAM')) next();
+			if (isKw('END_F_PROGRAM')) next();
+		}
+		safety = {
+			vars: [...(safety?.vars ?? []), ...fvars],
+			body: [...(safety?.body ?? []), ...fbody],
+			from: safety?.from ?? head.from,
+			to: tokens[Math.max(0, pos - 1)].to
+		};
+	}
+
 	/* ---------- program ---------- */
 
 	let wrapped = false;
@@ -753,6 +781,7 @@ export function parse(src: string): ParseResult {
 
 	return {
 		program: {
+			...(safety ? { safety } : {}),
 			vars,
 			body,
 			types,
