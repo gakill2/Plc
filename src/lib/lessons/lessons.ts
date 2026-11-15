@@ -356,6 +356,112 @@ const mixerOk =
 		return s.good >= good ? null : `dobrych partii: ${s.good}, a powinno być ${good}`;
 	};
 
+/* ---------- device standard: one motor block for the whole plant ---------- */
+
+const STD_INTERFACE = `FUNCTION_BLOCK MotorStd
+(* Standardowy blok silnika. Taki sam dla każdej pompy, taśmy i wentylatora w zakładzie. *)
+VAR_INPUT
+  AutoCmd : BOOL;    // żądanie pracy z sekwencji (tryb Auto)
+  ManMode : BOOL;    // 1 = tryb ręczny (z panelu)
+  ManStart : BOOL;   // Start z panelu w trybie ręcznym
+  ManStop : BOOL;    // Stop z panelu w trybie ręcznym
+  Permit : BOOL;     // permisywy: warunki potrzebne do STARTU
+  Interlock : BOOL;  // blokada: 1 = zatrzymaj natychmiast, w każdym trybie
+  Feedback : BOOL;   // styk pomocniczy stycznika
+  Ack : BOOL;        // kwitowanie alarmu
+END_VAR
+VAR_OUTPUT
+  Run : BOOL;        // rozkaz do stycznika
+  Running : BOOL;    // praca potwierdzona stykiem zwrotnym
+  Fault : BOOL;      // alarm: brak potwierdzenia w 2 s
+  Ready : BOOL;      // można uruchomić
+END_VAR
+VAR
+  manOn : BOOL;
+  fbTimer : TON;
+END_VAR
+`;
+
+const STD_BODY = `// alarm kasuje się kwitowaniem, gdy silnik stoi
+IF Ack AND NOT Run THEN
+  Fault := FALSE;
+END_IF;
+Ready := Permit AND NOT Interlock AND NOT Fault;
+
+// tryb ręczny: zatrzask z przycisków panelu (start tylko, gdy Ready)
+IF NOT ManMode OR ManStop OR Interlock OR Fault THEN
+  manOn := FALSE;
+ELSIF ManStart AND Ready THEN
+  manOn := TRUE;
+END_IF;
+
+// permisywy potrzebne do startu, nie do pracy; blokada i alarm zatrzymują zawsze
+IF Interlock OR Fault THEN
+  Run := FALSE;
+ELSIF ManMode THEN
+  Run := manOn;
+ELSIF AutoCmd THEN
+  Run := Run OR Ready;
+ELSE
+  Run := FALSE;
+END_IF;
+
+// nadzór potwierdzenia: stycznik musi zgłosić pracę w 2 s
+fbTimer(IN := Run AND NOT Feedback, PT := T#2s);
+IF fbTimer.Q THEN
+  Fault := TRUE;
+  Run := FALSE;
+END_IF;
+Running := Run AND Feedback;
+END_FUNCTION_BLOCK
+`;
+
+const STD_PUMP_MAIN = `
+(* Pompa P1. Permisyw: woda w zbiorniku ssawnym. Blokada: za wysokie ciśnienie. *)
+VAR
+  p1 : MotorStd;
+END_VAR
+p1(AutoCmd := AutoRequest, ManMode := ManMode, ManStart := ManStart, ManStop := ManStop,
+   Permit := LevelOk, Interlock := PressureHigh, Feedback := FbK1, Ack := Ack,
+   Run => K1, Running => H_Run, Fault => H_Fault);
+`;
+
+const STD_PUMP_STARTER = `${STD_INTERFACE}
+// TODO: alarm i kwitowanie, Ready, tryb ręczny, rozkaz Run (permisywy tylko do startu!),
+//       nadzór potwierdzenia 2 s
+Run := AutoCmd;
+Running := Run AND Feedback;
+END_FUNCTION_BLOCK
+${STD_PUMP_MAIN}`;
+
+const STD_PUMP_SOLUTION = `${STD_INTERFACE}${STD_BODY}${STD_PUMP_MAIN}`;
+
+const STD_LINE_MAIN_HEAD = `
+(* Ciąg trzech taśm: materiał płynie C1 → C2 → C3. Start i Stop całej linii. *)
+VAR
+  c1, c2, c3 : MotorStd;
+  lineOn : BOOL;
+END_VAR
+lineOn := (Start OR lineOn) AND Stop;
+`;
+
+const STD_LINE_STARTER = `${STD_INTERFACE}${STD_BODY}${STD_LINE_MAIN_HEAD}
+// TODO: trzy instancje — najpierw C3 (odbierająca), potem C2 i C1.
+//       Permisyw taśmy = taśma za nią pracuje. Blokada = pracuję, a taśma za mną stanęła.
+c1(AutoCmd := lineOn, Permit := TRUE, Feedback := Fb1, Ack := Ack, Run => K1);
+FaultLamp := c1.Fault;
+`;
+
+const STD_LINE_SOLUTION = `${STD_INTERFACE}${STD_BODY}${STD_LINE_MAIN_HEAD}
+// od końca linii: najpierw taśma odbierająca, inaczej materiał spadnie na stojącą taśmę
+c3(AutoCmd := lineOn, Permit := TRUE, Feedback := Fb3, Ack := Ack, Run => K3);
+c2(AutoCmd := lineOn, Permit := c3.Running, Interlock := c2.Run AND NOT c3.Running,
+   Feedback := Fb2, Ack := Ack, Run => K2);
+c1(AutoCmd := lineOn, Permit := c2.Running, Interlock := c1.Run AND NOT c2.Running,
+   Feedback := Fb1, Ack := Ack, Run => K1);
+FaultLamp := c1.Fault OR c2.Fault OR c3.Fault;
+`;
+
 /** The filtered value in MW20 is close to the real temperature. */
 const avgNear =
 	(tol: number): Check =>
@@ -3057,6 +3163,276 @@ export const LESSONS: Lesson[] = [
 						wait: 20_000,
 						expect: { 'Q1.0': true, 'Q0.0': false, 'Q0.1': false, 'Q0.3': false },
 						check: mixerOk(0)
+					}
+				]
+			}
+		]
+	},
+	{
+		slug: 'std-motor',
+		title: 'Standard bloku urządzenia: silnik z trybami, permisywami i blokadami',
+		level: 'process',
+		summary:
+			'Napisz blok, jakiego używa się w zakładzie dla każdego silnika: Auto i Ręczny, permisywy tylko do startu, blokady zawsze, nadzór stycznika i kwitowanie.',
+		instructions: [
+			'W prawdziwym zakładzie nikt nie pisze sterowania pompy „od zera”. Jest **standard**: jeden blok silnika z ustalonym interfejsem, używany setki razy. Tu piszesz taki blok — `MotorStd` — i testujesz go na pompie P1.',
+			'**Tryby.** `ManMode` = 0: tryb Auto, silnik pracuje, gdy sekwencja żąda (`AutoCmd`). `ManMode` = 1: tryb ręczny, operator uruchamia go `ManStart` i zatrzymuje `ManStop` z panelu; żądanie z sekwencji jest wtedy ignorowane.',
+			'**Permisywy a blokady** — najważniejsza różnica. `Permit` to warunki potrzebne do **startu** (np. jest woda w zbiorniku ssawnym): gdy znikną w trakcie pracy, silnik pracuje dalej. `Interlock` to blokada: **zatrzymuje natychmiast**, w każdym trybie (np. za wysokie ciśnienie). Po zniknięciu blokady tryb ręczny nie startuje sam.',
+			'**Nadzór.** Jeśli po rozkazie `Run` styk pomocniczy `Feedback` nie zgłosi się w **2 s** — alarm `Fault` (zapamiętany) i rozkaz wyłączony. `Ack` kasuje alarm, gdy silnik stoi. `Ready` = można uruchomić (permisywy są, nie ma blokady ani alarmu), `Running` = praca potwierdzona.'
+		],
+		hints: [
+			'`Ready := Permit AND NOT Interlock AND NOT Fault;` — a start w Auto: `Run := Run OR Ready;` (raz uruchomiony pracuje bez permisywów).',
+			'Tryb ręczny to zatrzask: `IF NOT ManMode OR ManStop OR Interlock OR Fault THEN manOn := FALSE; ELSIF ManStart AND Ready THEN manOn := TRUE; END_IF;`',
+			'Nadzór: `fbTimer(IN := Run AND NOT Feedback, PT := T#2s); IF fbTimer.Q THEN Fault := TRUE; Run := FALSE; END_IF;`'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'std-motor',
+			language: 'st',
+			st: STD_PUMP_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['switch', 'AutoRequest', 'I0.0'],
+				['switch', 'ManMode', 'I0.1'],
+				['pushbutton', 'ManStart', 'I0.2', { color: 'green' }],
+				['pushbutton', 'ManStop', 'I0.3', { color: 'red' }],
+				['switch', 'LevelOk', 'I0.4'],
+				['switch', 'PressureHigh', 'I0.5'],
+				['switch', 'FbK1', 'I0.6'],
+				['pushbutton', 'Ack', 'I0.7'],
+				['lamp', 'K1', 'Q0.0', { color: 'green' }],
+				['lamp', 'H_Run', 'Q0.1', { color: 'green' }],
+				['lamp', 'H_Fault', 'Q0.2', { color: 'red' }]
+			]),
+			symbols: [],
+			watch: ['AutoRequest', 'LevelOk', 'PressureHigh', 'FbK1', 'K1', 'H_Fault'].map((w) =>
+				watchEntry(w, 'BOOL', true)
+			)
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: STD_PUMP_SOLUTION,
+		tests: [
+			{
+				name: 'Auto: praca na żądanie sekwencji',
+				steps: [
+					{ label: 'woda jest, stycznik sprawny', set: { 'I0.4': true, 'I0.6': true }, wait: 100 },
+					{
+						label: 'żądanie pracy',
+						set: { 'I0.0': true },
+						wait: 300,
+						expect: { 'Q0.0': true, 'Q0.1': true }
+					},
+					{ label: 'koniec żądania', set: { 'I0.0': false }, wait: 200, expect: { 'Q0.0': false } }
+				]
+			},
+			{
+				name: 'Permisyw potrzebny do startu, nie do pracy',
+				steps: [
+					{
+						label: 'brak wody, żądanie',
+						set: { 'I0.6': true, 'I0.0': true },
+						wait: 500,
+						expect: { 'Q0.0': false }
+					},
+					{ label: 'woda jest', set: { 'I0.4': true }, wait: 300, expect: { 'Q0.0': true } },
+					{
+						label: 'poziom spada w trakcie pracy',
+						set: { 'I0.4': false },
+						wait: 500,
+						expect: { 'Q0.0': true }
+					}
+				]
+			},
+			{
+				name: 'Blokada zatrzymuje natychmiast',
+				steps: [
+					{
+						label: 'praca',
+						set: { 'I0.4': true, 'I0.6': true, 'I0.0': true },
+						wait: 300,
+						expect: { 'Q0.0': true }
+					},
+					{
+						label: 'za wysokie ciśnienie',
+						set: { 'I0.5': true },
+						wait: 50,
+						expect: { 'Q0.0': false, 'Q0.2': false }
+					},
+					{
+						label: 'ciśnienie spada — Auto rusza znowu',
+						set: { 'I0.5': false },
+						wait: 300,
+						expect: { 'Q0.0': true }
+					}
+				]
+			},
+			{
+				name: 'Brak potwierdzenia stycznika: alarm i kwitowanie',
+				steps: [
+					{
+						label: 'żądanie, stycznik nie zgłasza',
+						set: { 'I0.4': true, 'I0.0': true },
+						wait: 2500,
+						expect: { 'Q0.0': false, 'Q0.2': true }
+					},
+					{
+						label: 'kwitowanie bez naprawy — alarm wraca po 2 s',
+						set: { 'I0.7': true },
+						wait: 100
+					},
+					{
+						label: 'naprawiony stycznik, kwitowanie',
+						set: { 'I0.7': false, 'I0.6': true },
+						wait: 2600
+					},
+					{ label: 'Ack', set: { 'I0.7': true }, wait: 100 },
+					{
+						label: 'puść Ack',
+						set: { 'I0.7': false },
+						wait: 300,
+						expect: { 'Q0.2': false, 'Q0.0': true, 'Q0.1': true }
+					}
+				]
+			},
+			{
+				name: 'Tryb ręczny: przyciski z panelu, sekwencja nie ma wpływu',
+				steps: [
+					{
+						label: 'ręczny, woda, stycznik',
+						set: { 'I0.1': true, 'I0.4': true, 'I0.6': true, 'I0.0': true },
+						wait: 300,
+						expect: { 'Q0.0': false }
+					},
+					{ label: 'ManStart', set: { 'I0.2': true }, wait: 100 },
+					{
+						label: 'puść, koniec żądania sekwencji',
+						set: { 'I0.2': false, 'I0.0': false },
+						wait: 300,
+						expect: { 'Q0.0': true }
+					},
+					{ label: 'blokada', set: { 'I0.5': true }, wait: 100, expect: { 'Q0.0': false } },
+					{
+						label: 'blokada znika — ręczny nie startuje sam',
+						set: { 'I0.5': false },
+						wait: 300,
+						expect: { 'Q0.0': false }
+					},
+					{ label: 'ManStart', set: { 'I0.2': true }, wait: 100 },
+					{ label: 'puść', set: { 'I0.2': false }, wait: 100, expect: { 'Q0.0': true } },
+					{ label: 'ManStop', set: { 'I0.3': true }, wait: 100, expect: { 'Q0.0': false } }
+				]
+			}
+		]
+	},
+	{
+		slug: 'std-conveyors',
+		title: 'Standard w praktyce: ciąg taśm z kaskadowym zatrzymaniem',
+		level: 'process',
+		summary:
+			'Ten sam blok MotorStd trzy razy: taśmy startują od końca linii, a gdy jedna stanie, wszystkie przed nią zatrzymują się bez wysypania materiału.',
+		instructions: [
+			'Materiał płynie **C1 → C2 → C3**, C3 zrzuca go do zasobnika. Blok `MotorStd` jest gotowy — przetestowany w poprzedniej lekcji. Teraz go **używasz**, nie piszesz.',
+			'**Start od końca linii.** Taśma może ruszyć dopiero, gdy pracuje taśma za nią — to jej **permisyw** (`Permit := c3.Running` dla C2). Inaczej C1 sypałaby materiał na stojącą C2. Dla C3 permisyw to `TRUE`.',
+			'**Kaskadowe zatrzymanie.** Gdy taśma za mną stanie w trakcie pracy (np. wybił termik), mam się zatrzymać natychmiast — to **blokada**: `Interlock := c2.Run AND NOT c3.Running`. Alarm ma tylko taśma, która naprawdę zawiodła; pozostałe po prostu stoją i ruszą same po kwitowaniu i naprawie.',
+			'Wywołaj instancje w kolejności **C3, C2, C1** — każda widzi aktualny stan taśmy za sobą. Lampka `FaultLamp` świeci, gdy którakolwiek ma alarm.'
+		],
+		hints: [
+			'`c3(AutoCmd := lineOn, Permit := TRUE, Feedback := Fb3, Ack := Ack, Run => K3);`',
+			'`c2(AutoCmd := lineOn, Permit := c3.Running, Interlock := c2.Run AND NOT c3.Running, Feedback := Fb2, Ack := Ack, Run => K2);` — i tak samo C1 względem C2.',
+			'Wyjście instancji można czytać w jej własnym wywołaniu (`c2.Run`) — to wartość z poprzedniego cyklu.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'std-conveyors',
+			language: 'st',
+			st: STD_LINE_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I0.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I0.1', { color: 'red', nc: true }],
+				['pushbutton', 'Ack', 'I0.2'],
+				['switch', 'Fb1', 'I1.0'],
+				['switch', 'Fb2', 'I1.1'],
+				['switch', 'Fb3', 'I1.2'],
+				['lamp', 'K1', 'Q0.0', { color: 'green' }],
+				['lamp', 'K2', 'Q0.1', { color: 'green' }],
+				['lamp', 'K3', 'Q0.2', { color: 'green' }],
+				['lamp', 'FaultLamp', 'Q0.3', { color: 'red' }]
+			]),
+			symbols: [],
+			watch: ['K1', 'K2', 'K3', 'Fb3', 'FaultLamp'].map((w) => watchEntry(w, 'BOOL', true))
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: STD_LINE_SOLUTION,
+		tests: [
+			{
+				name: 'Start i Stop całej linii',
+				steps: [
+					settle(
+						'Stop puszczony, styczniki sprawne',
+						{ 'I0.1': true, 'I1.0': true, 'I1.1': true, 'I1.2': true },
+						{ 'Q0.0': false }
+					),
+					{ label: 'Start', set: { 'I0.0': true }, wait: 100 },
+					{
+						label: 'puść',
+						set: { 'I0.0': false },
+						wait: 300,
+						expect: { 'Q0.0': true, 'Q0.1': true, 'Q0.2': true }
+					},
+					{
+						label: 'Stop',
+						set: { 'I0.1': false },
+						wait: 100,
+						expect: { 'Q0.0': false, 'Q0.1': false, 'Q0.2': false }
+					}
+				]
+			},
+			{
+				name: 'Start od końca: C2 bez potwierdzenia — C1 nie rusza, C3 pracuje',
+				steps: [
+					settle(
+						'C2 nie potwierdza',
+						{ 'I0.1': true, 'I1.0': true, 'I1.2': true },
+						{ 'Q0.0': false }
+					),
+					{ label: 'Start', set: { 'I0.0': true }, wait: 100 },
+					{
+						label: 'puść, 1 s',
+						set: { 'I0.0': false },
+						wait: 1000,
+						expect: { 'Q0.2': true, 'Q0.0': false }
+					},
+					{
+						label: 'po 3 s',
+						wait: 2000,
+						expect: { 'Q0.3': true, 'Q0.1': false, 'Q0.0': false, 'Q0.2': true }
+					}
+				]
+			},
+			{
+				name: 'C3 staje w trakcie pracy: C2 i C1 zatrzymują się od razu, po naprawie ruszają same',
+				steps: [
+					settle(
+						'Stop puszczony',
+						{ 'I0.1': true, 'I1.0': true, 'I1.1': true, 'I1.2': true },
+						{ 'Q0.0': false }
+					),
+					{ label: 'Start', set: { 'I0.0': true }, wait: 100 },
+					{ label: 'praca', set: { 'I0.0': false }, wait: 500, expect: { 'Q0.0': true } },
+					{
+						label: 'C3 traci potwierdzenie',
+						set: { 'I1.2': false },
+						wait: 50,
+						expect: { 'Q0.0': false, 'Q0.1': false }
+					},
+					{ label: 'po 2,5 s', wait: 2500, expect: { 'Q0.3': true, 'Q0.2': false } },
+					{ label: 'naprawa i Ack', set: { 'I1.2': true, 'I0.2': true }, wait: 100 },
+					{
+						label: 'puść Ack',
+						set: { 'I0.2': false },
+						wait: 500,
+						expect: { 'Q0.3': false, 'Q0.0': true, 'Q0.1': true, 'Q0.2': true }
 					}
 				]
 			}

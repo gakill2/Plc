@@ -852,6 +852,59 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		checkIt
 	],
 
+	'std-motor': [
+		{
+			text: '`Ready := Permit AND NOT Interlock AND NOT Fault;` i kasowanie alarmu: `IF Ack AND NOT Run THEN Fault := FALSE; END_IF;`',
+			done: (c) =>
+				/Ready\s*:=\s*Permit\s+AND\s+NOT\s+Interlock/i.test(c.st ?? '') &&
+				/Ack\s+AND\s+NOT\s+Run/i.test(c.st ?? '')
+		},
+		{
+			text: 'Tryb ręczny: zatrzask `manOn` z `ManStart` (tylko gdy `Ready`) i `ManStop`.',
+			done: (c) =>
+				/manOn\s*:=\s*TRUE/i.test(c.st ?? '') && /ManStart\s+AND\s+Ready/i.test(c.st ?? '')
+		},
+		{
+			text: 'Rozkaz: blokada i alarm zatrzymują zawsze, w Auto `Run := Run OR Ready;`.',
+			done: (c) => /Run\s*:=\s*Run\s+OR\s+Ready/i.test(c.st ?? '')
+		},
+		{
+			text: 'Nadzór stycznika: `fbTimer(IN := Run AND NOT Feedback, PT := T#2s);` → `Fault := TRUE;`',
+			done: (c) =>
+				/fbTimer\s*\(\s*IN\s*:=\s*Run\s+AND\s+NOT\s+Feedback/i.test(c.st ?? '') &&
+				/Fault\s*:=\s*TRUE/i.test(c.st ?? '')
+		},
+		runIt(
+			'sprawdź tryby przełącznikami w Circuit: zabierz wodę w trakcie pracy, potem daj za wysokie ciśnienie.'
+		),
+		checkIt
+	],
+
+	'std-conveyors': [
+		{
+			text: 'Instancja C3 jako pierwsza: `c3(AutoCmd := lineOn, Permit := TRUE, Feedback := Fb3, …, Run => K3);`',
+			done: (c) => /c3\s*\(\s*AutoCmd\s*:=\s*lineOn/i.test(c.st ?? '')
+		},
+		{
+			text: 'Permisywy: `Permit := c3.Running` dla C2 i `Permit := c2.Running` dla C1.',
+			done: (c) =>
+				/Permit\s*:=\s*c3\.Running/i.test(c.st ?? '') &&
+				/Permit\s*:=\s*c2\.Running/i.test(c.st ?? '')
+		},
+		{
+			text: 'Blokady kaskady: `Interlock := c2.Run AND NOT c3.Running` i analogicznie dla C1.',
+			done: (c) =>
+				/Interlock\s*:=\s*c2\.Run\s+AND\s+NOT\s+c3\.Running/i.test(c.st ?? '') &&
+				/Interlock\s*:=\s*c1\.Run\s+AND\s+NOT\s+c2\.Running/i.test(c.st ?? '')
+		},
+		{
+			text: '`FaultLamp := c1.Fault OR c2.Fault OR c3.Fault;`',
+			done: (c) => /FaultLamp\s*:=\s*c1\.Fault\s+OR\s+c2\.Fault\s+OR\s+c3\.Fault/i.test(c.st ?? '')
+		},
+		runIt('uruchom linię, potem w Circuit wyłącz Fb3 — zobacz, w jakiej kolejności stają taśmy.'),
+		checkIt
+	],
+
 	'tank-fbd': [
 		{
 			text: 'Zaznacz pole wejścia networku i kliknij **SR** na palecie bloków.',

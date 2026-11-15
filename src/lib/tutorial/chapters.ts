@@ -1288,6 +1288,41 @@ K2 := m2.Run;           // wyjście czytasz też przez kropkę`
 			},
 			{
 				kind: 'text',
+				text: `Na obiekcie każdy silnik, zawór i siłownik ma **ten sam blok** — tak zwany standard urządzenia (w procesach: *Control Module* z ISA-88). Dzięki temu operator wszędzie obsługuje urządzenie tak samo, a utrzymanie ruchu wie, gdzie szukać. Typowy interfejs:
+
+- **tryby**: Auto (sterowanie z sekwencji), Ręczny (z panelu), czasem Serwis i Lokalny (z kasety przy maszynie),
+- **permisywy** — warunki potrzebne do *startu* (jest woda, zawór otwarty, taśma za mną pracuje); ich zanik nie zatrzymuje pracującego urządzenia,
+- **blokady (interlocki)** — warunki, które *zatrzymują natychmiast*, w każdym trybie (za wysokie ciśnienie, otwarta osłona, taśma za mną stanęła),
+- **nadzór**: rozkaz bez potwierdzenia (styk pomocniczy, krańcówka) w zadanym czasie = alarm, kwitowany przez operatora,
+- **stany dla HMI**: gotowy, pracuje, alarm, tryb — zawsze te same kolory i symbole na wszystkich ekranach.
+
+Różnica między permisywem a blokadą to klasyczne pytanie na rozmowie kwalifikacyjnej.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Pompa pracuje. Poziom w zbiorniku ssawnym spadł poniżej czujnika „woda jest” (warunek startu). Co robi standardowy blok silnika?',
+				options: [
+					'Zatrzymuje pompę, bo warunek zniknął',
+					'Pompa pracuje dalej — permisyw jest potrzebny tylko do startu; zatrzymać ją może blokada',
+					'Przełącza się w tryb ręczny'
+				],
+				correct: 1,
+				explanation:
+					'Permisyw sprawdza się przy starcie. Jeśli zanik ma zatrzymać pompę (np. ochrona przed suchobiegiem), to jest to **blokada** — osobne wejście bloku, działające zawsze.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'std-motor',
+				text: 'Napisz standardowy blok silnika: tryby, permisywy, blokady, nadzór stycznika i kwitowanie.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'std-conveyors',
+				text: 'Użyj go trzy razy w ciągu taśm: start od końca linii i kaskadowe zatrzymanie.'
+			},
+			{
+				kind: 'text',
 				text: `Trzy rzeczy, bez których nie obejdzie się żaden większy program:
 
 1. **Tablice** — \`ARRAY[1..10] OF INT\`, także tablice struktur i instancji FB (\`motors : ARRAY[1..3] OF Motor;\` i \`motors[i](…)\` w pętli). Indeks może być zmienną. Typowe zastosowania: receptury, bufor ostatnich próbek, rejestr przesuwny śledzący detale na taśmie. Indeks spoza zakresu to w prawdziwym CPU błąd dostępu — pilnuj granic.
