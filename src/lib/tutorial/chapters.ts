@@ -2598,6 +2598,46 @@ Część mocy i część sygnałowa są **rozdzielone**: kable silnikowe i sygna
 					'Odsyłacze strona.kolumna wiążą cewkę z jej stykami rozrysowanymi w innych miejscach schematu.'
 			}
 		]
+	},
+	/* ------------------------------------------------------------------ projekt końcowy */
+	{
+		slug: 'projekt-koncowy',
+		title: 'Projekt końcowy: od opisu funkcjonalnego do odbioru FAT',
+		summary: 'Jak wygląda zlecenie w pracy: FDS, lista I/O, program, HMI, alarmy i odbiór.',
+		minutes: 10,
+		blocks: [
+			{
+				kind: 'text',
+				text: `W pracy nikt nie daje Ci gotowej drabinki do przepisania. Dostajesz **opis funkcjonalny** (FDS, *Functional Design Specification*): ponumerowane wymagania technologa. Typowa droga projektu:
+
+1. **Lista I/O** — każdy czujnik, zawór i przycisk z adresem, typem sygnału i opisem. Tablica symboli to Twoja lista I/O.
+2. **Sekwencja** — kroki, warunki przejść, co robi każde wyjście w każdym kroku. Najpierw na kartce.
+3. **Program** — w języku, który pasuje: sekwencja w CASE albo SFC, blokady w LAD/FBD.
+4. **HMI i alarmy** — operator musi wiedzieć, *co* się stało i *co zrobić*. „Błąd 17” to nie jest tekst alarmu.
+5. **FAT** (*Factory Acceptance Test*) — odbiór u dostawcy: protokół, w którym każda pozycja sprawdza jedno wymaganie, także z symulowaną awarią (zerwany przewód, uszkodzona grzałka). Potem **SAT** na obiekcie u klienta.
+
+Zaliczony FAT to nie koniec: kod czyta potem serwisant o 3 w nocy. Dlatego po odbiorze dostajesz **recenzję kodu** — symbole zamiast adresów, komentarze kroków, nazwane stałe.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Na FAT grzałka „nie grzeje”, a program czeka w kroku grzania bez końca. Którego wymagania brakuje?',
+				options: [
+					'Większej mocy grzałki',
+					'Nadzoru czasu kroku — alarm, gdy krok trwa dłużej niż powinien',
+					'Szybszego cyklu PLC',
+					'Drugiego czujnika temperatury'
+				],
+				correct: 1,
+				explanation:
+					'Każdy krok czekający na fizyczny skutek (temperatura, kontaktron, poziom) ma nadzór czasu. Bez niego maszyna „wisi” i nikt nie wie dlaczego.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'capstone-mixer',
+				text: 'Mieszalnik MX2 od zera: osiem wymagań, receptury, alarmy z HMI i siedem pozycji protokołu FAT.'
+			}
+		]
 	}
 ];
 

@@ -76,3 +76,20 @@ test('find-the-bug lesson and the review quiz', async ({ page }) => {
 	await expect(page.getByText(/^\d \/ 5$/)).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Nowa powtórka' })).toBeVisible();
 });
+
+test('capstone: FAT protocol and code review', async ({ page }) => {
+	test.setTimeout(90_000);
+	await page.goto('/learn', { waitUntil: 'networkidle' });
+	await page.getByRole('link', { name: /Projekt końcowy: mieszalnik MX2/ }).click();
+	await expect(page.getByText(/🏁 Final project/)).toBeVisible();
+	await page.getByRole('button', { name: 'Check solution' }).click();
+	await expect(page.getByText(/FAT protocol · 0\/7/)).toBeVisible({ timeout: 30_000 });
+	await page.getByText('Code review').click();
+	await expect(page.getByText(/TODO/).first()).toBeVisible();
+
+	page.once('dialog', (d) => d.accept());
+	await page.getByRole('button', { name: 'Show solution' }).click();
+	await page.getByRole('button', { name: 'Check solution' }).click();
+	await expect(page.getByText('Passed!')).toBeVisible({ timeout: 60_000 });
+	await expect(page.getByText(/FAT protocol · 7\/7/)).toBeVisible();
+});

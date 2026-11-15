@@ -462,6 +462,105 @@ c1(AutoCmd := lineOn, Permit := c2.Running, Interlock := c1.Run AND NOT c2.Runni
 FaultLamp := c1.Fault OR c2.Fault OR c3.Fault;
 `;
 
+/* ---------- capstone: the MX2 mixer from a functional description ---------- */
+
+const CAPSTONE_STARTER = `(* Mieszalnik MX2 — projekt końcowy.
+   Wymagania: opis funkcjonalny w panelu lekcji (W1 … W8).
+   Sygnały obiektu i panelu są już w tablicy symboli. *)
+
+// TODO: Twój program
+`;
+
+const CAPSTONE_SOLUTION = `(* Mieszalnik MX2 — sterowanie partią według opisu funkcjonalnego. *)
+VAR RETAIN
+  batches : INT;                  // W8: licznik partii przeżywa restart
+END_VAR
+VAR
+  step : INT;                     // krok sekwencji
+  run : BOOL;                     // partia w toku (Stop wstrzymuje)
+  setA, setB : INT;               // progi poziomu z receptury
+  startEdge : R_TRIG;
+  heatTime : TON;
+  mixTime : TON;
+  measOk : BOOL;                  // pomiar poziomu wiarygodny
+  alarmLevel, alarmHH, alarmHeat, alarmRecipe : BOOL;
+  FULL : INT := 276;              // 1 % — zbiornik pusty
+  DRY : INT := 4147;              // 15 % — grzałka zanurzona
+  TARGET : INT := 500;            // 50,0 °C
+END_VAR
+
+startEdge(CLK := Start);
+
+// W6: alarmy — zapamiętane do kwitowania
+measOk := Level < 32767;        // 32767 = zerwany przewód 4–20 mA
+IF NOT measOk THEN alarmLevel := TRUE; END_IF;
+IF NOT LevelOk THEN alarmHH := TRUE; END_IF;
+IF heatTime.Q THEN alarmHeat := TRUE; END_IF;
+IF Ack THEN
+  IF measOk THEN alarmLevel := FALSE; END_IF;
+  IF LevelOk THEN alarmHH := FALSE; END_IF;
+  alarmHeat := FALSE;
+  alarmRecipe := FALSE;
+END_IF;
+Alarm := alarmLevel OR alarmHH OR alarmHeat OR alarmRecipe;
+// bity alarmów dla panelu HMI
+AlmLevel := alarmLevel;
+AlmOverfill := alarmHH;
+AlmHeating := alarmHeat;
+AlmRecipe := alarmRecipe;
+
+// W2: receptury z panelu
+CASE RecipeNo OF
+  1: setA := 11059; setB := 22118;    // 40 % A, do 80 % B
+  2: setA := 8294;  setB := 16589;    // 30 % A, do 60 % B
+ELSE
+  setA := 0; setB := 0;               // zły numer
+END_CASE;
+
+// W3: Stop wstrzymuje, Start wznawia; W5: zła receptura nie startuje
+IF NOT Stop OR Alarm THEN run := FALSE; END_IF;
+IF startEdge.Q AND Stop AND NOT Alarm THEN
+  IF step = 0 AND setA = 0 THEN
+    alarmRecipe := TRUE;
+  ELSE
+    run := TRUE;
+    IF step = 0 THEN step := 10; END_IF;
+  END_IF;
+END_IF;
+
+// W1: sekwencja partii (krok 0 czeka, 10 dozuje A, 20 dozuje B, 30 grzeje, 40 miesza, 50 spust)
+heatTime(IN := run AND step = 30, PT := T#120s);   // W7: grzanie za długo = alarm
+mixTime(IN := run AND step = 40, PT := T#5s);
+IF run THEN
+  CASE step OF
+    10: IF Level >= setA THEN step := 20; END_IF;          // krok: dozowanie A
+    20: IF Level >= setB THEN step := 30; END_IF;          // krok: dozowanie B
+    30: IF Temperature >= TARGET THEN step := 40; END_IF;  // krok: grzanie z mieszaniem
+    40: IF mixTime.Q THEN step := 50; END_IF;              // krok: mieszanie
+    50: IF Level <= FULL THEN                              // krok: spust
+          step := 0;
+          run := FALSE;
+          batches := batches + 1;
+        END_IF;
+  END_CASE;
+END_IF;
+
+// wyjścia z kroku; W4: grzałka tylko zanurzona i przy dobrym pomiarze
+ValveA := run AND step = 10;
+ValveB := run AND step = 20;
+Stirrer := run AND (step = 30 OR step = 40);
+Heater := run AND step = 30 AND measOk AND Level >= DRY;
+Outlet := run AND step = 50;
+BatchCount := batches;
+`;
+
+const counted =
+	(n: number): Check =>
+	({ plc }) => {
+		const c = plc.memory.readNumber(parseAddress('MW40'));
+		return c === n ? null : `BatchCount (MW40) = ${c}, a powinno być ${n}`;
+	};
+
 /** The filtered value in MW20 is close to the real temperature. */
 const avgNear =
 	(tol: number): Check =>
@@ -3434,6 +3533,213 @@ export const LESSONS: Lesson[] = [
 						wait: 500,
 						expect: { 'Q0.3': false, 'Q0.0': true, 'Q0.1': true, 'Q0.2': true }
 					}
+				]
+			}
+		]
+	},
+	{
+		slug: 'capstone-mixer',
+		kind: 'capstone',
+		title: 'Projekt końcowy: mieszalnik MX2 według opisu funkcjonalnego',
+		level: 'process',
+		scenario: 'mixer',
+		realism: true,
+		summary:
+			'Cała maszyna od zera, jak w pracy: opis funkcjonalny, sekwencja, receptury, alarmy, HMI i odbiór FAT. Po zaliczeniu — recenzja kodu.',
+		instructions: [
+			'**Zlecenie.** Technolog zamawia sterowanie mieszalnika MX2 (ten sam obiekt co w lekcji SFC). Dostajesz opis funkcjonalny — Twoja robota to program w dowolnym języku, panel HMI z alarmami i odbiór FAT. Przyciski: `Start` (`I1.0`), `Stop` (`I1.1`, NC), `Ack` (`I1.2`), lampka `Alarm` (`Q1.0`). Panel: `RecipeNo` (`MW30`), `BatchCount` (`MW40`).',
+			'**W1 — Partia.** Dozowanie A do progu receptury, dozowanie B do drugiego progu, grzanie z mieszaniem do 50 °C, 5 s mieszania, spust do 1 % (276). Potem maszyna czeka na kolejny Start.',
+			'**W2 — Receptury** z panelu: `RecipeNo` = 1 → A do 40 % (11059), B do 80 % (22118); 2 → A do 30 % (8294), B do 60 % (16589).',
+			'**W3 — Stop** (NC) wstrzymuje partię natychmiast: zawory zamknięte, grzałka i mieszadło stoją. `Start` wznawia od tego samego kroku.',
+			'**W4 — Grzałka** tylko przy poziomie ≥ 15 % (4147) i wiarygodnym pomiarze — nigdy na sucho.',
+			'**W5 — Zła receptura** (inna niż 1 i 2): Start nie rusza, zapala się `Alarm`. CPU nie może przejść w STOP.',
+			'**W6 — Alarmy** (zapamiętane, kasowane `Ack`, gdy przyczyna zniknęła): zerwany przewód przetwornika poziomu (32767), wyłącznik `LevelOk` (zbiornik przepełniony), grzanie dłuższe niż **120 s** (uszkodzona grzałka), zła receptura. Alarm wstrzymuje partię jak Stop. Wystaw je na bity `AlmLevel`, `AlmOverfill`, `AlmHeating`, `AlmRecipe` (`M20.0` … `M20.3`) i dodaj w panelu HMI alarmy z opisem dla operatora oraz pole receptury.',
+			'**W7 — Odbiór FAT.** Testy to protokół odbioru: każda pozycja sprawdza jedno wymaganie, także z usterkami wstrzykniętymi w obiekt. Pomiary szumią.',
+			'**W8 — Licznik partii** (`BatchCount`) przeżywa Stop → Run (pamięć RETAIN).'
+		],
+		hints: [
+			'Zacznij od listy I/O i kroków sekwencji na kartce. Jeden `CASE step OF` z krokami 10, 20, 30, 40, 50 i wyjścia liczone z kroku pod spodem — tak jak w lekcji prasy.',
+			'Wstrzymanie: zmienna `run`. `IF NOT Stop OR Alarm THEN run := FALSE; END_IF;` a przejścia i wyjścia tylko gdy `run`.',
+			'Nadzór grzania: `heatTime(IN := run AND step = 30, PT := T#120s);` → alarm. Licznik: `VAR RETAIN batches : INT; END_VAR`.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'capstone-mixer',
+			scenario: 'mixer',
+			language: 'st',
+			st: CAPSTONE_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I1.1', { color: 'red', nc: true }],
+				['pushbutton', 'Ack', 'I1.2'],
+				['lamp', 'Alarm', 'Q1.0', { color: 'red' }]
+			]),
+			symbols: [
+				...(plantInfo('mixer')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+				symbol('RecipeNo', 'MW30', 'Numer receptury z panelu (1, 2)'),
+				symbol('BatchCount', 'MW40', 'Liczba partii (RETAIN)'),
+				symbol('AlmLevel', 'M20.0', 'Alarm: przetwornik poziomu'),
+				symbol('AlmOverfill', 'M20.1', 'Alarm: przepełnienie (LevelOk)'),
+				symbol('AlmHeating', 'M20.2', 'Alarm: grzanie > 120 s'),
+				symbol('AlmRecipe', 'M20.3', 'Alarm: zła receptura')
+			],
+			watch: [
+				watchEntry('Level', 'DEC', true),
+				watchEntry('Temperature', 'DEC', true),
+				watchEntry('RecipeNo', 'DEC', true),
+				watchEntry('BatchCount', 'DEC', true),
+				watchEntry('Alarm', undefined, true)
+			]
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: CAPSTONE_SOLUTION,
+		solutionHmi: () => ({
+			widgets: [
+				widget('label', 20, 16, { text: 'Mieszalnik MX2' }),
+				widget('input', 20, 60, { tag: 'RecipeNo', text: 'Receptura (1, 2)' }),
+				widget('value', 220, 60, { tag: 'BatchCount', text: 'Partie' }),
+				widget('bar', 420, 60, { tag: 'Level', text: 'Poziom', min: 0, max: 27648 }),
+				widget('value', 220, 140, {
+					tag: 'Temperature',
+					text: 'Temperatura',
+					scale: 0.1,
+					decimals: 1,
+					unit: '°C'
+				}),
+				widget('alarms', 20, 240)
+			],
+			alarms: [
+				{
+					id: 'a1',
+					tag: 'AlmLevel',
+					text: 'Przetwornik poziomu: zerwany przewód — dozowanie wstrzymane',
+					kind: 'alarm'
+				},
+				{
+					id: 'a2',
+					tag: 'AlmOverfill',
+					text: 'Zbiornik przepełniony (wyłącznik poziomu)',
+					kind: 'alarm'
+				},
+				{
+					id: 'a3',
+					tag: 'AlmHeating',
+					text: 'Grzanie trwa ponad 120 s — sprawdź grzałkę',
+					kind: 'alarm'
+				},
+				{
+					id: 'a4',
+					tag: 'AlmRecipe',
+					text: 'Zły numer receptury — wybierz 1 albo 2',
+					kind: 'warning'
+				}
+			],
+			ackTag: ''
+		}),
+		tests: [
+			{
+				name: 'FAT 1 (W1, W2, W8): receptura 1 — dobra partia, licznik',
+				steps: [
+					{
+						label: 'Stop puszczony, receptura 1',
+						set: { 'I1.1': true },
+						hmi: { MW30: 1 },
+						wait: 200
+					},
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'puść, 110 s', set: { 'I1.0': false }, wait: 110_000, check: mixerOk(1) },
+					{ label: 'licznik', wait: 0, check: counted(1) }
+				]
+			},
+			{
+				name: 'FAT 2 (W2): receptura 2 — dobra partia',
+				steps: [
+					{
+						label: 'Stop puszczony, receptura 2',
+						set: { 'I1.1': true },
+						hmi: { MW30: 2 },
+						wait: 200
+					},
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'puść, 90 s', set: { 'I1.0': false }, wait: 90_000, check: mixerOk(1) }
+				]
+			},
+			{
+				name: 'FAT 3 (W5): zła receptura — alarm, brak startu, CPU w RUN',
+				steps: [
+					{ label: 'receptura 7', set: { 'I1.1': true }, hmi: { MW30: 7 }, wait: 200 },
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{
+						label: 'puść, 3 s',
+						set: { 'I1.0': false },
+						wait: 3000,
+						expect: { 'Q1.0': true, 'Q0.0': false, 'Q0.1': false }
+					}
+				]
+			},
+			{
+				name: 'FAT 4 (W3): Stop wstrzymuje dozowanie, Start wznawia — partia dobra',
+				steps: [
+					{ label: 'receptura 1', set: { 'I1.1': true }, hmi: { MW30: 1 }, wait: 200 },
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{
+						label: 'dozowanie A, 3 s',
+						set: { 'I1.0': false },
+						wait: 3000,
+						expect: { 'Q0.0': true }
+					},
+					{
+						label: 'Stop',
+						set: { 'I1.1': false },
+						wait: 2000,
+						expect: { 'Q0.0': false, 'Q0.2': false }
+					},
+					{ label: 'puść Stop, Start', set: { 'I1.1': true, 'I1.0': true }, wait: 100 },
+					{ label: 'puść, 110 s', set: { 'I1.0': false }, wait: 110_000, check: mixerOk(1) }
+				]
+			},
+			{
+				name: 'FAT 5 (W4, W6): zerwany przewód poziomu przy dozowaniu B',
+				steps: [
+					{ label: 'receptura 1', set: { 'I1.1': true }, hmi: { MW30: 1 }, wait: 200 },
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'dozowanie, 12 s', set: { 'I1.0': false }, wait: 12_000 },
+					{
+						label: 'przewód IW4 zerwany, 20 s',
+						fieldFaults: { IW4: 'wireBreak' },
+						wait: 20_000,
+						expect: { 'Q1.0': true, 'Q0.0': false, 'Q0.1': false, 'Q0.3': false },
+						check: mixerOk(0)
+					}
+				]
+			},
+			{
+				name: 'FAT 6 (W6): uszkodzona grzałka — alarm po 120 s grzania',
+				steps: [
+					{
+						label: 'grzałka uszkodzona, receptura 1',
+						set: { 'I1.1': true },
+						hmi: { MW30: 1 },
+						plantFaults: { heaterDead: true },
+						wait: 200
+					},
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'puść, 60 s', set: { 'I1.0': false }, wait: 60_000, expect: { 'Q1.0': false } },
+					{
+						label: 'po 160 s',
+						wait: 100_000,
+						expect: { 'Q1.0': true, 'Q0.3': false, 'Q0.2': false }
+					}
+				]
+			},
+			{
+				name: 'FAT 7 (W8): licznik partii po Stop → Run',
+				steps: [
+					{ label: 'receptura 2', set: { 'I1.1': true }, hmi: { MW30: 2 }, wait: 200 },
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'puść, 90 s', set: { 'I1.0': false }, wait: 90_000, check: counted(1) },
+					{ label: 'Stop → Run', restart: true, wait: 500, check: counted(1) }
 				]
 			}
 		]

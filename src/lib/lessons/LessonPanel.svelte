@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { reviewSt } from './review.js';
 	import { t } from '#lib/i18n/i18n.svelte.js';
 	import { resolve } from '$app/paths';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
@@ -101,6 +102,8 @@
 		return guide.map((step) => step.done(ctx));
 	});
 	const nextStep = $derived(ticks.indexOf(false));
+	/** what the tests cannot see: habits of the code, advisory */
+	const review = $derived(reviewSt(st, hmi));
 
 	function check() {
 		if (blocked) {
@@ -140,9 +143,11 @@
 		<p class="text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
 			{lesson.kind === 'debug'
 				? t('lesson.debug')
-				: lesson.kind === 'commissioning'
-					? t('lesson.commissioning')
-					: t('lesson.exercise')} · {t(LEVELS[lesson.level])}
+				: lesson.kind === 'capstone'
+					? t('lesson.capstone')
+					: lesson.kind === 'commissioning'
+						? t('lesson.commissioning')
+						: t('lesson.exercise')} · {t(LEVELS[lesson.level])}
 		</p>
 		<h2 id="lesson-title" class="text-sm font-semibold text-white">{lesson.title}</h2>
 	</div>
@@ -209,6 +214,11 @@
 		</ul>
 	{/if}
 
+	{#if results && lesson.kind === 'capstone'}
+		<p class="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+			{t('lesson.fat')} · {results.filter((r) => r.passed).length}/{results.length}
+		</p>
+	{/if}
 	{#if results}
 		<ul class="space-y-1 text-xs" aria-live="polite">
 			{#each results as r (r.name)}
@@ -237,6 +247,24 @@
 				{t('lesson.passed')} <a href={resolve('/learn')} class="underline">{t('lesson.next')}</a>
 			</p>
 		{/if}
+	{/if}
+
+	{#if language === 'st' && (lesson.kind === 'capstone' || passed)}
+		<details
+			class="rounded border border-slate-800 bg-slate-900/50 p-2 text-xs"
+			open={lesson.kind === 'capstone' && passed}
+		>
+			<summary class="cursor-pointer font-semibold text-slate-300">{t('lesson.review')}</summary>
+			<p class="mt-1 text-[11px] text-slate-500">{t('lesson.reviewIntro')}</p>
+			<ul class="mt-1.5 space-y-1" aria-label={t('lesson.review')}>
+				{#each review as item, i (i)}
+					<li class={item.ok ? 'text-emerald-300' : 'text-amber-200'}>
+						{item.ok ? '✓' : '•'}
+						<RichText text={item.text} />
+					</li>
+				{/each}
+			</ul>
+		</details>
 	{/if}
 
 	<div class="flex gap-3 border-t border-slate-800 pt-2 text-[11px]">

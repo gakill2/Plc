@@ -852,6 +852,35 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		checkIt
 	],
 
+	'capstone-mixer': [
+		{
+			text: 'Sekwencja: `CASE step OF` z krokami dozowania A i B, grzania, mieszania i spustu.',
+			done: (c) =>
+				/CASE\s+\w+\s+OF/i.test(c.st ?? '') &&
+				/Outlet\s*:=/i.test(c.st ?? '') &&
+				/Heater\s*:=/i.test(c.st ?? '')
+		},
+		{
+			text: 'Receptury z `RecipeNo` (1 i 2) i alarm przy złym numerze.',
+			done: (c) =>
+				/RecipeNo/i.test(c.st ?? '') && /22118/.test(c.st ?? '') && /16589/.test(c.st ?? '')
+		},
+		{
+			text: 'Alarmy: 32767, `LevelOk`, grzanie > `T#120s`; kwitowanie `Ack`; lampka `Alarm`.',
+			done: (c) =>
+				/32767/.test(c.st ?? '') && /T#120s/i.test(c.st ?? '') && /Alarm\s*:=/i.test(c.st ?? '')
+		},
+		{
+			text: 'Licznik partii w `VAR RETAIN`, wystawiony na `BatchCount`.',
+			done: (c) => /VAR\s+RETAIN/i.test(c.st ?? '') && /BatchCount\s*:=/i.test(c.st ?? '')
+		},
+		{
+			text: 'Panel HMI: pole receptury i alarmy z opisem dla operatora (widok HMI).',
+			done: (c) => (c.hmi?.alarms.length ?? 0) >= 2
+		},
+		checkIt
+	],
+
 	'std-motor': [
 		{
 			text: '`Ready := Permit AND NOT Interlock AND NOT Fault;` i kasowanie alarmu: `IF Ack AND NOT Run THEN Fault := FALSE; END_IF;`',

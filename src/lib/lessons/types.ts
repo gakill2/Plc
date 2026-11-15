@@ -59,7 +59,7 @@ export interface LessonTest {
 export interface Lesson {
 	slug: string;
 	/** build = write the program, debug = find and fix the bug in a given program */
-	kind?: 'build' | 'debug' | 'commissioning';
+	kind?: 'build' | 'debug' | 'commissioning' | 'capstone';
 	/** Run the tests through the project's circuit (like commissioning lessons do). */
 	fieldTests?: boolean;
 	/** Commissioning: the correctly wired circuit (the program is right from the start). */

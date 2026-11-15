@@ -35,10 +35,15 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
   pusher, each with simple physics; connect one to any project.
-- **32 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
+- **33 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
   to a crane with an encoder, a PID-tuned oven, a remote I/O station and two-hand control. Your
   program runs against test cases in a headless PLC (or through the wired circuit); every lesson
   ships a reference solution that the test suite proves passes, plus a live step-by-step guide.
+- **Device standard and a final project** — a reusable motor block with modes, permissives,
+  interlocks and feedback supervision; then the MX2 mixer built from a functional description
+  (eight requirements: recipes, hold/resume, alarms on the HMI, RETAIN counter) and accepted
+  against a seven-item FAT protocol with injected faults, followed by an advisory code review
+  (absolute addresses, comments, magic numbers, step comments, HMI alarms).
 - **Program organisation like in TIA Portal / CODESYS** — own `FUNCTION_BLOCK`s with
   multi-instances, `FUNCTION`s and `STRUCT` types in a project library (usable from every
   language, also as boxes in ladder), standard `SCALE` and `PID` blocks, one-dimensional `ARRAY`s
