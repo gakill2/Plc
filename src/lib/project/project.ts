@@ -2,6 +2,7 @@ import { isSfc, type Sfc } from '#lib/sfc/sfc.js';
 import { isFbd, type Fbd } from '#lib/fbd/fbd.js';
 import { isHardware, type Hardware } from '#lib/hw/hw.js';
 import { isSafety, type SafetyConfig } from '#lib/safety/safety.js';
+import { isVersion, type ProjectVersion } from './versions.js';
 import { demoHmi, isHmi, type Hmi } from '#lib/hmi/model.js';
 import { demoCircuit, type Circuit } from '#lib/circuit/model.js';
 import { demoProgram } from '#lib/ladder/defaults.js';
@@ -45,6 +46,8 @@ export interface Project {
 	hw?: Hardware;
 	/** F-CPU: the safety program and its fail-safe I/O. */
 	safety?: SafetyConfig;
+	/** Saved versions of the project (snapshots with a comment), oldest first. */
+	history?: ProjectVersion[];
 }
 
 export type ProgramLanguage = 'ladder' | 'st' | 'sfc' | 'fbd' | 'stl';
@@ -102,7 +105,8 @@ export function parseProject(raw: unknown): Project | null {
 			fbd: isFbd(raw.fbd) ? raw.fbd : undefined,
 			stl: typeof raw.stl === 'string' ? raw.stl : undefined,
 			hw: isHardware(raw.hw) ? raw.hw : undefined,
-			safety: isSafety(raw.safety) ? raw.safety : undefined
+			safety: isSafety(raw.safety) ? raw.safety : undefined,
+			history: Array.isArray(raw.history) ? raw.history.filter(isVersion) : undefined
 		};
 	}
 	// stage 2 saved the bare ladder program

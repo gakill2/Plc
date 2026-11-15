@@ -332,6 +332,16 @@ export const EN_TITLES: Record<string, { title: string; summary: string }> = {
 		summary:
 			'Someone else’s AWL program, no symbols, no comments, running for years. Add automatic mode and a counter — without breaking what works.'
 	},
+	'chapter:zmiany-normy': {
+		title: 'Change management, versions and standards (CE, 60204-1, 13849)',
+		summary:
+			'How to change the program of a running machine so nobody has to guess what happened at night — and which laws and standards stand behind every CE-marked machine.'
+	},
+	'lesson:change-management': {
+		title: 'Change management: who changed the press program at night?',
+		summary:
+			'The press stopped alarming on low air pressure. Compare the program with the last approved version, find the undocumented change, revert only it and save a new version with a note.'
+	},
 	'chapter:projekt-koncowy': {
 		title: 'Final project: from a functional description to the FAT',
 		summary: 'What a real job looks like: FDS, I/O list, program, HMI, alarms and acceptance.'

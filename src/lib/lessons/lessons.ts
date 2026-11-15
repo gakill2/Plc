@@ -1239,6 +1239,63 @@ const pressMotion = (label: string, address: string, value = true): LessonStep[]
 	{ label: `puść ${label}`, set: { [address]: !value }, wait: 100 }
 ];
 
+/* ---------- change management: an undocumented change on the press ---------- */
+
+const PRESS_V11 = PRESS_SOLUTION.replace(
+	'  40: IF A_Retracted THEN step := 0; END_IF;    // docisk zwolniony',
+	'  40: IF A_Retracted THEN                        // docisk zwolniony\n        step := 0;\n        PartsDone := PartsDone + 1;               // ZM-12: licznik detali dla panelu\n      END_IF;'
+);
+
+/** What someone changed online on the night shift, without a word in the logbook. */
+const PRESS_TAMPERED = PRESS_V11.replace(
+	'step = lastStep, PT := T#2s);',
+	'step = lastStep, PT := T#20s);'
+).replace('AND (moveTime.Q OR NOT AirOk) THEN', 'AND moveTime.Q THEN');
+
+function pressChangeProject(): Project {
+	const base: Project = {
+		version: 2,
+		lesson: 'change-management',
+		scenario: 'pneumatic',
+		language: 'st',
+		st: PRESS_TAMPERED,
+		ladder: { version: 1, rungs: [] },
+		circuit: circuitOf([
+			['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+			['switch', 'Auto', 'I1.1'],
+			['pushbutton', 'Ack', 'I1.2'],
+			['lamp', 'Alarm', 'Q1.0', { color: 'red' }]
+		]),
+		symbols: [
+			...(plantInfo('pneumatic')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+			symbol('PartsDone', 'MW50', 'ZM-12: licznik detali')
+		],
+		watch: ['A_Extended', 'B_Extended', 'Clamp', 'Press', 'Alarm'].map((w) =>
+			watchEntry(w, undefined, true)
+		)
+	};
+	const at = (st: string): Project => ({ ...base, st });
+	return {
+		...base,
+		history: [
+			{
+				id: 'v10',
+				name: 'v1.0',
+				comment: 'Odbiór FAT — protokół FAT-PR1-2025, podpisany przez klienta.',
+				at: Date.UTC(2025, 2, 12, 14, 0),
+				snapshot: at(PRESS_SOLUTION)
+			},
+			{
+				id: 'v11',
+				name: 'v1.1',
+				comment: 'ZM-12: licznik detali PartsDone (MW50) dla panelu. Test: 20 cykli OK.',
+				at: Date.UTC(2025, 8, 3, 9, 30),
+				snapshot: at(PRESS_V11)
+			}
+		]
+	};
+}
+
 /** The filtered value in MW20 is close to the real temperature. */
 const avgNear =
 	(tol: number): Check =>
@@ -5112,6 +5169,75 @@ export const LESSONS: Lesson[] = [
 					...pressMotion('Ack', 'I1.2'),
 					...pressMotion('Start', 'I1.0'),
 					{ label: '12 s', wait: 12_000, expect: { 'Q1.1': false }, check: delivered(2) }
+				]
+			}
+		]
+	},
+	{
+		slug: 'change-management',
+		title: 'Zarządzanie zmianą: kto zmienił program prasy w nocy?',
+		level: 'process',
+		scenario: 'pneumatic',
+		summary:
+			'Prasa „sama” przestała alarmować przy braku powietrza. Porównaj program z ostatnią zatwierdzoną wersją, znajdź nieudokumentowaną zmianę, cofnij tylko ją i zapisz nową wersję z opisem.',
+		instructions: [
+			'Rano zgłoszenie: przy spadku ciśnienia prasa nie dała alarmu, docisk puścił w połowie cyklu. Według dziennika ostatnia zmiana to **v1.1** (licznik detali, ZM-12) — ale ktoś w nocy coś „poprawił” online i nie wpisał tego nigdzie.',
+			'Otwórz widok **Wersje**, porównaj bieżący program z **v1.1** i znajdź różnice. Nie przepisuj programu od nowa i nie wracaj do v1.0 — licznik detali z ZM-12 ma zostać.',
+			'Cofnij tylko nieudokumentowane zmiany: nadzór ruchu ma znów działać po **2 s**, a brak powietrza (`AirOk`) w cyklu ma dawać alarm.',
+			'Zapisz nową wersję (np. **v1.2**) z opisem, co znalazłeś i co cofnąłeś — tak wygląda wpis, który ratuje następną zmianę serwisu. Prawdziwy zakład dopisałby jeszcze raport do kierownika: zmiana w funkcji bezpieczeństwa bez oceny ryzyka.'
+		],
+		hints: [
+			'W porównaniu z v1.1 szukaj linii na czerwono (było) i zielono (jest): czas `PT` timera `moveTime` i warunek przejścia do kroku 99.',
+			'Było: `PT := T#2s` i `(moveTime.Q OR NOT AirOk)`. Licznik `PartsDone` zostaje.'
+		],
+		starter: pressChangeProject,
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: PRESS_V11,
+		solutionHistory: () => [
+			{ name: 'v1.0', comment: 'Odbiór FAT' },
+			{ name: 'v1.1', comment: 'ZM-12' },
+			{ name: 'v1.2', comment: 'Cofnięta nieudokumentowana zmiana: nadzór ruchu 2 s i AirOk' }
+		],
+		tests: [
+			{
+				name: 'Regresja: Start — jeden cykl, detal dobry, licznik ZM-12 liczy',
+				steps: [
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{
+						label: 'puść, 4 s',
+						set: { 'I1.0': false },
+						wait: 4000,
+						check: (c) =>
+							pressCounts(1)(c) ??
+							(c.plc.memory.readNumber(parseAddress('MW50')) === 1
+								? null
+								: `PartsDone (MW50) = ${c.plc.memory.readNumber(parseAddress('MW50'))} — licznik z ZM-12 nie liczy`)
+					}
+				]
+			},
+			{
+				name: 'Brak powietrza w cyklu: alarm, docisk trzyma',
+				steps: [
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{
+						label: 'docisk w ruchu — znika powietrze',
+						set: { 'I1.0': false },
+						plantFaults: { noAir: true },
+						wait: 2500,
+						expect: { 'Q1.0': true, 'Q0.1': false }
+					}
+				]
+			},
+			{
+				name: 'Nieszczelny siłownik: B nie dojeżdża w 2 s → alarm',
+				steps: [
+					{
+						label: 'nieszczelny B, Start',
+						plantFaults: { leakB: true },
+						set: { 'I1.0': true },
+						wait: 100
+					},
+					{ label: 'puść, 3 s', set: { 'I1.0': false }, wait: 3000, expect: { 'Q1.0': true } }
 				]
 			}
 		]

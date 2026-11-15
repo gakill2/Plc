@@ -40,7 +40,7 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
   pusher, each with simple physics; connect one to any project.
-- **40 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
+- **41 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
   to a crane with an encoder, a PID-tuned oven, a remote I/O station and two-hand control. Your
   program runs against test cases in a headless PLC (or through the wired circuit); every lesson
   ships a reference solution that the test suite proves passes, plus a live step-by-step guide.
@@ -54,6 +54,13 @@ it and watch the controller execute your program scan by scan — or let it driv
   and the cabinet's I/O list. The rack sits between the plant and the PLC, so a wrong address or
   a 4–20 mA transmitter on a 0–10 V channel shows the same symptoms as on a real commissioning
   (32767, an offset zero, a dead output). Lesson: get a finished program running in a new cabinet.
+- **Versions and change management** — save named versions of a project with a comment (kept
+  out of undo / redo), restore one, and compare any version with the current state section by
+  section: the program (ladder, SFC and FBD as ST), library, symbols, wiring, HMI alarms, hardware
+  and the safety program with its signature — as a line diff. A chapter on management of change
+  and the standards behind CE marking (Machinery Regulation 2023/1230, ISO 12100, EN 60204-1,
+  ISO 13849-1, IEC 62061, IEC 62443); lesson: find an undocumented night-shift change on the press
+  and revert only that.
 - **Reading schematics (EPLAN style)** — a four-page schematic of a conveyor: power circuit, 24 V
   supply with fuses, PLC inputs and outputs, IEC 81346 device tags, clickable cross references
   `/page.column`, a contact mirror under the coil, the device list and the terminal diagram. Six

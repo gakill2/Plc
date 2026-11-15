@@ -34,6 +34,7 @@ function context(
 		stl,
 		hw,
 		safety,
+		history: which === 'solution' ? lesson.solutionHistory?.() : project.history,
 		addr: addressResolver(map),
 		online: false,
 		passed: false

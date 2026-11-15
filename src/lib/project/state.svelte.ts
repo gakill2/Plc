@@ -31,6 +31,7 @@ import { compileSt, type StCompileResult } from '#lib/st/compiler.js';
 import { stlToSt, type GeneratedStl } from '#lib/stl/stl.js';
 import { checkHardware, type Hardware } from '#lib/hw/hw.js';
 import type { SafetyConfig } from '#lib/safety/safety.js';
+import type { ProjectVersion } from './versions.js';
 import type { Project, ProgramLanguage } from './project.js';
 
 export type ProblemSource = 'program' | 'circuit' | 'symbols' | 'hardware' | 'safety';
@@ -74,6 +75,8 @@ export class ProjectState {
 	hw: Hardware | null = $state(null);
 	/** F-CPU: safety program and fail-safe I/O (safety lessons); null: a standard CPU. */
 	safety: SafetyConfig | null = $state(null);
+	/** Saved versions (not part of undo / redo). */
+	history: ProjectVersion[] = $state([]);
 	/** Statement List source. */
 	stl: string = $state('');
 	/** The STL program translated to ST, while STL is the active language. */
@@ -125,6 +128,7 @@ export class ProjectState {
 		this.stl = project.stl ?? '';
 		this.hw = project.hw ?? null;
 		this.safety = project.safety ?? null;
+		this.history = project.history ?? [];
 		this.hmi = project.hmi ?? emptyHmi();
 		this.compiled = $derived(
 			this.sfcSt && this.stResult
@@ -280,6 +284,7 @@ export class ProjectState {
 			stl: this.language === 'stl' || this.stl.trim() ? this.stl : undefined,
 			hw: this.hw ? $state.snapshot(this.hw) : undefined,
 			safety: this.safety ? $state.snapshot(this.safety) : undefined,
+			history: this.history.length ? $state.snapshot(this.history) : undefined,
 			hmi: $state.snapshot(this.hmi)
 		};
 	}

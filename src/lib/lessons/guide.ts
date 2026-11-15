@@ -36,6 +36,8 @@ export interface GuideContext {
 	hw?: Hardware;
 	/** the safety program (F-CPU lessons) */
 	safety?: string;
+	/** saved versions of the project */
+	history?: { name: string; comment: string }[];
 	/** the project's operator panel (HMI lessons) */
 	hmi?: Hmi;
 	/** the project's circuit (commissioning lessons check the wiring) */
@@ -1050,6 +1052,26 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		{
 			text: 'Błąd osi: krok błędu, `MC_Reset` z `Ack`, lampka `AxisFault`.',
 			done: (c) => /:\s*MC_Reset\s*;/i.test(c.st ?? '') && /AxisFault\s*:=/i.test(c.st ?? '')
+		},
+		checkIt
+	],
+
+	'change-management': [
+		{
+			text: 'Nadzór ruchu znów 2 s: `PT := T#2s`.',
+			done: (c) => /moveTime\s*\([^;]*PT\s*:=\s*T#2s\s*\)/i.test(c.st ?? '')
+		},
+		{
+			text: 'Brak powietrza w cyklu znów prowadzi do kroku błędu: `(moveTime.Q OR NOT AirOk)`.',
+			done: (c) => /moveTime\.Q\s+OR\s+NOT\s+AirOk/i.test(c.st ?? '')
+		},
+		{
+			text: 'Licznik ZM-12 (`PartsDone`) został.',
+			done: (c) => /PartsDone\s*:=\s*PartsDone\s*\+\s*1/i.test(c.st ?? '')
+		},
+		{
+			text: 'Nowa wersja zapisana, z opisem zmiany.',
+			done: (c) => (c.history?.length ?? 0) >= 3 && !!c.history?.at(-1)?.comment.trim()
 		},
 		checkIt
 	],

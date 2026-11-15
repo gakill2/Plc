@@ -1,4 +1,5 @@
 <script lang="ts">
+	import VersionsView from '#lib/project/VersionsView.svelte';
 	import SafetyView from '#lib/safety/SafetyView.svelte';
 	import HardwareView from '#lib/hw/HardwareView.svelte';
 	import StlView from '#lib/stl/StlView.svelte';
@@ -107,7 +108,8 @@
 		'symbols',
 		'watch',
 		'debug',
-		'diag'
+		'diag',
+		'versions'
 	]);
 
 	// The simulated plant runs in the worker next to the PLC.
@@ -151,7 +153,8 @@
 
 	$effect(() => {
 		const snapshot = project.toJSON();
-		const json = JSON.stringify(snapshot);
+		// versions are kept out of undo / redo: they are a record, not an edit
+		const json = JSON.stringify({ ...snapshot, history: undefined });
 		untrack(() => {
 			saveProject(localStorage, id, snapshot);
 			if (history.record(json)) syncHistory();
@@ -541,6 +544,17 @@
 						problems={project.problems}
 						valueOf={liveValue}
 					/>
+				{:else if view === 'versions'}
+					<VersionsView
+						history={project.history}
+						current={() => ({ ...project.toJSON(), history: undefined })}
+						locked={runtime.online}
+						onSave={(h) => (project.history = h)}
+						onRestore={(v) => {
+							project.restore(v.snapshot);
+							view = 'program';
+						}}
+					/>
 				{:else if view === 'iocheck'}
 					<IoCheck
 						symbols={project.userSymbols}
@@ -617,6 +631,7 @@
 					hw={project.hw}
 					safety={project.safety?.program ?? ''}
 					variables={project.stResult?.variables ?? []}
+					history={project.history}
 				/>
 			{:else if machine}
 				<OnCallPanel

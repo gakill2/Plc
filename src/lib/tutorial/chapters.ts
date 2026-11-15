@@ -3058,6 +3058,70 @@ W PLC Sim wybierz język **STL**. Online po prawej zobaczysz kolumny **STA** (st
 			}
 		]
 	},
+	/* ------------------------------------------------------------------ zmiany i normy */
+	{
+		slug: 'zmiany-normy',
+		title: 'Zarządzanie zmianą, wersje i normy (CE, 60204-1, 13849)',
+		summary:
+			'Jak zmieniać program działającej maszyny, żeby nikt nie zgadywał, co się stało w nocy — i jakie normy i przepisy stoją za każdą maszyną z oznaczeniem CE.',
+		minutes: 12,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Program maszyny to dokument, a nie notatnik. Każda zmiana w działającym zakładzie przechodzi **zarządzanie zmianą** (*MOC — management of change*):
+
+1. **Zgłoszenie** — numer zlecenia (ZM-17), kto, co i dlaczego.
+2. **Ocena ryzyka** — czy zmiana dotyka funkcji bezpieczeństwa, alarmów, receptur, innych maszyn? Zmiana w obwodzie bezpieczeństwa wymaga ponownej walidacji.
+3. **Kopia i wersja przed zmianą** — z CPU, nie z dysku (patrz rozdział o cudzym kodzie).
+4. **Zmiana i test** — także testy regresji: stare funkcje działają jak przed zmianą.
+5. **Wersja po zmianie** z opisem, aktualizacja dokumentacji (schemat, lista I/O, instrukcja), podpis osoby odpowiedzialnej.
+
+**Narzędzia**: TIA Portal ma porównanie offline/online (projekt kontra CPU) i interfejs do Gita, są serwery wersji dla automatyki (np. versiondog / AUVESY, Copia), które same co noc pobierają programy ze sterowników i alarmują o różnicach. **Podpis programu bezpieczeństwa** pokazuje, czy w CPU jest zatwierdzona wersja programu F.
+
+Złe nawyki, które widać na każdym obiekcie: wymuszone (*force*) wejścia zostawione „na chwilę”, zmiany online bez kopii, mostki w obwodzie bezpieczeństwa, „tymczasowe” obejścia czujników, które żyją latami, projekt na prywatnym laptopie zamiast na serwerze.`
+			},
+			{
+				kind: 'text',
+				text: `**Przepisy i normy** — każda maszyna wprowadzana na rynek UE ma oznaczenie **CE**, a producent (także integrator, który zbudował linię) deklaruje zgodność:
+
+- **Dyrektywa Maszynowa 2006/42/WE** — do 19 stycznia 2027. Od **20 stycznia 2027** zastępuje ją **Rozporządzenie maszynowe (UE) 2023/1230**: obowiązuje bezpośrednio, dodaje wymagania dla cyberbezpieczeństwa układów sterowania i oprogramowania bezpieczeństwa, dopuszcza instrukcje w formie cyfrowej. W grudniu 2027 dochodzą obowiązki z **Cyber Resilience Act** dla produktów z elementami cyfrowymi,
+- **EN ISO 12100** — ocena i zmniejszanie ryzyka: zawsze pierwszy krok,
+- **EN 60204-1** — wyposażenie elektryczne maszyn: zasilanie, kolory, obwody sterowania, zatrzymania kategorii 0 / 1 / 2, e-stop,
+- **EN ISO 13849-1** (PL a–e, kategorie) i **IEC 62061** (SIL) — bezpieczeństwo funkcjonalne układów sterowania, **EN ISO 13850** — zatrzymanie awaryjne, **EN ISO 14119** — blokady osłon,
+- **IEC 61131-3** — języki PLC, **IEC 62443** — cyberbezpieczeństwo automatyki, **ISA-18.2** / **ISA-101** — alarmy i ekrany.
+
+**Istotna modyfikacja**: kto przebuduje maszynę tak, że zmieni się jej ryzyko albo funkcje bezpieczeństwa (nowy napęd, zdjęta osłona, zmieniony program bezpieczeństwa), może stać się w świetle przepisów **producentem** — z obowiązkiem oceny ryzyka i nowej deklaracji zgodności. Dlatego każda zmiana w programie F idzie przez ocenę ryzyka, a nie „bo przeszkadzało”.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Alarm braku powietrza „przeszkadza” na nocnej zmianie. Co jest właściwą reakcją automatyka?',
+				options: [
+					'Wydłużyć czas nadzoru i wyłączyć warunek AirOk — rano nikt nie zauważy',
+					'Zostawić funkcję, zgłosić przyczynę (spadki ciśnienia) do utrzymania ruchu; ewentualna zmiana przez zgłoszenie, ocenę ryzyka, test i nową wersję',
+					'Wymusić (force) wejście AirOk na 1',
+					'Wgrać wersję v1.0 sprzed roku'
+				],
+				correct: 1,
+				explanation:
+					'Alarm opisuje realny problem procesu. Obejście funkcji nadzoru bez oceny ryzyka i bez śladu w dokumentacji to najczęstsza przyczyna wypadków przy „działającej” maszynie.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Która norma mówi, jak ocenić ryzyko maszyny, zanim zaprojektujesz funkcje bezpieczeństwa?',
+				options: ['EN 60204-1', 'EN ISO 12100', 'IEC 61131-3', 'IEC 62443'],
+				correct: 1,
+				explanation:
+					'EN ISO 12100 to podstawa: identyfikacja zagrożeń, ocena i zmniejszanie ryzyka. Z niej wynikają wymagane poziomy PL / SIL według ISO 13849-1 / IEC 62061.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'change-management',
+				text: 'Porównaj program prasy z zatwierdzoną wersją, cofnij nocną „poprawkę” i zapisz wersję z opisem.'
+			}
+		]
+	},
 	/* ------------------------------------------------------------------ projekt końcowy */
 	{
 		slug: 'projekt-koncowy',

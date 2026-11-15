@@ -11,4 +11,5 @@ export type View =
 	| 'hmi'
 	| 'iocheck'
 	| 'hardware'
-	| 'safety';
+	| 'safety'
+	| 'versions';

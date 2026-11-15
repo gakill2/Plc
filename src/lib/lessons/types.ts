@@ -96,6 +96,8 @@ export interface Lesson {
 	/** Analog noise and range limits on the plant's sensors. */
 	realism?: boolean;
 	/** FBD lessons: the reference diagram */
+	/** the versions a finished change leaves behind (change-management lessons) */
+	solutionHistory?: () => { name: string; comment: string }[];
 	/** reference safety program (F-CPU lessons) */
 	solutionSafety?: string;
 	/** reference hardware configuration (hardware lessons) */

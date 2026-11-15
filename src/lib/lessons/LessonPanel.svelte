@@ -3,6 +3,7 @@
 	import { localized } from '#lib/learn/path.js';
 	import type { Hardware } from '#lib/hw/hw.js';
 	import type { StVariable } from '#lib/st/compiler.js';
+	import type { ProjectVersion } from '#lib/project/versions.js';
 	import { i18n, t } from '#lib/i18n/i18n.svelte.js';
 	import { resolve } from '$app/paths';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
@@ -42,6 +43,8 @@
 		safety: string;
 		/** variables of the compiled ST program (tests read DB fields and strings) */
 		variables: StVariable[];
+		/** saved versions of the project (change-management lessons) */
+		history: ProjectVersion[];
 	};
 	let {
 		lesson,
@@ -61,7 +64,8 @@
 		stl,
 		hw,
 		safety,
-		variables
+		variables,
+		history
 	}: Props = $props();
 
 	let results = $state.raw<TestResult[] | null>(null);
@@ -110,6 +114,7 @@
 			stl,
 			hw: hw ?? undefined,
 			safety,
+			history,
 			addr: addressResolver(symbols),
 			online,
 			passed: passed || completedBefore
