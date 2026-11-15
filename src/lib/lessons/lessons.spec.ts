@@ -8,8 +8,9 @@ import { checkSymbols } from '#lib/symbols/symbols.js';
 import { LESSONS } from './lessons.js';
 import { runLessonTests } from './runner.js';
 import { boxTypes, fbdToSt } from '#lib/fbd/fbd.js';
-import { blockCatalog } from '#lib/st/stdlib.js';
+import { blockCatalog, STDLIB } from '#lib/st/stdlib.js';
 import { stlToSt } from '#lib/stl/stl.js';
+import type { StVariable } from '#lib/st/compiler.js';
 
 const FBD_TYPES = boxTypes(blockCatalog(''));
 
@@ -29,8 +30,8 @@ function compileStLesson(lesson: (typeof LESSONS)[number], src: string, safetyPr
 	const safety = project.safety
 		? { ...project.safety, program: safetyProgram ?? project.safety.program }
 		: undefined;
-	const r = compileSt(src, { symbols: map, ...(safety ? { safety } : {}) });
-	return { program: r.program, diagnostics: r.diagnostics, load: r.load };
+	const r = compileSt(src, { symbols: map, prelude: STDLIB, ...(safety ? { safety } : {}) });
+	return { program: r.program, diagnostics: r.diagnostics, load: r.load, variables: r.variables };
 }
 
 /** Statement List lessons: translated to ST first, every line must translate. */
@@ -39,6 +40,8 @@ function compileStlLesson(lesson: (typeof LESSONS)[number], src: string) {
 	expect(gen.issues).toEqual([]);
 	return compileStLesson(lesson, gen.source);
 }
+
+const varsOf = (r: object) => ('variables' in r ? (r.variables as StVariable[]) : undefined);
 
 /** The lesson's panel with the symbols of the starter, as the editor passes it. */
 function panel(lesson: (typeof LESSONS)[number], which: 'solution' | 'starter') {
@@ -51,7 +54,7 @@ function panel(lesson: (typeof LESSONS)[number], which: 'solution' | 'starter') 
 
 describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, lesson) => {
 	it('the reference solution passes every test', () => {
-		const { program, diagnostics, load } = lesson.solutionSfc
+		const compiled = lesson.solutionSfc
 			? compileStLesson(lesson, sfcToSt(lesson.solutionSfc()).source)
 			: lesson.solutionFbd
 				? compileStLesson(lesson, fbdToSt(lesson.solutionFbd(), FBD_TYPES).source)
@@ -60,24 +63,20 @@ describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, les
 					: lesson.solutionSt
 						? compileStLesson(lesson, lesson.solutionSt, lesson.solutionSafety)
 						: compile(lesson, lesson.solution());
+		const { program, diagnostics, load } = compiled;
 		expect(diagnostics).toEqual([]);
 		const circuit = lesson.solutionCircuit?.() ?? lesson.starter().circuit;
 		const hw = lesson.solutionHw?.() ?? lesson.starter().hw;
-		const results = runLessonTests(
-			lesson,
-			program,
-			circuit,
-			[],
-			load,
-			hw,
-			panel(lesson, 'solution')
-		);
+		const results = runLessonTests(lesson, program, circuit, [], load, hw, {
+			...panel(lesson, 'solution'),
+			variables: varsOf(compiled)
+		});
 		expect(results.filter((r) => !r.passed)).toEqual([]);
 	});
 
 	it('the starter project does not pass', () => {
 		const start = lesson.starter();
-		const { program, load } =
+		const started =
 			start.language === 'sfc' && start.sfc
 				? compileStLesson(lesson, sfcToSt(start.sfc).source)
 				: start.language === 'fbd' && start.fbd
@@ -87,16 +86,12 @@ describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, les
 						: start.language === 'st'
 							? compileStLesson(lesson, start.st ?? '')
 							: compile(lesson, start.ladder);
+		const { program, load } = started;
 		expect(
-			runLessonTests(
-				lesson,
-				program,
-				lesson.starter().circuit,
-				[],
-				load,
-				start.hw,
-				panel(lesson, 'starter')
-			).some((r) => !r.passed)
+			runLessonTests(lesson, program, lesson.starter().circuit, [], load, start.hw, {
+				...panel(lesson, 'starter'),
+				variables: varsOf(started)
+			}).some((r) => !r.passed)
 		).toBe(true);
 	});
 });

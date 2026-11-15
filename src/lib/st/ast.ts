@@ -12,6 +12,8 @@ export type Expr = Span &
 		| { kind: 'number'; value: number; real: boolean }
 		| { kind: 'bool'; value: boolean }
 		| { kind: 'time'; value: number }
+		/** a STRING literal: 'Krem' */
+		| { kind: 'string'; value: string }
 		| { kind: 'name'; name: string }
 		| { kind: 'address'; text: string }
 		| { kind: 'member'; object: string; member: string }
@@ -68,6 +70,8 @@ export interface VarDecl extends Span {
 	initList?: Expr[];
 	/** declared in VAR RETAIN: survives a restart of the CPU */
 	retain?: boolean;
+	/** STRING[n]: the maximum length */
+	strLen?: number;
 }
 
 export interface StructType extends Span {

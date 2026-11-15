@@ -28,6 +28,7 @@ import type {
 	DrivePlantState,
 	LineState,
 	MixerState,
+	AxisState,
 	PneumaticState,
 	OvenState,
 	ProcessKind,
@@ -982,6 +983,261 @@ const rationalized: Check = (c) => {
 		return '„Zawór B zamknięty” to stan, nie alarm — operator nie ma nic do zrobienia';
 	return null;
 };
+
+/* ---------- data types: recipes in a data block (UDT, DB, STRING) ---------- */
+
+const RECIPE_DB_STARTER = `(* Mieszalnik MX2 — receptury jako dane.
+   TODO: typ Recipe (UDT), blok danych Recipes, receptury fabryczne w OB100. *)
+
+${CAPSTONE_SOLUTION}`;
+
+const RECIPE_DB_SOLUTION = `(* Mieszalnik MX2 — receptury jako dane: typ Recipe, blok danych Recipes. *)
+TYPE Recipe :
+STRUCT
+  Name : STRING[16];       // nazwa dla operatora
+  LevelA : INT;            // koniec dozowania A (0 … 27648)
+  LevelB : INT;            // koniec dozowania B
+  Temp : INT;              // temperatura zadana, °C × 10
+  MixTime : TIME;          // mieszanie po nagrzaniu
+END_STRUCT
+END_TYPE
+
+DATA_BLOCK Recipes
+VAR RETAIN
+  Items : ARRAY[1..3] OF Recipe;   // zmienia je operator — przeżywają restart
+END_VAR
+VAR
+  Active : Recipe;                 // receptura bieżącej partii
+END_VAR
+END_DATA_BLOCK
+
+VAR RETAIN
+  batches : INT;
+END_VAR
+VAR
+  step : INT;
+  run : BOOL;
+  startEdge : R_TRIG;
+  heatTime : TON;
+  mixTime : TON;
+  measOk : BOOL;
+  alarmLevel, alarmHH, alarmHeat, alarmRecipe : BOOL;
+  FULL : INT := 276;
+  DRY : INT := 4147;
+END_VAR
+
+startEdge(CLK := Start);
+
+measOk := Level < 32767;
+IF NOT measOk THEN alarmLevel := TRUE; END_IF;
+IF NOT LevelOk THEN alarmHH := TRUE; END_IF;
+IF heatTime.Q THEN alarmHeat := TRUE; END_IF;
+IF Ack THEN
+  IF measOk THEN alarmLevel := FALSE; END_IF;
+  IF LevelOk THEN alarmHH := FALSE; END_IF;
+  alarmHeat := FALSE;
+  alarmRecipe := FALSE;
+END_IF;
+Alarm := alarmLevel OR alarmHH OR alarmHeat OR alarmRecipe;
+AlmLevel := alarmLevel;
+AlmOverfill := alarmHH;
+AlmHeating := alarmHeat;
+AlmRecipe := alarmRecipe;
+
+// start: receptura z bloku danych kopiowana na czas partii
+IF NOT Stop OR Alarm THEN run := FALSE; END_IF;
+IF startEdge.Q AND Stop AND NOT Alarm THEN
+  IF step = 0 THEN
+    IF RecipeNo < 1 OR RecipeNo > 3 THEN
+      alarmRecipe := TRUE;
+    ELSE
+      Recipes.Active := Recipes.Items[RecipeNo];
+      run := TRUE;
+      step := 10;
+    END_IF;
+  ELSE
+    run := TRUE;
+  END_IF;
+END_IF;
+
+heatTime(IN := run AND step = 30, PT := T#120s);
+mixTime(IN := run AND step = 40, PT := Recipes.Active.MixTime);
+IF run THEN
+  CASE step OF
+    10: IF Level >= Recipes.Active.LevelA THEN step := 20; END_IF;          // krok: dozowanie A
+    20: IF Level >= Recipes.Active.LevelB THEN step := 30; END_IF;          // krok: dozowanie B
+    30: IF Temperature >= Recipes.Active.Temp THEN step := 40; END_IF;      // krok: grzanie
+    40: IF mixTime.Q THEN step := 50; END_IF;                               // krok: mieszanie
+    50: IF Level <= FULL THEN                                               // krok: spust
+          step := 0;
+          run := FALSE;
+          batches := batches + 1;
+        END_IF;
+  END_CASE;
+END_IF;
+
+ValveA := run AND step = 10;
+ValveB := run AND step = 20;
+Stirrer := run AND (step = 30 OR step = 40);
+Heater := run AND step = 30 AND measOk AND Level >= DRY;
+Outlet := run AND step = 50;
+BatchCount := batches;
+
+ORGANIZATION_BLOCK OB100
+// pierwsze uruchomienie (pusta pamięć): receptury fabryczne. Potem zmienia je operator.
+IF Recipes.Items[1].LevelA = 0 THEN
+  Recipes.Items[1].Name := 'Baza';
+  Recipes.Items[1].LevelA := 11059;
+  Recipes.Items[1].LevelB := 22118;
+  Recipes.Items[1].Temp := 500;
+  Recipes.Items[1].MixTime := T#5s;
+  Recipes.Items[2].Name := 'Lekka';
+  Recipes.Items[2].LevelA := 8294;
+  Recipes.Items[2].LevelB := 16589;
+  Recipes.Items[2].Temp := 500;
+  Recipes.Items[2].MixTime := T#5s;
+  Recipes.Items[3].Name := 'Krem';
+  Recipes.Items[3].LevelA := 9677;
+  Recipes.Items[3].LevelB := 19354;
+  Recipes.Items[3].Temp := 550;
+  Recipes.Items[3].MixTime := T#8s;
+END_IF;
+END_ORGANIZATION_BLOCK
+`;
+
+/** Peak level (%) and temperature (°C) of the plant during a test, sampled every scan. */
+function peaks() {
+	let level = 0;
+	let temp = 0;
+	const always: Check = ({ process, plc }) => {
+		const s = process?.state() as MixerState;
+		if (plc.timeMs <= 20) level = temp = 0;
+		level = Math.max(level, s.level);
+		temp = Math.max(temp, s.temp);
+		return null;
+	};
+	return { always, level: () => level, temp: () => temp };
+}
+
+const valueIs =
+	(name: string, expected: number | string): Check =>
+	({ value }) => {
+		const v = value(name);
+		if (v === null) return `w programie nie ma zmiennej ${name}`;
+		return v === expected
+			? null
+			: `${name} = ${JSON.stringify(v)}, a powinno być ${JSON.stringify(expected)}`;
+	};
+
+const recipe3 = peaks();
+const recipe2 = peaks();
+
+/* ---------- motion control: a pick-and-place axis with PLCopen blocks ---------- */
+
+const MOTION_HEAD = `(* Oś Y1 — podajnik pick & place. Bloki MC_* (PLCopen) z biblioteki standardowej.
+   Kroki: 0 czeka, 5 bazowanie, 10 jazda do odbioru, 15 czekaj na detal, 20 chwyć,
+   30 jazda do odkładania, 40 puść, 90 zatrzymana (Stop), 99 błąd osi. *)
+VAR
+  power : MC_Power;
+  home : MC_Home;
+  toPick : MC_MoveAbsolute;
+  toPlace : MC_MoveAbsolute;
+  halt : MC_Stop;
+  reset : MC_Reset;
+  startEdge : R_TRIG;
+  release : TON;
+  step : INT;
+  resume : INT;
+END_VAR
+`;
+
+const MOTION_STARTER = `${MOTION_HEAD}
+startEdge(CLK := Start);
+power(Enable := TRUE);
+
+home(Execute := step = 5, Position := 0.0);
+toPick(Execute := step = 10, Position := 100.0, Velocity := 500.0, Acceleration := 3000.0);
+
+CASE step OF
+  0:  IF startEdge.Q THEN
+        IF AxisHomed THEN step := 10; ELSE step := 5; END_IF;
+      END_IF;
+  5:  IF home.Done THEN step := 10; END_IF;
+  10: IF toPick.Done THEN step := 15; END_IF;
+  // TODO: 15 … 40 — chwyć, przewieź, odłóż; 90 Stop; 99 błąd osi
+END_CASE;
+
+Ready := power.Status AND AxisHomed AND NOT power.Error;
+`;
+
+const MOTION_SOLUTION = `${MOTION_HEAD}
+startEdge(CLK := Start);
+power(Enable := TRUE);
+
+// błąd osi (ErrorStop): wszystko staje, chwytak trzyma
+IF power.Error AND step <> 99 THEN
+  resume := step;
+  step := 99;
+END_IF;
+// Stop: zatrzymanie z rampą, potem Start wznawia ten sam ruch
+IF NOT Stop AND (step = 5 OR step = 10 OR step = 30) THEN
+  resume := step;
+  step := 90;
+END_IF;
+
+// każdy ruch ma swoją instancję: Execute rośnie przy wejściu w krok
+home(Execute := step = 5, Position := 0.0);
+toPick(Execute := step = 10, Position := 100.0, Velocity := 500.0, Acceleration := 3000.0);
+toPlace(Execute := step = 30, Position := 800.0, Velocity := 500.0, Acceleration := 3000.0);
+halt(Execute := step = 90, Deceleration := 4000.0);
+reset(Execute := step = 99 AND Ack);
+release(IN := step = 40, PT := T#300ms);
+
+CASE step OF
+  0:  IF startEdge.Q AND Stop THEN
+        IF AxisHomed THEN step := 10; ELSE step := 5; END_IF;
+      END_IF;
+  5:  IF home.Done THEN step := 10; END_IF;
+  10: IF toPick.Done THEN step := 15; END_IF;
+  15: IF PartAtPick THEN step := 20; END_IF;                 // detal czeka
+  20: Gripper := TRUE;                                        // chwyć
+      IF GripperClosed THEN step := 30; END_IF;
+  30: IF toPlace.Done THEN step := 40; END_IF;
+  40: Gripper := FALSE;                                       // puść
+      IF release.Q THEN step := 10; END_IF;
+  90: IF halt.Done AND startEdge.Q AND Stop THEN step := resume; END_IF;
+  99: IF NOT power.Error AND startEdge.Q AND Stop THEN       // po MC_Reset (Ack) i Start
+        IF resume = 5 OR NOT AxisHomed THEN step := 5;
+        ELSIF GripperClosed THEN step := 30;
+        ELSE step := 10;
+        END_IF;
+      END_IF;
+END_CASE;
+
+Ready := power.Status AND AxisHomed AND NOT power.Error;
+AxisFault := step = 99;
+`;
+
+const axisOf = (c: TestContext) => c.process?.state() as AxisState;
+const axisCheck =
+	(f: (s: AxisState) => string | null): Check =>
+	(c) =>
+		f(axisOf(c));
+const delivered = (min: number) =>
+	axisCheck((s) =>
+		s.dropped
+			? `upuszczone detale: ${s.dropped}`
+			: s.delivered >= min
+				? null
+				: `odłożone detale: ${s.delivered}, a powinno być co najmniej ${min}`
+	);
+const noDrops: Check = axisCheck((s) =>
+	s.dropped ? `upuszczone detale: ${s.dropped} — ${s.lastEvent}` : null
+);
+const pressMotion = (label: string, address: string, value = true): LessonStep[] => [
+	{ label, set: { [address]: value }, wait: 100 },
+	{ label: `puść ${label}`, set: { [address]: !value }, wait: 100 }
+];
 
 /** The filtered value in MW20 is close to the real temperature. */
 const avgNear =
@@ -4604,6 +4860,258 @@ export const LESSONS: Lesson[] = [
 						wait: 160_000,
 						check: alarmCame('AlmHeating', 2)
 					}
+				]
+			}
+		]
+	},
+	{
+		slug: 'recipe-db',
+		title: 'Typy danych: receptury w bloku danych (UDT, DB, STRING)',
+		level: 'process',
+		scenario: 'mixer',
+		realism: true,
+		summary:
+			'Receptury mieszalnika z CASE w programie przenieś do bloku danych: typ Recipe z nazwą (STRING), tablica receptur w DB, kopiowanie całej struktury na czas partii — i nowa receptura bez zmiany kodu.',
+		instructions: [
+			'W projekcie końcowym receptury siedzą w kodzie (`CASE RecipeNo OF`). Technolog chce trzecią recepturę i zmieniać parametry **z panelu, bez programisty**. W prawdziwym sterowniku receptury to **dane**: typ danych (UDT, w TIA „PLC data type”) i **blok danych** (DB).',
+			'**Typ** `Recipe` (`TYPE … STRUCT`): `Name : STRING[16]`, `LevelA`, `LevelB` (progi dozowania, INT), `Temp` (°C × 10, INT), `MixTime : TIME`.',
+			'**Blok danych** `Recipes` (`DATA_BLOCK … END_DATA_BLOCK`): `Items : ARRAY[1..3] OF Recipe` w `VAR RETAIN` (zmiany operatora przeżywają restart) i `Active : Recipe` — receptura bieżącej partii. Pola czytasz jak `Recipes.Items[2].Temp` albo `Recipes.Active.Name`.',
+			'**Receptury fabryczne** wpisz w **OB100** (rozruch), tylko gdy pamięć jest pusta (`Recipes.Items[1].LevelA = 0`): 1 Baza 40/80 %, 50,0 °C, 5 s; 2 Lekka 30/60 %, 50,0 °C, 5 s; 3 **Krem** 35/70 % (9677 / 19354), **55,0 °C**, **8 s**.',
+			'**Start:** skopiuj całą recepturę jednym przypisaniem `Recipes.Active := Recipes.Items[RecipeNo];` i prowadź partię według `Recipes.Active` — zmiana receptury w trakcie partii nie może jej zepsuć. Numer spoza 1…3: alarm `AlmRecipe`, brak startu.'
+		],
+		hints: [
+			'Typ i blok danych piszesz na początku źródła, przed `VAR`. OB100 — na końcu: `ORGANIZATION_BLOCK OB100 … END_ORGANIZATION_BLOCK`.',
+			'W krokach: `10: IF Level >= Recipes.Active.LevelA THEN step := 20; END_IF;`, a czas mieszania: `mixTime(IN := …, PT := Recipes.Active.MixTime);`.',
+			"Napis porównujesz `=` i `<>`, długość daje `LEN(...)`. Tekst w apostrofach: `'Krem'`."
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'recipe-db',
+			scenario: 'mixer',
+			language: 'st',
+			st: RECIPE_DB_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I1.1', { color: 'red', nc: true }],
+				['pushbutton', 'Ack', 'I1.2'],
+				['lamp', 'Alarm', 'Q1.0', { color: 'red' }]
+			]),
+			symbols: [
+				...(plantInfo('mixer')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+				symbol('RecipeNo', 'MW30', 'Numer receptury z panelu (1 … 3)'),
+				symbol('BatchCount', 'MW40', 'Liczba partii (RETAIN)'),
+				symbol('AlmLevel', 'M20.0', 'Alarm: przetwornik poziomu'),
+				symbol('AlmOverfill', 'M20.1', 'Alarm: przepełnienie (LevelOk)'),
+				symbol('AlmHeating', 'M20.2', 'Alarm: grzanie > 120 s'),
+				symbol('AlmRecipe', 'M20.3', 'Alarm: zła receptura')
+			],
+			watch: [
+				watchEntry('Level', 'DEC', true),
+				watchEntry('Temperature', 'DEC', true),
+				watchEntry('RecipeNo', 'DEC', true)
+			]
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: RECIPE_DB_SOLUTION,
+		tests: [
+			{
+				name: 'Receptura 1 „Baza” z bloku danych — dobra partia',
+				steps: [
+					{ label: 'receptura 1', set: { 'I1.1': true }, hmi: { MW30: 1 }, wait: 200 },
+					{
+						label: 'Start',
+						set: { 'I1.0': true },
+						wait: 100,
+						check: valueIs('Recipes.Active.Name', 'Baza')
+					},
+					{ label: 'puść, 110 s', set: { 'I1.0': false }, wait: 110_000, check: mixerOk(1) }
+				]
+			},
+			{
+				name: 'Receptura 3 „Krem”: 35/70 %, 55 °C, 8 s mieszania',
+				always: recipe3.always,
+				steps: [
+					{ label: 'receptura 3', set: { 'I1.1': true }, hmi: { MW30: 3 }, wait: 200 },
+					{
+						label: 'Start',
+						set: { 'I1.0': true },
+						wait: 100,
+						check: valueIs('Recipes.Active.Name', 'Krem')
+					},
+					{ label: 'puść, 120 s', set: { 'I1.0': false }, wait: 120_000, check: mixerOk(1) },
+					{
+						label: 'parametry',
+						wait: 0,
+						check: () =>
+							recipe3.temp() < 54
+								? `partia nagrzana tylko do ${recipe3.temp().toFixed(1)} °C — Krem ma 55 °C`
+								: recipe3.level() < 66 || recipe3.level() > 74
+									? `najwyższy poziom ${recipe3.level().toFixed(0)} % — Krem dozuje do 70 %`
+									: null
+					}
+				]
+			},
+			{
+				name: 'Operator zmienia recepturę 2 w bloku danych — program bez zmian',
+				always: recipe2.always,
+				steps: [
+					{ label: 'rozruch', wait: 100 },
+					{
+						label: 'Lekka: dozowanie do 35 / 70 %',
+						set: { 'I1.1': true },
+						hmi: { MW30: 2 },
+						vars: { 'Recipes.Items[2].LevelA': 9677, 'Recipes.Items[2].LevelB': 19354 },
+						wait: 200
+					},
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'puść, 110 s', set: { 'I1.0': false }, wait: 110_000, check: mixerOk(1) },
+					{
+						label: 'poziom',
+						wait: 0,
+						check: () =>
+							recipe2.level() < 66 || recipe2.level() > 74
+								? `najwyższy poziom ${recipe2.level().toFixed(0)} % — program nie wziął nowych danych z DB`
+								: null
+					}
+				]
+			},
+			{
+				name: 'Zły numer receptury: alarm, brak startu',
+				steps: [
+					{ label: 'receptura 4', set: { 'I1.1': true }, hmi: { MW30: 4 }, wait: 200 },
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{
+						label: 'puść, 3 s',
+						set: { 'I1.0': false },
+						wait: 3000,
+						expect: { 'Q1.0': true, 'Q0.0': false }
+					}
+				]
+			},
+			{
+				name: 'Zmiany operatora przeżywają restart (RETAIN), receptury fabryczne nie nadpisują ich',
+				steps: [
+					{ label: 'rozruch', wait: 100 },
+					{ label: 'Krem: 52,0 °C', vars: { 'Recipes.Items[3].Temp': 520 }, wait: 100 },
+					{
+						label: 'Stop → Run',
+						restart: true,
+						wait: 200,
+						check: valueIs('Recipes.Items[3].Temp', 520)
+					}
+				]
+			}
+		]
+	},
+	{
+		slug: 'motion-pickplace',
+		title: 'Ruch PLCopen: oś pick & place z MC_Power, MC_Home i MC_MoveAbsolute',
+		level: 'process',
+		scenario: 'axis',
+		summary:
+			'Serwonapęd z pozycjonowaniem: załącz oś, zbazuj ją, woź detale między dwiema stacjami z profilem trapezowym, zatrzymaj ją rampą na Stop i podnieś się po błędzie osi — blokami PLCopen.',
+		instructions: [
+			'Oś Y1 to wózek z chwytakiem na prowadnicy 0 … 1000 mm. Profil ruchu (przyspieszanie, jazda, hamowanie) liczy **napęd** — program wydaje mu polecenia blokami **PLCopen** z biblioteki: `MC_Power`, `MC_Home`, `MC_MoveAbsolute`, `MC_Stop`, `MC_Reset`. Widok **Process** pokazuje stan osi według diagramu PLCopen.',
+			'**Bloki z wejściem `Execute`** ruszają na **zboczu narastającym** i trzymają wyniki (`Done`, `Busy`, `Error`, `CommandAborted`), dopóki `Execute` jest 1. Dlatego każdy ruch ma **osobną instancję**, a `Execute := step = 30` daje zbocze przy wejściu w krok.',
+			'**Cykl:** po pierwszym `Start` oś się **bazuje** (`MC_Home`, pozycja 0 na wyłączniku referencyjnym — bez tego napęd odrzuci ruch absolutny, ErrorID 2). Potem w kółko: jazda do odbioru **100 mm**, czekaj na detal (`PartAtPick`), zamknij `Gripper` i czekaj na `GripperClosed`, jazda do **800 mm**, otwórz chwytak (0,3 s), z powrotem. Prędkość 500 mm/s, przyspieszenie 3000 mm/s².',
+			'**Stop** (NC): `MC_Stop` z opóźnieniem 4000 mm/s² — przerwany ruch dostaje `CommandAborted`, chwytak trzyma detal. `Start` wznawia ten sam ruch. **Błąd osi** (ErrorStop, np. przeszkoda — błąd nadążania): lampka `AxisFault`, po usunięciu przyczyny `Ack` (`MC_Reset`) i `Start` praca dalej — z detalem jedzie od razu na odkładanie.'
+		],
+		hints: [
+			'Instancje: `toPick`, `toPlace` (MC_MoveAbsolute), `halt` (MC_Stop), `reset` (MC_Reset). Wywołuj je co cykl, przed CASE.',
+			'Stop: `IF NOT Stop AND (step = 5 OR step = 10 OR step = 30) THEN resume := step; step := 90; END_IF;`, a w 90: `IF halt.Done AND startEdge.Q THEN step := resume; END_IF;` — wejście w krok znów daje zbocze Execute.',
+			'Błąd: `IF power.Error AND step <> 99 THEN resume := step; step := 99; END_IF;`, `reset(Execute := step = 99 AND Ack);`. Chwytak ustawiaj tylko w krokach 20 (TRUE) i 40 (FALSE) — w Stop i w błędzie trzyma, co trzymał.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'motion-pickplace',
+			scenario: 'axis',
+			language: 'st',
+			st: MOTION_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I1.1', { color: 'red', nc: true }],
+				['pushbutton', 'Ack', 'I1.2'],
+				['lamp', 'Ready', 'Q1.0', { color: 'green' }],
+				['lamp', 'AxisFault', 'Q1.1', { color: 'red' }]
+			]),
+			symbols: [
+				...(plantInfo('axis')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+				symbol('AxisHomed', 'I64.1', 'Oś zbazowana (status napędu)')
+			],
+			watch: [watchEntry('AxisPos', 'DEC', true), watchEntry('Gripper', undefined, true)]
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: MOTION_SOLUTION,
+		tests: [
+			{
+				name: 'Start: bazowanie, potem lampka Ready',
+				steps: [
+					{ label: 'Stop puszczony', set: { 'I1.1': true }, wait: 300, expect: { 'Q1.0': false } },
+					...pressMotion('Start', 'I1.0'),
+					{
+						label: 'po 9 s',
+						wait: 9000,
+						expect: { 'Q1.0': true },
+						check: axisCheck((s) => (s.homed ? null : 'oś niezbazowana'))
+					}
+				]
+			},
+			{
+				name: 'Praca w cyklu: co najmniej 4 detale w 30 s, żaden nie upuszczony',
+				always: noDrops,
+				steps: [
+					{ label: 'Stop puszczony', set: { 'I1.1': true }, wait: 300 },
+					...pressMotion('Start', 'I1.0'),
+					{ label: '38 s', wait: 38_000, check: delivered(4) }
+				]
+			},
+			{
+				name: 'Stop w ruchu: oś staje z rampą, chwytak trzyma, Start wznawia',
+				always: noDrops,
+				steps: [
+					{ label: 'Stop puszczony', set: { 'I1.1': true }, wait: 300 },
+					...pressMotion('Start', 'I1.0'),
+					{ label: 'bazowanie i pierwszy detal w drodze', wait: 11_500 },
+					{
+						label: 'Stop',
+						set: { 'I1.1': false },
+						wait: 600,
+						check: axisCheck((s) =>
+							s.mode === 'Standstill' && s.velocity === 0
+								? null
+								: `oś w stanie ${s.mode}, ${s.velocity.toFixed(0)} mm/s`
+						)
+					},
+					{
+						label: 'puść Stop',
+						set: { 'I1.1': true },
+						wait: 1000,
+						check: axisCheck((s) => (s.mode === 'Standstill' ? null : 'oś ruszyła bez Start'))
+					},
+					...pressMotion('Start', 'I1.0'),
+					{ label: '15 s', wait: 15_000, check: delivered(3) }
+				]
+			},
+			{
+				name: 'Przeszkoda na torze: ErrorStop, lampka; po Ack i Start dalej bez straty detalu',
+				always: noDrops,
+				steps: [
+					{ label: 'Stop puszczony', set: { 'I1.1': true }, wait: 300 },
+					...pressMotion('Start', 'I1.0'),
+					{ label: 'w cyklu', wait: 11_500 },
+					{
+						label: 'przeszkoda',
+						plantFaults: { blocked: true },
+						wait: 1500,
+						expect: { 'Q1.1': true, 'Q1.0': false },
+						check: axisCheck((s) => (s.mode === 'ErrorStop' ? null : `oś w stanie ${s.mode}`))
+					},
+					{ label: 'przeszkoda usunięta', plantFaults: { blocked: false }, wait: 200 },
+					...pressMotion('Ack', 'I1.2'),
+					...pressMotion('Start', 'I1.0'),
+					{ label: '12 s', wait: 12_000, expect: { 'Q1.1': false }, check: delivered(2) }
 				]
 			}
 		]

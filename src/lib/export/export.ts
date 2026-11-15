@@ -296,6 +296,8 @@ function expr(e: Expr, d: Dialect, parent = 0): string {
 			return e.value ? 'TRUE' : 'FALSE';
 		case 'time':
 			return `T#${e.value}ms`;
+		case 'string':
+			return `'${e.value.replace(/\$/g, '$$$$').replace(/'/g, "$$'")}'`;
 		case 'name':
 			return d.name(e.name);
 		case 'address':
@@ -452,8 +454,10 @@ export function exportScl(p: ExportInput): { scl: string; tags: string; errors: 
 					: `${name}(${args.join(', ')})`,
 		call: (name) => (locals.has(up(name)) ? `#${name}` : `"${name}"`)
 	});
+	const one = (v: VarDecl) =>
+		up(v.type) === 'STRING' ? `String[${v.strLen ?? 16}]` : type(v.type);
 	const declType = (v: VarDecl) =>
-		v.dims ? `Array[${v.dims.low}..${v.dims.high}] of ${type(v.type)}` : type(v.type);
+		v.dims ? `Array[${v.dims.low}..${v.dims.high}] of ${one(v)}` : one(v);
 	const declInit = (v: VarDecl, d: Dialect) =>
 		v.initList
 			? ` := [${v.initList.map((x) => expr(x, d)).join(', ')}]`
@@ -503,18 +507,59 @@ export function exportScl(p: ExportInput): { scl: string; tags: string; errors: 
 		);
 	}
 
-	const mainLocals = new Set(u.main.vars.map((v) => up(v.name)));
-	const md = dialect(mainLocals);
+	// global data blocks: their fields are the program's `DB.field` variables
+	const dbOf = (n: string) => {
+		const i = n.indexOf('.');
+		return i > 0 ? n.slice(0, i) : null;
+	};
+	const dbVars = u.main.vars.filter((v) => dbOf(v.name));
+	const dbs = [...new Set(dbVars.map((v) => dbOf(v.name)!))];
+	for (const db of dbs) {
+		const fields = dbVars
+			.filter((v) => dbOf(v.name) === db)
+			.map((v) => ({ ...v, name: v.name.slice(db.length + 1) }));
+		const fd = dialect(new Set());
+		out.push(`DATA_BLOCK "${db}"`, "{ S7_Optimized_Access := 'TRUE' }", 'VERSION : 0.1');
+		out.push(
+			...varSection(
+				'VAR RETAIN',
+				fields.filter((v) => v.retain),
+				fd
+			),
+			...varSection(
+				'VAR',
+				fields.filter((v) => !v.retain),
+				fd
+			),
+			'',
+			'BEGIN',
+			'END_DATA_BLOCK',
+			''
+		);
+	}
+	const dbRef = (n: string) => {
+		const db = dbOf(n);
+		return db && dbs.includes(db) ? `"${db}"${n.slice(db.length)}` : null;
+	};
+
+	const mainVars = u.main.vars.filter((v) => !dbOf(v.name));
+	const mainLocals = new Set(mainVars.map((v) => up(v.name)));
+	const base = dialect(mainLocals);
+	const md: Dialect = {
+		...base,
+		name: (n) => dbRef(n) ?? base.name(n),
+		member: (o, m) => (dbRef(o) ? `${dbRef(o)}.${m}` : base.member(o, m))
+	};
 	out.push('FUNCTION_BLOCK "Main"', "{ S7_Optimized_Access := 'TRUE' }", 'VERSION : 0.1');
 	out.push(
 		...varSection(
 			'VAR RETAIN',
-			u.main.vars.filter((v) => v.retain),
+			mainVars.filter((v) => v.retain),
 			md
 		),
 		...varSection(
 			'VAR',
-			u.main.vars.filter((v) => !v.retain),
+			mainVars.filter((v) => !v.retain),
 			md
 		)
 	);
@@ -622,8 +667,13 @@ export function iecAddress(text: string): string {
 export function exportPlcOpen(p: ExportInput, now = new Date()): { xml: string; errors: string[] } {
 	const u = unit(p);
 	const elementary = new Set(['BOOL', 'BYTE', 'INT', 'DINT', 'REAL', 'TIME']);
-	const typeXml = (t: string, dims?: { low: number; high: number }) => {
-		const base = elementary.has(up(t)) ? `<${up(t)}/>` : `<derived name="${esc(u.caseOf(t))}"/>`;
+	const typeXml = (t: string, dims?: { low: number; high: number }, strLen?: number) => {
+		const base =
+			up(t) === 'STRING'
+				? `<string length="${strLen ?? 16}"/>`
+				: elementary.has(up(t))
+					? `<${up(t)}/>`
+					: `<derived name="${esc(u.caseOf(t))}"/>`;
 		return dims
 			? `<array><dimension lower="${dims.low}" upper="${dims.high}"/><baseType>${base}</baseType></array>`
 			: base;
@@ -648,7 +698,7 @@ export function exportPlcOpen(p: ExportInput, now = new Date()): { xml: string; 
 					`          <${tag}${attrs}>`,
 					...list.map(
 						(v) =>
-							`            <variable name="${esc(v.name)}"${v.at ? ` address="${iecAddress(v.at)}"` : ''}><type>${typeXml(v.type, v.dims)}</type>${initXml(v)}</variable>`
+							`            <variable name="${esc(v.name)}"${v.at ? ` address="${iecAddress(v.at)}"` : ''}><type>${typeXml(v.type, v.dims, v.strLen)}</type>${initXml(v)}</variable>`
 					),
 					`          </${tag}>`
 				]
@@ -674,7 +724,7 @@ export function exportPlcOpen(p: ExportInput, now = new Date()): { xml: string; 
 		out.push(`      <dataType name="${esc(t.name)}"><baseType><struct>`);
 		for (const f of t.fields)
 			out.push(
-				`        <variable name="${esc(f.name)}"><type>${typeXml(f.type, f.dims)}</type>${initXml(f)}</variable>`
+				`        <variable name="${esc(f.name)}"><type>${typeXml(f.type, f.dims, f.strLen)}</type>${initXml(f)}</variable>`
 			);
 		out.push('      </struct></baseType></dataType>');
 	}
@@ -691,23 +741,27 @@ export function exportPlcOpen(p: ExportInput, now = new Date()): { xml: string; 
 		);
 		out.push('        </interface>', ...body(pou.body), '      </pou>');
 	}
+	// data blocks become global variable lists (GVL): CODESYS reads `Recipes.Items` the same way
+	const gvl = (n: string) => (n.indexOf('.') > 0 ? n.slice(0, n.indexOf('.')) : null);
+	const prgVars = u.main.vars.filter((v) => !gvl(v.name));
+	const gvls = [...new Set(u.main.vars.map((v) => gvl(v.name)).filter((x): x is string => !!x))];
 	out.push(
 		'      <pou name="PLC_PRG" pouType="program">',
 		'        <interface>',
 		...vars(
 			'localVars',
-			u.main.vars.filter((v) => v.retain),
+			prgVars.filter((v) => v.retain),
 			' retain="true"'
 		),
 		...vars(
 			'localVars',
-			u.main.vars.filter((v) => !v.retain)
+			prgVars.filter((v) => !v.retain)
 		),
 		'        </interface>',
 		...body(u.main.body),
 		'      </pou>'
 	);
-	const mainNames = new Set(u.main.vars.map((v) => up(v.name)));
+	const mainNames = new Set(prgVars.map((v) => up(v.name)));
 	// other programs reach the main program's variables as PLC_PRG.x
 	const cd: Dialect = {
 		...d,
@@ -755,8 +809,23 @@ export function exportPlcOpen(p: ExportInput, now = new Date()): { xml: string; 
 			`            <variable name="${esc(s.name)}" address="${addr}"><type>${typeXml(addressType(s.address))}</type>${s.comment ? `<documentation><xhtml xmlns="http://www.w3.org/1999/xhtml">${esc(s.comment)}</xhtml></documentation>` : ''}</variable>`
 		);
 	}
+	out.push('          </globalVars>');
+	for (const g of gvls) {
+		const fields = u.main.vars
+			.filter((v) => gvl(v.name) === g)
+			.map((v) => ({ ...v, name: v.name.slice(g.length + 1) }));
+		out.push(
+			...vars(
+				`globalVars name="${esc(g)}"`,
+				fields.filter((v) => !v.retain)
+			).map((l) => l.replace(/<\/globalVars name="[^"]*">/, '</globalVars>')),
+			...vars(
+				`globalVars name="${esc(g)}" retain="true"`,
+				fields.filter((v) => v.retain)
+			).map((l) => l.replace(/<\/globalVars name="[^"]*" retain="true">/, '</globalVars>'))
+		);
+	}
 	out.push(
-		'          </globalVars>',
 		'        </resource>',
 		'      </configuration>',
 		'    </configurations>',

@@ -1015,15 +1015,19 @@ export function compileSt(
 	const withInit = ast.vars.filter(
 		(v) => v.init && vars.get(v.name.toUpperCase())?.kind === 'value'
 	);
-	initialise(
-		withInit.filter((v) => !retained.includes(v)),
-		initFlag
-	);
-	if (retainInitFlag)
+	// start values: on the first scan — or before OB100, which may build on them (like S7)
+	const initAll = () => {
 		initialise(
-			withInit.filter((v) => retained.includes(v)),
-			retainInitFlag
+			withInit.filter((v) => !retained.includes(v)),
+			initFlag
 		);
+		if (retainInitFlag)
+			initialise(
+				withInit.filter((v) => retained.includes(v)),
+				retainInitFlag
+			);
+	};
+	initAll();
 
 	function initialise(inits: VarDecl[], flag: Address) {
 		if (inits.length === 0) return;
@@ -1055,11 +1059,12 @@ export function compileSt(
 	// other organisation blocks: entry points after the main program; each one jumps to the end
 	const load: LoadOptions = {};
 	const end = newLabel();
-	const section = (from: number, body: Stmt[]): number => {
+	const section = (from: number, body: Stmt[], startup = false): number => {
 		line = lineOf(from);
 		jump('JMP', end);
 		const entry = program.length;
 		returnLabel = newLabel();
+		if (startup) initAll();
 		block(body);
 		place(returnLabel);
 		return entry;
@@ -1070,7 +1075,7 @@ export function compileSt(
 			intervalMs: ast.cyclic.intervalMs
 		};
 	for (const o of ast.obs ?? []) {
-		const entry = section(o.from, o.body);
+		const entry = section(o.from, o.body, o.ob === 'OB100');
 		if (o.ob === 'OB100') load.startup = entry;
 		else if (o.ob === 'OB121') load.programmingError = entry;
 		else load.timeError = entry;
@@ -1104,11 +1109,48 @@ export function compileSt(
 		program,
 		diagnostics: dedupe(diagnostics),
 		// hidden helpers (function results) are not shown
-		variables: variables.filter((v) => !v.name.includes('#')),
+		variables: groupStrings(variables.filter((v) => !v.name.includes('#'))),
 		// lines in the library are not lines of this source
 		lines: lines.map((l) => (l === null || l - preLines <= 0 ? null : l - preLines)),
 		...(Object.keys(load).length ? { load } : {})
 	};
+}
+
+/** A STRING is stored as `s$len` and `s$1` … `s$n`; the variable view shows one STRING `s`. */
+function groupStrings(list: StVariable[]): StVariable[] {
+	const out: StVariable[] = [];
+	const strings = new Map<string, StVariable>();
+	for (const v of list) {
+		const m = /^(.*)\$(len|\d+)$/.exec(v.name);
+		if (!m) {
+			out.push(v);
+			continue;
+		}
+		let s = strings.get(m[1]);
+		if (!s) {
+			s = { name: m[1], type: 'STRING', reads: [] };
+			strings.set(m[1], s);
+			out.push(s);
+		}
+		s.reads.push({ ...v.reads[0], label: m[2] === 'len' ? 'len' : m[2] });
+	}
+	return out;
+}
+
+/** The text of a STRING variable from its reads (length first, then the characters). */
+export function stringValue(
+	v: StVariable,
+	read: (r: StVariable['reads'][number]) => number | null
+) {
+	const len = read(v.reads.find((r) => r.label === 'len')!) ?? 0;
+	let text = '';
+	for (let k = 1; k <= len; k++) {
+		const r = v.reads.find((x) => x.label === String(k));
+		const c = r ? read(r) : null;
+		if (c === null) break;
+		text += String.fromCharCode(c);
+	}
+	return text;
 }
 
 function dedupe(list: StDiagnostic[]): StDiagnostic[] {

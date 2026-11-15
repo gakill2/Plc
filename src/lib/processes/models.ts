@@ -15,6 +15,7 @@ import { RemoteProcess } from './remote.js';
 import { DriveProcess } from './driveplant.js';
 import { PneumaticProcess } from './pneumatic.js';
 import { MixerProcess } from './mixer.js';
+import { AxisProcess } from './axis.js';
 
 /** Traffic light: no physics, the lamps simply show Q0.0 red, Q0.1 yellow, Q0.2 green. */
 export class TrafficProcess implements ProcessModel {
@@ -256,6 +257,8 @@ export function createProcess(kind: ProcessKind): ProcessModel {
 			return new PneumaticProcess();
 		case 'mixer':
 			return new MixerProcess();
+		case 'axis':
+			return new AxisProcess();
 	}
 }
 
@@ -268,5 +271,6 @@ export const isProcessKind = (v: unknown): v is ProcessKind =>
 	v === 'crane' ||
 	v === 'remote' ||
 	v === 'drive' ||
+	v === 'axis' ||
 	v === 'pneumatic' ||
 	v === 'mixer';

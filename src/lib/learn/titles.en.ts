@@ -142,6 +142,16 @@ export const EN_TITLES: Record<string, { title: string; summary: string }> = {
 		summary:
 			'A wrong recipe number from the panel goes past the array and stops the PLC. Guard the program and add OB121.'
 	},
+	'chapter:typy-danych': {
+		title: 'Data types in practice: UDTs, data blocks and STRING',
+		summary:
+			'How TIA Portal keeps machine data: own types (UDT), global data blocks, start values and RETAIN, strings — and recipes as data, not code.'
+	},
+	'lesson:recipe-db': {
+		title: 'Data types: recipes in a data block (UDT, DB, STRING)',
+		summary:
+			'Move the mixer recipes from a CASE in the code into a data block: a Recipe type with a name (STRING), an array of recipes in a DB, a whole-structure copy per batch — and a new recipe without changing code.'
+	},
 	'chapter:bezpieczenstwo': {
 		title: 'Safety and good practice',
 		summary: 'Why a Stop button is wired as an NC contact, and other rules from the field.'
@@ -231,6 +241,16 @@ export const EN_TITLES: Record<string, { title: string; summary: string }> = {
 		title: 'An inverter on Profinet: the control word',
 		summary:
 			'Drive it like a SINAMICS: 047E, 047F, speed 16#4000, status from ZSW1 and fault acknowledge.'
+	},
+	'chapter:ruch-plcopen': {
+		title: 'Positioning and PLCopen Motion: axes, homing, MC_ blocks',
+		summary:
+			'From an inverter to a servo: encoders and homing, the motion profile, following error, limit switches — and how a program drives an axis with PLCopen blocks.'
+	},
+	'lesson:motion-pickplace': {
+		title: 'PLCopen motion: a pick-and-place axis with MC_Power, MC_Home and MC_MoveAbsolute',
+		summary:
+			'A positioning servo: power the axis, home it, carry parts between two stations with a trapezoid profile, stop it on a ramp and recover from an axis error — with PLCopen blocks.'
 	},
 	'chapter:komunikacja': {
 		title: 'Industrial networks: Profinet, Modbus, remote I/O',

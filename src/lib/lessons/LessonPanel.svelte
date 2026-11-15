@@ -2,6 +2,7 @@
 	import { reviewSt } from './review.js';
 	import { localized } from '#lib/learn/path.js';
 	import type { Hardware } from '#lib/hw/hw.js';
+	import type { StVariable } from '#lib/st/compiler.js';
 	import { i18n, t } from '#lib/i18n/i18n.svelte.js';
 	import { resolve } from '$app/paths';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
@@ -39,6 +40,8 @@
 		stl: string;
 		hw: Hardware | null;
 		safety: string;
+		/** variables of the compiled ST program (tests read DB fields and strings) */
+		variables: StVariable[];
 	};
 	let {
 		lesson,
@@ -57,7 +60,8 @@
 		fbd,
 		stl,
 		hw,
-		safety
+		safety,
+		variables
 	}: Props = $props();
 
 	let results = $state.raw<TestResult[] | null>(null);
@@ -131,7 +135,7 @@
 				[],
 				$state.snapshot(compiled.load),
 				hw ? ($state.snapshot(hw) as Hardware) : undefined,
-				{ hmi: $state.snapshot(hmi) as Hmi, symbols }
+				{ hmi: $state.snapshot(hmi) as Hmi, symbols, variables }
 			);
 			checking = false;
 			if (results.every((r) => r.passed)) {

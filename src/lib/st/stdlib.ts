@@ -69,6 +69,337 @@ IF tick.Q THEN
   last := ERR;
 END_IF;
 END_FUNCTION_BLOCK
+
+(* ---- PLCopen Motion Control: oś 1 (napęd pozycjonujący, telegram QB64 / IB64) ---- *)
+FUNCTION_BLOCK MC_Power
+(* Załącza napęd osi. Status = oś gotowa (PowerOn). *)
+VAR_INPUT
+  Enable : BOOL;
+END_VAR
+VAR_OUTPUT
+  Status : BOOL;
+  Error : BOOL;
+  ErrorID : INT;
+END_VAR
+Q64.0 := Enable;
+Status := I64.0;
+Error := I64.2;
+IF I64.2 THEN ErrorID := IW68; ELSE ErrorID := 0; END_IF;
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK MC_Reset
+(* Kasuje błąd osi (ErrorStop → Standstill), gdy przyczyna ustąpiła. *)
+VAR_INPUT
+  Execute : BOOL;
+END_VAR
+VAR_OUTPUT
+  Done : BOOL;
+  Busy : BOOL;
+  Error : BOOL;
+END_VAR
+Q64.1 := Execute;
+Busy := Execute AND I64.2;
+Done := Execute AND NOT I64.2;
+Error := FALSE;
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK MC_ReadActualPosition
+(* Aktualna pozycja osi w mm. *)
+VAR_INPUT
+  Enable : BOOL;
+END_VAR
+VAR_OUTPUT
+  Valid : BOOL;
+  Position : REAL;
+END_VAR
+Valid := Enable AND I64.1;
+IF Enable THEN Position := DINT_TO_REAL(ID70) / 1000.0; END_IF;
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK MC_Home
+(* Bazowanie: najazd na wyłącznik referencyjny, tam pozycja = Position. *)
+VAR_INPUT
+  Execute : BOOL;
+  Position : REAL;
+END_VAR
+VAR_OUTPUT
+  Done : BOOL;
+  Busy : BOOL;
+  CommandAborted : BOOL;
+  Error : BOOL;
+  ErrorID : INT;
+END_VAR
+VAR
+  edge : R_TRIG;
+  mySeq : INT;
+  active : BOOL;
+  seen : BOOL;
+END_VAR
+// wyjścia gasną po zdjęciu Execute (wynik widać jeszcze przez jeden cykl)
+IF NOT Execute AND NOT active THEN
+  Done := FALSE;
+  CommandAborted := FALSE;
+  Error := FALSE;
+  ErrorID := 0;
+END_IF;
+edge(CLK := Execute);
+IF edge.Q THEN
+  QD70 := REAL_TO_DINT(Position * 1000.0);
+  QW66 := 1;
+  QW68 := QW68 + 1;           // nowy numer sekwencji = nowe polecenie dla napędu
+  mySeq := QW68;
+  active := TRUE;
+  seen := FALSE;
+  Done := FALSE;
+  CommandAborted := FALSE;
+  Error := FALSE;
+  ErrorID := 0;
+ELSIF active THEN
+  IF IW66 = mySeq THEN seen := TRUE; END_IF;
+  IF IW66 <> mySeq AND (seen OR IW66 > mySeq) THEN
+    active := FALSE;          // napęd przyjął nowsze polecenie
+    CommandAborted := TRUE;
+  ELSIF seen AND (I65.2 OR I64.2) THEN
+    active := FALSE;          // polecenie odrzucone albo oś w ErrorStop
+    Error := TRUE;
+    ErrorID := IW68;
+  ELSIF seen AND I64.5 THEN
+    active := FALSE;
+    Done := TRUE;
+  END_IF;
+END_IF;
+Busy := active;
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK MC_MoveAbsolute
+(* Ruch do pozycji Position [mm] z prędkością Velocity [mm/s] i przyspieszeniem Acceleration [mm/s²]. *)
+VAR_INPUT
+  Execute : BOOL;
+  Position : REAL;
+  Velocity : REAL;
+  Acceleration : REAL;
+END_VAR
+VAR_OUTPUT
+  Done : BOOL;
+  Busy : BOOL;
+  CommandAborted : BOOL;
+  Error : BOOL;
+  ErrorID : INT;
+END_VAR
+VAR
+  edge : R_TRIG;
+  mySeq : INT;
+  active : BOOL;
+  seen : BOOL;
+END_VAR
+// wyjścia gasną po zdjęciu Execute (wynik widać jeszcze przez jeden cykl)
+IF NOT Execute AND NOT active THEN
+  Done := FALSE;
+  CommandAborted := FALSE;
+  Error := FALSE;
+  ErrorID := 0;
+END_IF;
+edge(CLK := Execute);
+IF edge.Q THEN
+  QD70 := REAL_TO_DINT(Position * 1000.0);
+  QD74 := REAL_TO_DINT(Velocity * 1000.0);
+  QD78 := REAL_TO_DINT(Acceleration * 1000.0);
+  QW66 := 2;
+  QW68 := QW68 + 1;           // nowy numer sekwencji = nowe polecenie dla napędu
+  mySeq := QW68;
+  active := TRUE;
+  seen := FALSE;
+  Done := FALSE;
+  CommandAborted := FALSE;
+  Error := FALSE;
+  ErrorID := 0;
+ELSIF active THEN
+  IF IW66 = mySeq THEN seen := TRUE; END_IF;
+  IF IW66 <> mySeq AND (seen OR IW66 > mySeq) THEN
+    active := FALSE;          // napęd przyjął nowsze polecenie
+    CommandAborted := TRUE;
+  ELSIF seen AND (I65.2 OR I64.2) THEN
+    active := FALSE;          // polecenie odrzucone albo oś w ErrorStop
+    Error := TRUE;
+    ErrorID := IW68;
+  ELSIF seen AND I64.5 THEN
+    active := FALSE;
+    Done := TRUE;
+  END_IF;
+END_IF;
+Busy := active;
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK MC_MoveRelative
+(* Ruch o Distance [mm] od bieżącej pozycji. *)
+VAR_INPUT
+  Execute : BOOL;
+  Distance : REAL;
+  Velocity : REAL;
+  Acceleration : REAL;
+END_VAR
+VAR_OUTPUT
+  Done : BOOL;
+  Busy : BOOL;
+  CommandAborted : BOOL;
+  Error : BOOL;
+  ErrorID : INT;
+END_VAR
+VAR
+  edge : R_TRIG;
+  mySeq : INT;
+  active : BOOL;
+  seen : BOOL;
+END_VAR
+// wyjścia gasną po zdjęciu Execute (wynik widać jeszcze przez jeden cykl)
+IF NOT Execute AND NOT active THEN
+  Done := FALSE;
+  CommandAborted := FALSE;
+  Error := FALSE;
+  ErrorID := 0;
+END_IF;
+edge(CLK := Execute);
+IF edge.Q THEN
+  QD70 := REAL_TO_DINT(Distance * 1000.0);
+  QD74 := REAL_TO_DINT(Velocity * 1000.0);
+  QD78 := REAL_TO_DINT(Acceleration * 1000.0);
+  QW66 := 3;
+  QW68 := QW68 + 1;           // nowy numer sekwencji = nowe polecenie dla napędu
+  mySeq := QW68;
+  active := TRUE;
+  seen := FALSE;
+  Done := FALSE;
+  CommandAborted := FALSE;
+  Error := FALSE;
+  ErrorID := 0;
+ELSIF active THEN
+  IF IW66 = mySeq THEN seen := TRUE; END_IF;
+  IF IW66 <> mySeq AND (seen OR IW66 > mySeq) THEN
+    active := FALSE;          // napęd przyjął nowsze polecenie
+    CommandAborted := TRUE;
+  ELSIF seen AND (I65.2 OR I64.2) THEN
+    active := FALSE;          // polecenie odrzucone albo oś w ErrorStop
+    Error := TRUE;
+    ErrorID := IW68;
+  ELSIF seen AND I64.5 THEN
+    active := FALSE;
+    Done := TRUE;
+  END_IF;
+END_IF;
+Busy := active;
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK MC_MoveVelocity
+(* Ruch ciągły z prędkością Velocity [mm/s] (ze znakiem). InVelocity = prędkość osiągnięta. *)
+VAR_INPUT
+  Execute : BOOL;
+  Velocity : REAL;
+  Acceleration : REAL;
+END_VAR
+VAR_OUTPUT
+  InVelocity : BOOL;
+  Busy : BOOL;
+  CommandAborted : BOOL;
+  Error : BOOL;
+  ErrorID : INT;
+END_VAR
+VAR
+  edge : R_TRIG;
+  mySeq : INT;
+  active : BOOL;
+  seen : BOOL;
+END_VAR
+// wyjścia gasną po zdjęciu Execute (wynik widać jeszcze przez jeden cykl)
+IF NOT Execute AND NOT active THEN
+  InVelocity := FALSE;
+  CommandAborted := FALSE;
+  Error := FALSE;
+  ErrorID := 0;
+END_IF;
+edge(CLK := Execute);
+IF edge.Q THEN
+  QD74 := REAL_TO_DINT(Velocity * 1000.0);
+  QD78 := REAL_TO_DINT(Acceleration * 1000.0);
+  QW66 := 4;
+  QW68 := QW68 + 1;           // nowy numer sekwencji = nowe polecenie dla napędu
+  mySeq := QW68;
+  active := TRUE;
+  seen := FALSE;
+  InVelocity := FALSE;
+  CommandAborted := FALSE;
+  Error := FALSE;
+  ErrorID := 0;
+ELSIF active THEN
+  IF IW66 = mySeq THEN seen := TRUE; END_IF;
+  IF IW66 <> mySeq AND (seen OR IW66 > mySeq) THEN
+    active := FALSE;          // napęd przyjął nowsze polecenie
+    CommandAborted := TRUE;
+  ELSIF seen AND (I65.2 OR I64.2) THEN
+    active := FALSE;          // polecenie odrzucone albo oś w ErrorStop
+    Error := TRUE;
+    ErrorID := IW68;
+  ELSIF seen AND I64.4 THEN
+    active := FALSE;
+    InVelocity := TRUE;
+  END_IF;
+END_IF;
+Busy := active;
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK MC_Stop
+(* Zatrzymanie z opóźnieniem Deceleration [mm/s²]. Przerywa każdy ruch. *)
+VAR_INPUT
+  Execute : BOOL;
+  Deceleration : REAL;
+END_VAR
+VAR_OUTPUT
+  Done : BOOL;
+  Busy : BOOL;
+  CommandAborted : BOOL;
+  Error : BOOL;
+  ErrorID : INT;
+END_VAR
+VAR
+  edge : R_TRIG;
+  mySeq : INT;
+  active : BOOL;
+  seen : BOOL;
+END_VAR
+// wyjścia gasną po zdjęciu Execute (wynik widać jeszcze przez jeden cykl)
+IF NOT Execute AND NOT active THEN
+  Done := FALSE;
+  CommandAborted := FALSE;
+  Error := FALSE;
+  ErrorID := 0;
+END_IF;
+edge(CLK := Execute);
+IF edge.Q THEN
+  QD78 := REAL_TO_DINT(Deceleration * 1000.0);
+  QW66 := 5;
+  QW68 := QW68 + 1;           // nowy numer sekwencji = nowe polecenie dla napędu
+  mySeq := QW68;
+  active := TRUE;
+  seen := FALSE;
+  Done := FALSE;
+  CommandAborted := FALSE;
+  Error := FALSE;
+  ErrorID := 0;
+ELSIF active THEN
+  IF IW66 = mySeq THEN seen := TRUE; END_IF;
+  IF IW66 <> mySeq AND (seen OR IW66 > mySeq) THEN
+    active := FALSE;          // napęd przyjął nowsze polecenie
+    CommandAborted := TRUE;
+  ELSIF seen AND (I65.2 OR I64.2) THEN
+    active := FALSE;          // polecenie odrzucone albo oś w ErrorStop
+    Error := TRUE;
+    ErrorID := IW68;
+  ELSIF seen AND I64.5 THEN
+    active := FALSE;
+    Done := TRUE;
+  END_IF;
+END_IF;
+Busy := active;
+END_FUNCTION_BLOCK
 `;
 
 export interface BlockPin {

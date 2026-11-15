@@ -167,6 +167,24 @@ export const PLANTS: readonly PlantInfo[] = [
 		]
 	},
 	{
+		kind: 'axis',
+		name: 'Servo axis (pick and place)',
+		description:
+			'A linear servo axis with a positioning drive and a gripper. The drive runs the PLCopen state machine and the motion profile; the MC_* blocks of the library talk to it.',
+		io: [
+			{ address: 'I0.0', name: 'PartAtPick', comment: 'A part waits at the pick station (100 mm)' },
+			{ address: 'I0.1', name: 'GripperClosed', comment: 'Gripper closed (feedback)' },
+			{ address: 'Q0.0', name: 'Gripper', comment: 'Close the gripper' },
+			{ address: 'I65.0', name: 'LimitNeg', comment: 'Hardware limit switch left, NC' },
+			{ address: 'I65.1', name: 'LimitPos', comment: 'Hardware limit switch right, NC' },
+			{ address: 'ID70', name: 'AxisPos', comment: 'Actual position, µm (MC_ReadActualPosition)' }
+		],
+		faults: [
+			{ id: 'blocked', label: 'Oś zablokowana (przeszkoda na torze)' },
+			{ id: 'overload', label: 'Przeciążenie napędu przy ruchu' }
+		]
+	},
+	{
 		kind: 'mixer',
 		name: 'Batch mixer',
 		description:

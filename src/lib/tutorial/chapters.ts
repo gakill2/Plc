@@ -1392,6 +1392,75 @@ END_CYCLIC_INTERRUPT`
 			}
 		]
 	},
+	/* ------------------------------------------------------------------ typy danych */
+	{
+		slug: 'typy-danych',
+		title: 'Typy danych w praktyce: UDT, bloki danych i STRING',
+		summary:
+			'Jak w TIA Portal trzyma się dane maszyny: własne typy (UDT), globalne bloki danych, wartości startowe i RETAIN, napisy — i receptury jako dane, nie kod.',
+		minutes: 10,
+		blocks: [
+			{
+				kind: 'text',
+				text: `W małym programie wystarczą markery \`M\`. W prawdziwym projekcie dane siedzą w **blokach danych** (DB) i mają **typy**:
+
+- **typy proste**: \`BOOL\`, \`BYTE\`/\`WORD\`/\`DWORD\` (bity, maski), \`INT\` (16 bitów), \`DINT\` (32), \`REAL\` (zmiennoprzecinkowy), \`TIME\`,
+- **STRING[n]** — napis do *n* znaków (w S7: bajt długości maksymalnej, bajt długości bieżącej i znaki). Kod produktu ze skanera, nazwa receptury, komunikat dla operatora. **WSTRING** — znaki Unicode (polskie litery),
+- **UDT** (*user-defined type*, w TIA „PLC data type”) — własna struktura, np. \`Recipe\` z polami \`Name\`, \`Temp\`, \`MixTime\`. Definiujesz raz, używasz wszędzie: w DB, w parametrach bloków, w tablicach. Zmiana typu zmienia wszystkie miejsca naraz,
+- **ARRAY[1..n] OF typ** — tablica, także tablica UDT: \`Items[2].Temp\`.
+
+**Blok danych globalny** to pamięć dostępna z całego programu (i z HMI): \`"Recipes".Items[2].Temp\`. **Blok instancji** należy do jednego wywołania FB — trzyma jego zmienne statyczne.
+
+Każde pole ma **wartość startową** (ładowana przy pierwszym wgraniu) i **bieżącą**. Pola **RETAIN** zachowują wartość po zaniku zasilania. Uwaga przy wgrywaniu: zmiana struktury DB często **reinicjalizuje** go do wartości startowych — receptury wpisane przez operatora znikają, jeśli wcześniej nie zrobisz kopii (snapshot / eksport).
+
+W starszych projektach (S7-300, DB „standardowy”) dane adresuje się bezwzględnie: \`DB10.DBW4\`. W S7-1500 bloki są **zoptymalizowane** — tylko dostęp symboliczny, bez adresów, i to jest właściwy kierunek.`
+			},
+			{
+				kind: 'text',
+				text: `**Receptury jako dane.** Gdy parametry partii są zaszyte w kodzie (\`CASE RecipeNo OF 1: setA := 11059; …\`), każda nowa receptura to zmiana programu, test i podpis. Gdy są w DB:
+
+- technolog dodaje i zmienia receptury z **ekranu receptur** HMI, bez programisty,
+- na start partii program **kopiuje całą recepturę** do „aktywnej” (\`Active := Items[n];\`) — zmiana na panelu w trakcie partii jej nie zepsuje,
+- receptury przeżywają restart (RETAIN), a fabryczne wpisuje się w **OB100** tylko przy pustej pamięci,
+- numer receptury z panelu zawsze **sprawdzasz przed indeksowaniem** tablicy (patrz lekcja o OB121).
+
+W PLC Sim: \`TYPE … STRUCT … END_TYPE\`, \`DATA_BLOCK Nazwa VAR [RETAIN] … END_VAR END_DATA_BLOCK\`, pola \`Nazwa.Pole\`, kopiowanie całej struktury jednym przypisaniem, \`STRING[n]\` z przypisaniem, porównaniem \`=\` / \`<>\` i \`LEN()\`.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Technolog chce dodać czwartą recepturę i zmieniać temperaturę z panelu. Jak to zrobić najlepiej?',
+				options: [
+					'Dopisać „4:” w CASE w programie',
+					'Trzymać receptury w DB jako tablicę UDT i edytować je z ekranu receptur HMI; program czyta aktywną recepturę z DB',
+					'Dać technologowi dostęp do TIA Portal',
+					'Zrobić osobny program dla każdej receptury'
+				],
+				correct: 1,
+				explanation:
+					'Dane w DB oddzielają to, co się zmienia (parametry), od tego, co sprawdzono i odebrano (logika). Zmiana receptury nie wymaga zmiany programu.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Po dodaniu pola do UDT receptury i wgraniu programu wszystkie receptury operatora wróciły do wartości startowych. Dlaczego?',
+				options: [
+					'Sterownik ma uszkodzoną pamięć',
+					'Zmiana struktury DB wymaga jego reinicjalizacji — bieżące wartości zostają zastąpione startowymi, jeśli nie zrobi się kopii',
+					'RETAIN działa tylko na markerach',
+					'Operator ich nie zapisał'
+				],
+				correct: 1,
+				explanation:
+					'Przed zmianą struktury robi się kopię wartości bieżących (snapshot, eksport receptur z HMI) i przywraca ją po wgraniu.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'recipe-db',
+				text: 'Przenieś receptury mieszalnika z CASE do bloku danych: UDT z nazwą, tablica w DB, kopia na start partii.'
+			}
+		]
+	},
 
 	/* ------------------------------------------------------------------ 11 */
 	{
@@ -2185,6 +2254,69 @@ Fault   := (ZSW1 AND 16#0008) <> 0;`
 				kind: 'lesson',
 				slug: 'drive-profidrive',
 				text: 'Steruj napędem przez Profinet: sekwencja 047E/047F, prędkość, status z ZSW1 i kwitowanie błędu.'
+			}
+		]
+	},
+	/* ------------------------------------------------------------------ ruch PLCopen */
+	{
+		slug: 'ruch-plcopen',
+		title: 'Pozycjonowanie i PLCopen Motion: osie, bazowanie, bloki MC_',
+		summary:
+			'Od falownika do serwa: enkoder i bazowanie, profil ruchu, błąd nadążania, wyłączniki krańcowe — i jak program steruje osią blokami PLCopen.',
+		minutes: 12,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Falownik trzyma **prędkość**. Gdy maszyna ma dojechać **w punkt** (podajnik, oś portalu, stół obrotowy, nóż latający), potrzebny jest **napęd pozycjonujący** — zwykle serwo z enkoderem:
+
+- **enkoder inkrementalny** liczy impulsy od włączenia — po każdym załączeniu oś „nie wie”, gdzie jest, i musi się **zbazować** (najazd na wyłącznik referencyjny, ewentualnie znacznik zero enkodera). **Enkoder absolutny** zna pozycję od razu — bazowanie robi się raz, przy uruchomieniu,
+- **profil ruchu**: przyspieszanie, jazda ze stałą prędkością, hamowanie — **trapez** (stałe przyspieszenie) albo **krzywa S** (ograniczony szarpnięcie, *jerk* — łagodniej dla mechaniki i ładunku). Krótki ruch nie osiąga prędkości zadanej: profil jest trójkątem,
+- **błąd nadążania** (*following error*) — różnica między pozycją zadaną a rzeczywistą. Gdy rośnie ponad limit (przeszkoda, zatarta prowadnica, za mały moment), napęd się wyłącza,
+- **wyłączniki programowe** (*software limits*) — granice ruchu w sterowniku, działają dopiero po bazowaniu. **Krańcówki sprzętowe** dalej, jako ostatnia linia obrony (NC, przy najechaniu napęd staje). A dalej jeszcze mechaniczne zderzaki.`
+			},
+			{
+				kind: 'text',
+				text: `**PLCopen Motion Control** to norma bloków ruchu wspólna dla Siemensa (obiekty technologiczne, \`MC_MoveAbsolute\` w TIA), CODESYS SoftMotion, Beckhoffa, B&R, Omrona… Uczysz się raz:
+
+- **diagram stanów osi**: *Disabled* → (\`MC_Power\`) *Standstill* → *Homing* / *Discrete Motion* (ruch do punktu) / *Continuous Motion* (prędkość) / *Stopping* → z powrotem *Standstill*. Każdy błąd osi → **ErrorStop**, wyjście tylko przez \`MC_Reset\`,
+- **bloki z \`Enable\`** (\`MC_Power\`) działają, dopóki wejście jest 1. **Bloki z \`Execute\`** (\`MC_Home\`, \`MC_MoveAbsolute\`, \`MC_Stop\`…) startują na **zboczu** i pokazują wynik, dopóki \`Execute\` = 1: \`Busy\` w trakcie, potem \`Done\` albo \`Error\` + \`ErrorID\`, albo \`CommandAborted\`, gdy inne polecenie przejęło oś,
+- nowy ruch **przerywa** poprzedni (lub czeka w kolejce — \`BufferMode\`), \`MC_Stop\` hamuje z zadanym opóźnieniem i blokuje oś do zdjęcia \`Execute\`,
+- jedna instancja na jeden rodzaj ruchu — dwie pozycje to dwie instancje \`MC_MoveAbsolute\` (albo jedna z różnymi wejściami i świadomie zrobionym zboczem).
+
+W PLC Sim oś Y1 to napęd z pozycjonowaniem (jak SINAMICS z funkcją EPOS): profil liczy napęd, a bloki \`MC_*\` z biblioteki standardowej wysyłają mu polecenia z numerem sekwencji i czekają na potwierdzenie.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Po zaniku zasilania i ponownym załączeniu MC_MoveAbsolute kończy się błędem „oś niezbazowana”. Dlaczego?',
+				options: [
+					'Uszkodzony napęd',
+					'Oś ma enkoder inkrementalny — po załączeniu nie zna pozycji i trzeba ją zbazować (MC_Home)',
+					'Za duża prędkość zadana',
+					'Brak MC_Reset'
+				],
+				correct: 1,
+				explanation:
+					'Ruch absolutny ma sens tylko, gdy oś zna swoje położenie. Z enkoderem inkrementalnym po każdym załączeniu trzeba bazowania; enkoder absolutny tego nie wymaga.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Program trzyma Execute jednej instancji MC_MoveAbsolute stale na 1 i tylko zmienia Position z 100 na 800. Co się stanie?',
+				options: [
+					'Oś pojedzie na 800 mm',
+					'Nic — blok startuje na zboczu Execute, zmiana Position bez nowego zbocza nie wydaje polecenia',
+					'Oś wpadnie w ErrorStop',
+					'Oś pojedzie na 100 i 800 na zmianę'
+				],
+				correct: 1,
+				explanation:
+					'Bloki z Execute czytają parametry na zboczu narastającym. Potrzebne jest nowe zbocze (albo druga instancja) — typowa pułapka przy pierwszych programach z osiami.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'motion-pickplace',
+				text: 'Oś pick & place: bazowanie, cykl między dwiema stacjami, Stop z rampą i podniesienie się po ErrorStop.'
 			}
 		]
 	},

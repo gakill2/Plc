@@ -15,7 +15,8 @@ export type ProcessKind =
 	| 'remote'
 	| 'drive'
 	| 'pneumatic'
-	| 'mixer';
+	| 'mixer'
+	| 'axis';
 
 export interface ProcessIO {
 	output(terminal: string): boolean;
@@ -216,7 +217,28 @@ export interface MixerState {
 	lastBatch: string | null;
 }
 
+export interface AxisState {
+	kind: 'axis';
+	/** mm, in the axis coordinates (meaningful once homed) */
+	position: number;
+	/** mm on the rail */
+	physical: number;
+	/** mm/s */
+	velocity: number;
+	mode: string;
+	homed: boolean;
+	errorId: number;
+	rejected: boolean;
+	gripper: boolean;
+	holding: boolean;
+	partAtPick: boolean;
+	delivered: number;
+	dropped: number;
+	lastEvent: string | null;
+}
+
 export type ProcessState =
+	| AxisState
 	| PneumaticState
 	| MixerState
 	| TrafficState

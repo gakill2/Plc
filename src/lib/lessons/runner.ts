@@ -20,6 +20,7 @@ import { HwLayer, type Hardware } from '#lib/hw/hw.js';
 import { newAlarmLog, updateAlarms } from '#lib/hmi/alarms.js';
 import type { Hmi } from '#lib/hmi/model.js';
 import { resolveSymbol, type SymbolMap } from '#lib/symbols/symbols.js';
+import { stringValue, type StVariable } from '#lib/st/compiler.js';
 import { plantInfo } from '#lib/processes/plants.js';
 import type { Lesson, TestContext, TestResult } from './types.js';
 
@@ -37,7 +38,7 @@ export function runLessonTests(
 	load?: LoadOptions,
 	hw?: Hardware,
 	/** the panel: its alarms are evaluated like on the HMI; tags resolve through `symbols` */
-	panel?: { hmi: Hmi; symbols: SymbolMap }
+	panel?: { hmi?: Hmi; symbols?: SymbolMap; variables?: StVariable[] }
 ): TestResult[] {
 	const field = (lesson.kind === 'commissioning' || lesson.fieldTests) && circuit ? circuit : null;
 	return lesson.tests.map((test) => {
@@ -74,10 +75,16 @@ export function runLessonTests(
 		process?.step(0, io); // initial sensor values
 		const devices = field ? new FieldSim(field, plc) : null;
 		if (devices) devices.faults = faults;
-		const defs = panel?.hmi.alarms ?? [];
+		const defs = panel?.hmi?.alarms ?? [];
+		const variable = (name: string) =>
+			panel?.variables?.find((v) => v.name.toUpperCase() === name.trim().toUpperCase()) ?? null;
+		const readVar = (r: StVariable['reads'][number]) =>
+			r.kind === 'bool'
+				? plc.memory.readBit(parseAddress(r.address))
+				: plc.memory.readNumber(parseAddress(r.address), r.numType);
 		const alarmBit = (tag: string): boolean | null => {
 			try {
-				const a = parseAddress(resolveSymbol(panel!.symbols, tag.trim()));
+				const a = parseAddress(resolveSymbol(panel?.symbols ?? new Map(), tag.trim()));
 				return a.area !== 'T' && a.area !== 'C' && a.size === 'X' ? plc.memory.readBit(a) : null;
 			} catch {
 				return null;
@@ -89,7 +96,13 @@ export function runLessonTests(
 			out: (t) => plc.getOutput(t),
 			device: (label) => devices?.device(label) ?? null,
 			alarms: newAlarmLog(),
-			alarmDefs: defs
+			alarmDefs: defs,
+			value: (name) => {
+				const v = variable(name);
+				if (!v?.reads[0]) return null;
+				if (v.type === 'STRING') return stringValue(v, (r) => Number(readVar(r)));
+				return readVar(v.reads[0]);
+			}
 		};
 		const fail = (message: string): TestResult => ({
 			name: test.name,
@@ -110,6 +123,11 @@ export function runLessonTests(
 			for (const [id, on] of Object.entries(step.plantFaults ?? {}))
 				sensors.setPlantFault(process, id, on);
 			for (const [address, value] of Object.entries(step.hmi ?? {})) plc.modify(address, value);
+			for (const [name, value] of Object.entries(step.vars ?? {})) {
+				const r = variable(name)?.reads[0];
+				if (!r) return fail(`Brak zmiennej ${name} w programie`);
+				plc.modify(r.address, value, r.numType);
+			}
 			if (devices && step.deviceFaults) devices.faults = step.deviceFaults;
 			devices?.actuate(step.actuate ?? {});
 			devices?.apply();

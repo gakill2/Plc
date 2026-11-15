@@ -40,7 +40,9 @@ type Meaning =
 	| { kind: 'plain'; flat: string; builtinFb: boolean }
 	| { kind: 'struct'; flat: string; type: StructType }
 	| { kind: 'fb'; flat: string; pou: Pou }
-	| { kind: 'array'; flat: string; low: number; high: number; type: string };
+	| { kind: 'array'; flat: string; low: number; high: number; type: string }
+	/** STRING[n]: `flat$len` (INT) and the characters `flat$1` … `flat$n` (BYTE, 0 after the end) */
+	| { kind: 'string'; flat: string; n: number };
 
 interface Scope {
 	names: Map<string, Meaning>;
@@ -51,6 +53,18 @@ interface Scope {
 const up = (s: string) => s.toUpperCase();
 /** Only the source position — spreading a whole node would also copy its kind and name. */
 const sp = (x: Span): Span => ({ from: x.from, to: x.to });
+
+/** Character codes of a text for a STRING[n]: Latin-1 only, at most n characters. */
+function stringCodes(text: string, n: number, at: Span): number[] {
+	if (text.length > n)
+		throw new ExpandError(`'${text}' has ${text.length} characters — the STRING holds ${n}`, at);
+	return [...text].map((c) => {
+		const code = c.charCodeAt(0);
+		if (code > 255)
+			throw new ExpandError(`"${c}" cannot be stored in a STRING (Latin-1 characters only)`, at);
+		return code;
+	});
+}
 
 export function expandPous(program: StProgram, report: Report): StProgram {
 	const types = new Map((program.types ?? []).map((t) => [up(t.name), t]));
@@ -88,6 +102,32 @@ export function expandPous(program: StProgram, report: Report): StProgram {
 				flatten(el, prefix, scope, chain, keep);
 			}
 			scope.names.set(key, { kind: 'array', flat, low, high, type: decl.type });
+			return;
+		}
+		if (t === 'STRING') {
+			if (decl.at) throw new ExpandError('A STRING cannot have an AT address', decl);
+			const n = decl.strLen ?? 16;
+			if (decl.init && decl.init.kind !== 'string')
+				throw new ExpandError("Initialise a STRING with text in quotes, e.g. := 'Krem'", decl.init);
+			const text = decl.init?.kind === 'string' ? decl.init.value : '';
+			const codes = stringCodes(text, n, decl.init ?? decl);
+			const num = (value: number): Expr => ({ kind: 'number', value, real: false, ...sp(decl) });
+			const part = (name: string, type: string, init: number): VarDecl => {
+				const v: VarDecl = { ...decl, name, type, init: num(init) };
+				delete v.strLen;
+				if (keep) v.retain = true;
+				return v;
+			};
+			// only a STRING with a start value is initialised: an empty one is all zeros anyway
+			const inits = !!decl.init;
+			const p = (name: string, type: string, init: number) => {
+				const v = part(name, type, init);
+				if (!inits) v.init = null;
+				return v;
+			};
+			vars.push(p(`${flat}$len`, 'INT', text.length));
+			for (let k = 1; k <= n; k++) vars.push(p(`${flat}$${k}`, 'BYTE', codes[k - 1] ?? 0));
+			scope.names.set(key, { kind: 'string', flat, n });
 			return;
 		}
 		const struct = types.get(t);
@@ -215,6 +255,11 @@ export function expandPous(program: StProgram, report: Report): StProgram {
 					`${object}.${field.name} is itself a structure — use it one level at a time`,
 					span
 				);
+			if (t === 'STRING')
+				throw new ExpandError(
+					`${object}.${field.name} is a STRING — assign it, compare it (=, <>) or use LEN()`,
+					span
+				);
 			return { kind: 'name', name: `${m.flat}.${field.name}`, ...sp(span) };
 		}
 		if (m?.kind === 'fb') {
@@ -261,6 +306,11 @@ export function expandPous(program: StProgram, report: Report): StProgram {
 		if (m.kind === 'array')
 			throw new ExpandError(
 				`${n} is an ARRAY[${m.low}..${m.high}] — use one element, e.g. ${n}[${m.low}]`,
+				span
+			);
+		if (m.kind === 'string')
+			throw new ExpandError(
+				`${n} is a STRING — assign it, compare it (=, <>) or use LEN(${n})`,
 				span
 			);
 		return { kind: 'name', name: m.flat, ...sp(span) };
@@ -415,6 +465,121 @@ export function expandPous(program: StProgram, report: Report): StProgram {
 	});
 
 	/** `t := value` for any target, including an array element with a computed index. */
+	/* ---------- STRING ---------- */
+
+	type Str = { flat: string; n: number } | { text: string };
+
+	/** A STRING operand with a fixed place (constant index), or a literal, or null. */
+	function stringOf(scope: Scope, e: Expr, pre: Stmt[], chain: string[]): Str | null {
+		if (e.kind === 'string') return { text: e.value };
+		if (e.kind === 'name') {
+			const m = scope.names.get(up(e.name));
+			return m?.kind === 'string' ? { flat: m.flat, n: m.n } : null;
+		}
+		if (e.kind === 'member') {
+			const m = scope.names.get(up(e.object));
+			if (m?.kind !== 'struct') return null;
+			const f = m.type.fields.find((x) => up(x.name) === up(e.member));
+			return f && up(f.type) === 'STRING' && !f.dims
+				? { flat: `${m.flat}.${f.name}`, n: f.strLen ?? 16 }
+				: null;
+		}
+		if (e.kind === 'index') {
+			if (!isStringIndex(scope, e)) return null;
+			const k = constIndex(expr(e.index, scope, pre, chain));
+			if (k === null)
+				throw new ExpandError(
+					'A STRING with a computed index can only be copied — copy the structure first (active := items[i]), then use active',
+					e
+				);
+			const m = arrayOf(scope, e.array, e);
+			if (k < m.low || k > m.high)
+				throw new ExpandError(`Index ${k} is outside ${e.array}[${m.low}..${m.high}]`, e.index);
+			const el: Expr = e.member
+				? { kind: 'member', object: `${e.array}[${k}]`, member: e.member, ...sp(e) }
+				: { kind: 'name', name: `${e.array}[${k}]`, ...sp(e) };
+			return stringOf(scope, el, pre, chain);
+		}
+		return null;
+	}
+
+	/** `a[i]` of an ARRAY OF STRING, or `a[i].Name` of an array of structures with a STRING field */
+	function isStringIndex(scope: Scope, e: IndexExpr): boolean {
+		const m = scope.names.get(up(e.array));
+		if (m?.kind !== 'array') return false;
+		if (!e.member) return up(m.type) === 'STRING';
+		const f = types.get(up(m.type))?.fields.find((x) => up(x.name) === up(e.member!));
+		return !!f && up(f.type) === 'STRING' && !f.dims;
+	}
+
+	const num = (value: number, at: Span): Expr => ({
+		kind: 'number',
+		value,
+		real: false,
+		...sp(at)
+	});
+	const lenOf = (s: Str, at: Span): Expr =>
+		'text' in s ? num(s.text.length, at) : ref(`${s.flat}$len`, at);
+	const charOf = (s: Str, k: number, at: Span): Expr =>
+		'text' in s
+			? num(k <= s.text.length ? s.text.charCodeAt(k - 1) : 0, at)
+			: k <= s.n
+				? ref(`${s.flat}$${k}`, at)
+				: num(0, at);
+
+	/** `a = b` for strings: same length and the same characters (unused characters are 0). */
+	function stringEquals(a: Str, b: Str, at: Span): Expr {
+		const size = (s: Str) => ('text' in s ? s.text.length : s.n);
+		const tooLong = (s: Str, o: Str) => 'text' in s && !('text' in o) && s.text.length > o.n;
+		if (tooLong(a, b) || tooLong(b, a)) return { kind: 'bool', value: false, ...sp(at) };
+		const parts: Expr[] = [
+			{ kind: 'binary', op: '=', left: lenOf(a, at), right: lenOf(b, at), ...sp(at) }
+		];
+		for (let k = 1; k <= Math.max(size(a), size(b)); k++)
+			parts.push({
+				kind: 'binary',
+				op: '=',
+				left: charOf(a, k, at),
+				right: charOf(b, k, at),
+				...sp(at)
+			});
+		return parts.reduce((l, r) => ({ kind: 'binary', op: 'AND', left: l, right: r, ...sp(at) }));
+	}
+
+	/** `t := s`: the length (cut to the size of t) and every character, the rest set to 0. */
+	function stringCopy(t: { flat: string; n: number }, s: Str, at: Span): Stmt[] {
+		if ('text' in s) stringCodes(s.text, t.n, at);
+		const len: Expr =
+			'text' in s
+				? num(s.text.length, at)
+				: s.n > t.n
+					? { kind: 'fcall', name: 'MIN', args: [lenOf(s, at), num(t.n, at)], ...sp(at) }
+					: lenOf(s, at);
+		const out = [assign(ref(`${t.flat}$len`, at), len, at)];
+		for (let k = 1; k <= t.n; k++)
+			out.push(assign(ref(`${t.flat}$${k}`, at), charOf(s, k, at), at));
+		return out;
+	}
+
+	/** The structure type of a whole-struct operand (`r`, `recipes[i]`), or null. */
+	function structOf(scope: Scope, e: Expr): StructType | null {
+		if (e.kind === 'name') {
+			const m = scope.names.get(up(e.name));
+			return m?.kind === 'struct' ? m.type : null;
+		}
+		if (e.kind === 'index' && !e.member) {
+			const m = scope.names.get(up(e.array));
+			return m?.kind === 'array' ? (types.get(up(m.type)) ?? null) : null;
+		}
+		return null;
+	}
+	const fieldOf = (e: Expr, field: string): Expr =>
+		e.kind === 'name'
+			? { kind: 'member', object: e.name, member: field, ...sp(e) }
+			: e.kind === 'index'
+				? { ...e, member: field }
+				: e;
+
 	function assignTo(
 		t: Target,
 		value: Expr,
@@ -460,13 +625,35 @@ export function expandPous(program: StProgram, report: Report): StProgram {
 				return readElement(e, scope, pre, chain);
 			case 'unary':
 				return { ...e, expr: expr(e.expr, scope, pre, chain) };
-			case 'binary':
+			case 'binary': {
+				const ls = stringOf(scope, e.left, pre, chain);
+				const rs = stringOf(scope, e.right, pre, chain);
+				if (ls || rs) {
+					if (!ls || !rs || (e.op !== '=' && e.op !== '<>'))
+						throw new ExpandError(
+							'A STRING can only be compared with another STRING, with = or <>',
+							e
+						);
+					const eq = stringEquals(ls, rs, e);
+					return e.op === '=' ? eq : { kind: 'unary', op: 'NOT', expr: eq, ...sp(e) };
+				}
 				return {
 					...e,
 					left: expr(e.left, scope, pre, chain),
 					right: expr(e.right, scope, pre, chain)
 				};
+			}
+			case 'string':
+				throw new ExpandError(
+					'A text in quotes can only be assigned to a STRING or compared with one',
+					e
+				);
 			case 'fcall': {
+				if (up(e.name) === 'LEN') {
+					const s = e.args.length === 1 ? stringOf(scope, e.args[0], pre, chain) : null;
+					if (!s) throw new ExpandError('LEN takes one STRING, e.g. LEN(name)', e);
+					return lenOf(s, e);
+				}
 				const args = e.args.map((a) => expr(a, scope, pre, chain));
 				const fn = pous.get(up(e.name));
 				if (!fn) return { ...e, args };
@@ -712,6 +899,64 @@ export function expandPous(program: StProgram, report: Report): StProgram {
 		};
 		switch (s.kind) {
 			case 'assign': {
+				const ts = stringOf(scope, s.target, pre, chain);
+				if (ts) {
+					if ('text' in ts) throw new ExpandError('Cannot assign to a text', s.target);
+					// copy from an element with a computed index: one copy per element
+					if (s.value.kind === 'index' && isStringIndex(scope, s.value)) {
+						const v = s.value;
+						const index = x(v.index);
+						if (constIndex(index) === null) {
+							const m = arrayOf(scope, v.array, v);
+							return [
+								...pre,
+								dispatch(
+									m,
+									index,
+									(k) =>
+										stringCopy(ts, stringOf(scope, { ...v, index: num(k, v) }, pre, chain)!, s),
+									[outOfRange(v.array, m, v)],
+									s,
+									pre
+								)
+							];
+						}
+					}
+					const vs = stringOf(scope, s.value, pre, chain);
+					if (!vs)
+						throw new ExpandError(
+							"Assign a text in quotes or another STRING, e.g. := 'Krem'",
+							s.value
+						);
+					return [...pre, ...stringCopy(ts, vs, s)];
+				}
+				// a whole structure: copied field by field (recipe := recipes[n])
+				const tt = structOf(scope, s.target);
+				if (tt) {
+					const vt = structOf(scope, s.value);
+					if (!vt || vt !== tt)
+						throw new ExpandError(
+							`Only a ${tt.name} can be assigned to a ${tt.name} as a whole`,
+							s.value
+						);
+					return tt.fields.flatMap((f) => {
+						if (f.dims || types.has(up(f.type)) || pous.get(up(f.type))?.kind === 'fb')
+							throw new ExpandError(
+								`${tt.name}.${f.name} is an array or a structure — copy it on its own`,
+								s
+							);
+						return stmt(
+							{
+								kind: 'assign',
+								target: fieldOf(s.target, f.name) as Target,
+								value: fieldOf(s.value, f.name),
+								...sp(s)
+							},
+							scope,
+							chain
+						);
+					});
+				}
 				const value = x(s.value);
 				const out = assignTo(s.target, value, scope, pre, chain, s);
 				return [...pre, ...out];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deviceSymbols } from '#lib/circuit/model.js';
-import { LESSONS } from '#lib/lessons/lessons.js';
+import { getLesson, LESSONS } from '#lib/lessons/lessons.js';
 import { runLessonTests } from '#lib/lessons/runner.js';
 import { compileSt } from '#lib/st/compiler.js';
 import { STDLIB } from '#lib/st/stdlib.js';
@@ -121,5 +121,35 @@ describe('export', () => {
 		expect(iecAddress('QW4')).toBe('%QW4');
 		expect(iecAddress('MD100')).toBe('%MD100');
 		expect(iecAddress('T0')).toBe('');
+	});
+});
+
+describe('data blocks and strings', () => {
+	const input: ExportInput = {
+		name: 'Recipes',
+		language: 'st',
+		ladder: { version: 1, rungs: [] },
+		st: getLesson('recipe-db')!.solutionSt!,
+		sfc: emptySfc(),
+		library: '',
+		symbols: []
+	};
+
+	it('become a global DB in SCL with symbolic access', () => {
+		const { scl, errors } = exportScl(input);
+		expect(errors).toEqual([]);
+		expect(scl).toContain('DATA_BLOCK "Recipes"');
+		expect(scl).toContain('Items : Array[1..3] of "Recipe";');
+		expect(scl).toContain('Name : String[16];');
+		expect(scl).toContain('"Recipes".Active := "Recipes".Items[RecipeNo];');
+		expect(scl).toContain('"Recipes".Items[3].Name := \'Krem\';');
+		expect(scl).not.toMatch(/Recipes\.Items : /);
+	});
+
+	it('become a global variable list in PLCopen XML', () => {
+		const { xml } = exportPlcOpen(input);
+		expect(xml).toContain('<globalVars name="Recipes" retain="true">');
+		expect(xml).toContain('<string length="16"/>');
+		expect(xml).not.toContain('name="Recipes.Items"');
 	});
 });

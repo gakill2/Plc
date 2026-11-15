@@ -616,6 +616,7 @@
 					stl={project.stl}
 					hw={project.hw}
 					safety={project.safety?.program ?? ''}
+					variables={project.stResult?.variables ?? []}
 				/>
 			{:else if machine}
 				<OnCallPanel

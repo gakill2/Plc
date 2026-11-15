@@ -1003,6 +1003,57 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		checkIt
 	],
 
+	'recipe-db': [
+		{
+			text: 'Typ `Recipe` (`TYPE … STRUCT`) z polem `Name : STRING[16]`.',
+			done: (c) => /TYPE\s+Recipe\s*:/i.test(c.st ?? '') && /Name\s*:\s*STRING/i.test(c.st ?? '')
+		},
+		{
+			text: 'Blok danych `Recipes` z `Items : ARRAY[1..3] OF Recipe` (RETAIN) i `Active : Recipe`.',
+			done: (c) =>
+				/DATA_BLOCK\s+Recipes/i.test(c.st ?? '') &&
+				/Items\s*:\s*ARRAY\s*\[\s*1\s*\.\.\s*3\s*\]\s*OF\s+Recipe/i.test(c.st ?? '') &&
+				/Active\s*:\s*Recipe/i.test(c.st ?? '')
+		},
+		{
+			text: 'Receptury fabryczne w `OB100`, w tym `Krem`.',
+			done: (c) => /ORGANIZATION_BLOCK\s+OB100/i.test(c.st ?? '') && /'Krem'/.test(c.st ?? '')
+		},
+		{
+			text: 'Start kopiuje całą recepturę: `Recipes.Active := Recipes.Items[RecipeNo];`, kroki czytają `Recipes.Active`.',
+			done: (c) =>
+				/Recipes\.Active\s*:=\s*Recipes\.Items\s*\[/i.test(c.st ?? '') &&
+				/Recipes\.Active\.LevelA/i.test(c.st ?? '') &&
+				!/CASE\s+RecipeNo/i.test(c.st ?? '')
+		},
+		checkIt
+	],
+
+	'motion-pickplace': [
+		{
+			text: 'Osobne instancje `MC_MoveAbsolute` do odbioru (100 mm) i odkładania (800 mm), `Execute` z numeru kroku.',
+			done: (c) =>
+				((c.st ?? '').match(/:\s*MC_MoveAbsolute\s*;/gi) ?? []).length >= 2 &&
+				/800\.0/.test(c.st ?? '')
+		},
+		{
+			text: 'Chwytak: `Gripper := TRUE` w kroku chwytania, czekaj na `GripperClosed`, `FALSE` przy odkładaniu.',
+			done: (c) =>
+				/Gripper\s*:=\s*TRUE/i.test(c.st ?? '') &&
+				/GripperClosed/i.test(c.st ?? '') &&
+				/Gripper\s*:=\s*FALSE/i.test(c.st ?? '')
+		},
+		{
+			text: 'Stop: `MC_Stop` w osobnym kroku i wznowienie od zapamiętanego kroku.',
+			done: (c) => /:\s*MC_Stop\s*;/i.test(c.st ?? '') && /resume/i.test(c.st ?? '')
+		},
+		{
+			text: 'Błąd osi: krok błędu, `MC_Reset` z `Ack`, lampka `AxisFault`.',
+			done: (c) => /:\s*MC_Reset\s*;/i.test(c.st ?? '') && /AxisFault\s*:=/i.test(c.st ?? '')
+		},
+		checkIt
+	],
+
 	'std-motor': [
 		{
 			text: '`Ready := Permit AND NOT Interlock AND NOT Fault;` i kasowanie alarmu: `IF Ack AND NOT Run THEN Fault := FALSE; END_IF;`',

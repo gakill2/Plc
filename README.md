@@ -40,7 +40,7 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
   pusher, each with simple physics; connect one to any project.
-- **38 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
+- **40 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
   to a crane with an encoder, a PID-tuned oven, a remote I/O station and two-hand control. Your
   program runs against test cases in a headless PLC (or through the wired circuit); every lesson
   ships a reference solution that the test suite proves passes, plus a live step-by-step guide.
@@ -54,6 +54,19 @@ it and watch the controller execute your program scan by scan — or let it driv
   and the cabinet's I/O list. The rack sits between the plant and the PLC, so a wrong address or
   a 4–20 mA transmitter on a 0–10 V channel shows the same symptoms as on a real commissioning
   (32767, an offset zero, a dead output). Lesson: get a finished program running in a new cabinet.
+- **Motion control (PLCopen)** — a servo axis with a positioning drive: the PLCopen state machine
+  (Disabled, Standstill, Homing, Discrete / Continuous Motion, Stopping, ErrorStop), trapezoid
+  profiles, homing on a reference switch, software and hardware limits, following error, a
+  gripper with part handling. `MC_Power`, `MC_Home`, `MC_MoveAbsolute`, `MC_MoveRelative`,
+  `MC_MoveVelocity`, `MC_Stop`, `MC_Reset` and `MC_ReadActualPosition` in the standard library,
+  with Execute / Done / Busy / CommandAborted / Error handshakes. Lesson: a pick-and-place cycle
+  with a ramped stop and recovery from ErrorStop.
+- **Data blocks, UDTs and STRING** — `DATA_BLOCK Name VAR [RETAIN] … END_DATA_BLOCK` global data
+  blocks read as `Recipes.Items[2].Temp`, whole-structure copies (`Active := Items[n]`, also with a
+  computed index), `STRING[n]` with assignment, `=` / `<>` and `LEN()` (shown as text in the
+  variable view), start values loaded before OB100; exported to SCL as a global DB and to PLCopen
+  as a global variable list. Lesson: move the mixer recipes from a CASE into a DB and add a recipe
+  without touching the code.
 - **Alarm management (ISA-18.2)** — panel alarms with priorities 1–4, the operator's response,
   on / off delays, suppression by design (a state bit) and shelving; the list sorts by priority
   and the panel shows the KPIs: alarms per 10 minutes and floods, chattering, standing and

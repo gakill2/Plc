@@ -53,6 +53,31 @@ export function parse(src: string): ParseResult {
 		throw e;
 	}
 
+	// global data blocks: `Recipes.Speed` becomes one name, so a DB field behaves like a global
+	// variable (and `Recipes.Items[i].Temp` like an element of an array of structures)
+	const dbs = new Map<string, string>();
+	for (let i = 0; i + 1 < tokens.length; i++)
+		if (
+			tokens[i].kind === 'keyword' &&
+			tokens[i].text === 'DATA_BLOCK' &&
+			tokens[i + 1].kind === 'ident'
+		)
+			dbs.set(tokens[i + 1].text.toUpperCase(), tokens[i + 1].text);
+	if (dbs.size) {
+		const merged: Token[] = [];
+		for (let i = 0; i < tokens.length; i++) {
+			const t = tokens[i];
+			const db = t.kind === 'ident' ? dbs.get(t.text.toUpperCase()) : undefined;
+			const dot = tokens[i + 1];
+			const field = tokens[i + 2];
+			if (db && dot?.kind === 'op' && dot.text === '.' && field?.kind === 'ident') {
+				merged.push({ ...t, text: `${db}.${field.text}`, to: field.to });
+				i += 2;
+			} else merged.push(t);
+		}
+		tokens = merged;
+	}
+
 	let pos = 0;
 	const errors: StSyntaxError[] = [];
 
@@ -113,6 +138,8 @@ export function parse(src: string): ParseResult {
 				return { kind: 'number', value: t.value!, real: t.kind === 'real', from: t.from, to: t.to };
 			case 'time':
 				return { kind: 'time', value: t.value!, from: t.from, to: t.to };
+			case 'string':
+				return { kind: 'string', value: t.text, from: t.from, to: t.to };
 			case 'address':
 				return { kind: 'address', text: t.text, from: t.from, to: t.to };
 			case 'ident': {
@@ -449,8 +476,29 @@ export function parse(src: string): ParseResult {
 	};
 
 	/** `INT` or `ARRAY[1..10] OF INT`; the returned token is the element type */
-	function typeSpec(what: string): { type: Token; dims?: { low: number; high: number } } {
-		if (!isKw('ARRAY')) return { type: expectIdent(what) };
+	/** STRING or STRING[n] (default 16, at most 64 characters in the simulator) */
+	function stringLen(type: Token): number | undefined {
+		if (type.text.toUpperCase() !== 'STRING') return undefined;
+		if (!isOp('[')) return 16;
+		next();
+		const n = peek();
+		if (n.kind !== 'int' || n.value! < 1 || n.value! > 64)
+			fail('A STRING length is a number from 1 to 64, e.g. STRING[20]');
+		next();
+		expectOp(']');
+		return n.value!;
+	}
+
+	function typeSpec(what: string): {
+		type: Token;
+		dims?: { low: number; high: number };
+		strLen?: number;
+	} {
+		if (!isKw('ARRAY')) {
+			const type = expectIdent(what);
+			const strLen = stringLen(type);
+			return strLen ? { type, strLen } : { type };
+		}
 		const head = next();
 		expectOp('[');
 		const low = arrayBound();
@@ -461,8 +509,9 @@ export function parse(src: string): ParseResult {
 		expectKw('OF');
 		if (isKw('ARRAY')) fail('An array of arrays is not supported — use an array of a STRUCT');
 		const type = expectIdent('the element type, e.g. INT');
+		const strLen = stringLen(type);
 		if (high < low) fail(`The upper bound ${high} is below the lower bound ${low}`, head);
-		return { type, dims: { low, high } };
+		return { type, dims: { low, high }, ...(strLen ? { strLen } : {}) };
 	}
 
 	/** `:= value`, or `:= [1, 2, 3]` for an array */
@@ -530,7 +579,7 @@ export function parse(src: string): ParseResult {
 						at = a.text;
 					}
 					expectOp(':');
-					const { type, dims } = typeSpec('a type like BOOL, INT, REAL or TON');
+					const { type, dims, strLen } = typeSpec('a type like BOOL, INT, REAL or TON');
 					const { init, initList } = initial(!!dims);
 					expectOp(';');
 					if (at && more.length) fail('AT needs a single variable');
@@ -545,6 +594,7 @@ export function parse(src: string): ParseResult {
 							...(dims ? { dims } : {}),
 							...(initList ? { initList } : {}),
 							...(retain ? { retain } : {}),
+							...(strLen ? { strLen } : {}),
 							section,
 							from: n.from,
 							to: type.to
@@ -574,6 +624,21 @@ export function parse(src: string): ParseResult {
 		errors.push(e);
 	};
 
+	/** DATA_BLOCK Name  VAR [RETAIN] … END_VAR  END_DATA_BLOCK — a global data block. */
+	function dataBlock(): VarDecl[] {
+		next(); // DATA_BLOCK
+		const name = expectIdent('the name of the data block');
+		const fields = varBlocks(['VAR']).map((d) => {
+			const out: VarDecl & { section?: string } = { ...d, name: `${name.text}.${d.name}` };
+			delete out.section;
+			return out as VarDecl;
+		});
+		if (!fields.length) fail(`DATA_BLOCK ${name.text} needs a VAR … END_VAR block with its fields`);
+		expectKw('END_DATA_BLOCK');
+		optionalSemicolon();
+		return fields;
+	}
+
 	function typeBlock(): StructType[] {
 		next(); // TYPE
 		const out: StructType[] = [];
@@ -586,7 +651,7 @@ export function parse(src: string): ParseResult {
 				while (!isKw('END_STRUCT') && peek().kind !== 'eof') {
 					const f = expectIdent('a field name');
 					expectOp(':');
-					const { type, dims } = typeSpec('a field type');
+					const { type, dims, strLen } = typeSpec('a field type');
 					const { init, initList } = initial(!!dims);
 					expectOp(';');
 					fields.push({
@@ -597,6 +662,7 @@ export function parse(src: string): ParseResult {
 						init,
 						...(dims ? { dims } : {}),
 						...(initList ? { initList } : {}),
+						...(strLen ? { strLen } : {}),
 						from: f.from,
 						to: type.to
 					});
@@ -668,9 +734,11 @@ export function parse(src: string): ParseResult {
 
 	const types: StructType[] = [];
 	const pous: Pou[] = [];
-	while (isKw('TYPE') || isKw('FUNCTION_BLOCK') || isKw('FUNCTION')) {
+	const dbVars: VarDecl[] = [];
+	while (isKw('TYPE') || isKw('FUNCTION_BLOCK') || isKw('FUNCTION') || isKw('DATA_BLOCK')) {
 		try {
 			if (isKw('TYPE')) types.push(...typeBlock());
+			else if (isKw('DATA_BLOCK')) dbVars.push(...dataBlock());
 			else pous.push(pou());
 		} catch (e) {
 			recover(e);
@@ -713,7 +781,7 @@ export function parse(src: string): ParseResult {
 		if (peek().kind === 'ident') next();
 		wrapped = true;
 	}
-	const vars = varBlocks().map((d) => {
+	const vars = [...dbVars, ...varBlocks()].map((d) => {
 		const out: VarDecl & { section?: string } = { ...d };
 		delete out.section;
 		return out as VarDecl;

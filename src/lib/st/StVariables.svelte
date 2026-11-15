@@ -3,7 +3,7 @@
 	import { parseAddress } from '#lib/engine/index.js';
 	import type { RuntimeSnapshot } from '#lib/runtime/protocol.js';
 	import { readBit, readNumber } from '#lib/runtime/read.js';
-	import type { StVariable } from './compiler.js';
+	import { stringValue, type StVariable } from './compiler.js';
 
 	type Props = { variables: StVariable[]; snapshot: RuntimeSnapshot | null; online: boolean };
 	let { variables, snapshot, online }: Props = $props();
@@ -30,24 +30,37 @@
 		<table class="w-full text-left text-xs">
 			<tbody>
 				{#each variables as v (v.name)}
-					{#each v.reads as r, i (r.label)}
+					{#if v.type === 'STRING'}
 						<tr class="border-b border-slate-800/70">
-							<td class="py-1 pr-2 font-mono text-slate-200">
-								{i === 0 ? v.name : ''}{r.label ? `.${r.label}` : ''}
-							</td>
-							<td class="pr-2 text-[10px] text-slate-500">{i === 0 ? v.type : ''}</td>
-							<td class="pr-2 font-mono text-[10px] text-sky-300/70">{r.address}</td>
-							<td
-								class="text-right font-mono {show(r) === 'TRUE'
-									? 'text-emerald-300'
-									: show(r) === 'FALSE'
-										? 'text-slate-500'
-										: 'text-amber-300'}"
-							>
-								{show(r)}
+							<td class="py-1 pr-2 font-mono text-slate-200">{v.name}</td>
+							<td class="pr-2 text-[10px] text-slate-500">STRING[{v.reads.length - 1}]</td>
+							<td class="pr-2 font-mono text-[10px] text-sky-300/70">{v.reads[0]?.address}</td>
+							<td class="text-right font-mono text-amber-300">
+								{snapshot && online
+									? `'${stringValue(v, (r) => readNumber(snapshot, parseAddress(r.address)))}'`
+									: '—'}
 							</td>
 						</tr>
-					{/each}
+					{:else}
+						{#each v.reads as r, i (r.label)}
+							<tr class="border-b border-slate-800/70">
+								<td class="py-1 pr-2 font-mono text-slate-200">
+									{i === 0 ? v.name : ''}{r.label ? `.${r.label}` : ''}
+								</td>
+								<td class="pr-2 text-[10px] text-slate-500">{i === 0 ? v.type : ''}</td>
+								<td class="pr-2 font-mono text-[10px] text-sky-300/70">{r.address}</td>
+								<td
+									class="text-right font-mono {show(r) === 'TRUE'
+										? 'text-emerald-300'
+										: show(r) === 'FALSE'
+											? 'text-slate-500'
+											: 'text-amber-300'}"
+								>
+									{show(r)}
+								</td>
+							</tr>
+						{/each}
+					{/if}
 				{/each}
 			</tbody>
 		</table>

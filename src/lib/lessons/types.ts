@@ -23,6 +23,8 @@ export interface TestContext {
 	alarms: AlarmLog;
 	/** the alarm definitions of the project's panel */
 	alarmDefs: readonly AlarmDef[];
+	/** a variable of the ST program by name (a DB field, a STRING …), null if unknown */
+	value(name: string): boolean | number | string | null;
 }
 
 /** A failing check returns a message for the student, a passing one returns null. */
@@ -37,6 +39,8 @@ export interface LessonStep {
 	 * Commissioning lessons: operate devices of the circuit by label (press S1, trip K1 …).
 	 * Values stay until changed by a later step.
 	 */
+	/** write variables of the program, like an operator on a recipe screen: `{ 'Recipes.Items[2].Temp': 520 }` */
+	vars?: Record<string, number>;
 	/** faults of field devices from this step on (a wire break, a welded contact …) */
 	deviceFaults?: Fault[];
 	actuate?: Record<string, boolean>;

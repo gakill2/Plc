@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AxisView from './AxisView.svelte';
 	import { t, type MessageKey } from '#lib/i18n/i18n.svelte.js';
 	import type { PlcRuntime } from '#lib/runtime/runtime.svelte.js';
 	import ConveyorView from './ConveyorView.svelte';
@@ -51,6 +52,8 @@
 	<PneumaticView {state} {command} online={runtime.status === 'RUN'} />
 {:else if state.kind === 'mixer'}
 	<MixerView {state} {command} online={runtime.status === 'RUN'} />
+{:else if state.kind === 'axis'}
+	<AxisView {state} {command} online={runtime.status === 'RUN'} />
 {:else if state.kind === 'crane'}
 	<CraneView {state} {command} online={runtime.status === 'RUN'} />
 {:else}

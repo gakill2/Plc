@@ -45,6 +45,7 @@ const parser: StreamParser<{ comment: boolean; afterDot: boolean }> = {
 		const afterDot = state.afterDot;
 		state.afterDot = false;
 
+		if (stream.match(/^'(?:''|\$.|[^'])*'/)) return 'string';
 		if (stream.match(/^(TIME|T)#[\d._a-z]+/i) || stream.match(/^(2|8|16)#[0-9a-f_]+/i))
 			return 'number';
 		if (stream.match(/^\d[\d_]*(\.(?!\.)\d[\d_]*)?([eE][+-]?\d+)?/)) return 'number';

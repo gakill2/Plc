@@ -1,6 +1,7 @@
 import { parseTime } from '#lib/engine/index.js';
 
-export type TokenKind = 'ident' | 'address' | 'int' | 'real' | 'time' | 'keyword' | 'op' | 'eof';
+export type TokenKind =
+	'ident' | 'address' | 'int' | 'real' | 'time' | 'string' | 'keyword' | 'op' | 'eof';
 
 export interface Token {
 	kind: TokenKind;
@@ -46,6 +47,8 @@ export const KEYWORDS = new Set([
 	'END_ORGANIZATION_BLOCK',
 	'F_PROGRAM',
 	'END_F_PROGRAM',
+	'DATA_BLOCK',
+	'END_DATA_BLOCK',
 	'END_VAR',
 	'AT',
 	'IF',
@@ -134,6 +137,26 @@ export function tokenize(src: string): Token[] {
 		}
 
 		const start = i;
+
+		// string literal: 'Krem', with '' or $' for a quote inside
+		if (c === "'") {
+			let j = i + 1;
+			let text = '';
+			while (j < src.length && src[j] !== '\n') {
+				if (src[j] === "'" && src[j + 1] === "'") {
+					text += "'";
+					j += 2;
+				} else if (src[j] === '$' && j + 1 < src.length) {
+					text += src[j + 1];
+					j += 2;
+				} else if (src[j] === "'") break;
+				else text += src[j++];
+			}
+			if (src[j] !== "'") throw new StSyntaxError("String is not closed with '", start, j);
+			i = j + 1;
+			tokens.push({ kind: 'string', text, from: start, to: i });
+			continue;
+		}
 
 		// time literal: T#1s, TIME#1m30s, t#1s_500ms
 		const time = /^(?:TIME|T)#[\d._a-z]+/i.exec(src.slice(i));
