@@ -1,3 +1,5 @@
+import type { AlarmLog } from '#lib/hmi/alarms.js';
+import type { AlarmDef } from '#lib/hmi/model.js';
 import type { Fault } from '#lib/circuit/model.js';
 import type { Hardware } from '#lib/hw/hw.js';
 import type { Plc } from '#lib/engine/index.js';
@@ -17,6 +19,10 @@ export interface TestContext {
 	out(terminal: string): boolean;
 	/** A device of the circuit by its label (commissioning lessons): is it on, how fast. */
 	device(label: string): { on: boolean; hz: number } | null;
+	/** the operator panel's alarm log, evaluated after every scan (lessons with an HMI) */
+	alarms: AlarmLog;
+	/** the alarm definitions of the project's panel */
+	alarmDefs: readonly AlarmDef[];
 }
 
 /** A failing check returns a message for the student, a passing one returns null. */

@@ -3,7 +3,7 @@
 	import type { RuntimeSnapshot } from '#lib/runtime/protocol.js';
 	import { readBit, readNumber } from '#lib/runtime/read.js';
 	import type { SymbolMap } from '#lib/symbols/symbols.js';
-	import { activeAlarms, alarmState, formatTime, type AlarmLog } from './alarms.js';
+	import { activeAlarms, alarmState, alarmStats, formatTime, type AlarmLog } from './alarms.js';
 	import {
 		alarm,
 		HMI_HEIGHT,
@@ -29,8 +29,21 @@
 		log: AlarmLog;
 		onWrite: (address: string, value: number) => void;
 		onAck: (seqs?: number[]) => void;
+		/** the operator shelves an alarm for a while */
+		onShelve?: (defId: string) => void;
 	};
-	let { hmi, symbols, names, snapshot, online, log, onWrite, onAck }: Props = $props();
+	let { hmi, symbols, names, snapshot, online, log, onWrite, onAck, onShelve }: Props = $props();
+
+	/* ---------- alarm management (ISA-18.2) ---------- */
+	const PRIORITY_STYLE: Record<number, string> = {
+		1: 'bg-red-600 text-white',
+		2: 'bg-orange-500 text-white',
+		3: 'bg-yellow-300 text-slate-900',
+		4: 'bg-sky-200 text-slate-900'
+	};
+	const stats = $derived(alarmStats(log, snapshot?.timeMs ?? 0));
+	const alarmText = (id: string) => hmi.alarms.find((a) => a.id === id)?.text ?? id;
+	const seconds = (ms: number | undefined) => (ms ? ms / 1000 : 0);
 
 	const editing = $derived(!online);
 	let selectedId = $state<string | null>(null);
@@ -365,9 +378,28 @@
 														: 'text-red-800'
 													: 'text-amber-800'} {e.acked === null ? 'font-semibold' : ''}"
 											>
+												<span
+													class="h-fit rounded px-1 font-mono text-[10px] {PRIORITY_STYLE[
+														e.priority
+													]}"
+													title="Priorytet {e.priority}">P{e.priority}</span
+												>
 												<span class="font-mono">{formatTime(e.came)}</span>
 												<span class="w-7 font-mono">{alarmState(e)}</span>
-												<span class="flex-1">{e.text}</span>
+												<span class="flex-1">
+													{e.text}
+													{#if e.action}<span class="block text-[10px] font-normal opacity-75"
+															>→ {e.action}</span
+														>{/if}
+												</span>
+												{#if onShelve && !editing && e.gone === null}
+													<button
+														class="h-fit rounded border border-slate-300 px-1 text-[10px] text-slate-600 hover:bg-slate-100"
+														title="Odłóż alarm na 10 min (shelving)"
+														aria-label="Odłóż {e.text}"
+														onclick={() => onShelve(e.defId)}>⏸</button
+													>
+												{/if}
 											</div>
 										{:else}
 											<div class="px-2 py-1 text-slate-400">Brak aktywnych alarmów</div>
@@ -538,6 +570,49 @@
 							disabled={!editing}
 							aria-label="Tekst alarmu"
 						/>
+						<input
+							class={field}
+							placeholder="co ma zrobić operator"
+							bind:value={a.action}
+							disabled={!editing}
+							aria-label="Reakcja operatora {a.text}"
+						/>
+						<div class="grid grid-cols-2 gap-1">
+							<label class="text-[10px] text-slate-500"
+								>opóźnienie przyjścia [s]
+								<input
+									type="number"
+									min="0"
+									step="0.5"
+									class={field}
+									value={seconds(a.onDelayMs)}
+									disabled={!editing}
+									aria-label="Opóźnienie przyjścia {a.text}"
+									oninput={(e) => (a.onDelayMs = Number(e.currentTarget.value) * 1000)}
+								/>
+							</label>
+							<label class="text-[10px] text-slate-500"
+								>opóźnienie odejścia [s]
+								<input
+									type="number"
+									min="0"
+									step="0.5"
+									class={field}
+									value={seconds(a.offDelayMs)}
+									disabled={!editing}
+									aria-label="Opóźnienie odejścia {a.text}"
+									oninput={(e) => (a.offDelayMs = Number(e.currentTarget.value) * 1000)}
+								/>
+							</label>
+						</div>
+						<input
+							class="{field} font-mono"
+							list="hmi-tags"
+							placeholder="tłumienie, gdy bit = 1 (np. maszyna stoi)"
+							bind:value={a.suppressTag}
+							disabled={!editing}
+							aria-label="Tłumienie {a.text}"
+						/>
 						<div class="flex items-center gap-2">
 							<select
 								class="{field} w-auto"
@@ -547,6 +622,18 @@
 							>
 								<option value="alarm">alarm (czerwony)</option>
 								<option value="warning">ostrzeżenie (żółte)</option>
+							</select>
+							<select
+								class="{field} w-auto"
+								value={a.priority ?? (a.kind === 'alarm' ? 2 : 3)}
+								disabled={!editing}
+								aria-label="Priorytet alarmu {a.text}"
+								onchange={(e) => (a.priority = Number(e.currentTarget.value) as 1 | 2 | 3 | 4)}
+							>
+								<option value={1}>P1 krytyczny</option>
+								<option value={2}>P2 wysoki</option>
+								<option value={3}>P3 średni</option>
+								<option value={4}>P4 niski</option>
 							</select>
 							{#if editing}
 								<button
@@ -574,6 +661,33 @@
 						disabled={!editing}
 					/>
 				</label>
+				<h3 class="pt-2 font-semibold text-slate-300">Wskaźniki alarmów (ISA-18.2)</h3>
+				<dl
+					class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]"
+					aria-label="Wskaźniki alarmów"
+				>
+					<dt class="text-slate-500">alarmów / 10 min</dt>
+					<dd class={stats.flood ? 'font-semibold text-red-300' : 'text-slate-200'}>
+						{stats.rate}{stats.flood ? ' — powódź alarmów' : ''}
+					</dd>
+					<dt class="text-slate-500">migające</dt>
+					<dd class={stats.chattering.length ? 'text-amber-300' : 'text-slate-400'}>
+						{stats.chattering.map(alarmText).join(', ') || '—'}
+					</dd>
+					<dt class="text-slate-500">stojące</dt>
+					<dd class={stats.standing.length ? 'text-amber-300' : 'text-slate-400'}>
+						{stats.standing.map(alarmText).join(', ') || '—'}
+					</dd>
+					<dt class="text-slate-500">odłożone</dt>
+					<dd class="text-slate-400">{stats.shelved.map(alarmText).join(', ') || '—'}</dd>
+					<dt class="text-slate-500">najczęstsze</dt>
+					<dd class="text-slate-400">
+						{stats.top
+							.slice(0, 3)
+							.map((x) => `${alarmText(x.defId)} ×${x.count}`)
+							.join(', ') || '—'}
+					</dd>
+				</dl>
 				<h3 class="pt-2 font-semibold text-slate-300">Historia</h3>
 				<div class="max-h-60 space-y-0.5 overflow-auto font-mono text-[11px]">
 					{#each log.entries as e (e.seq)}

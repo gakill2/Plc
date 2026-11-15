@@ -1,6 +1,7 @@
 import type { AiMode, Hardware } from '#lib/hw/hw.js';
 import { sfcStep, sfcTransition, type Sfc } from '#lib/sfc/sfc.js';
-import { widget } from '#lib/hmi/model.js';
+import { priorityOf, widget, type AlarmDef, type Hmi } from '#lib/hmi/model.js';
+import { alarmStats } from '#lib/hmi/alarms.js';
 import { parseAddress } from '#lib/engine/index.js';
 import { box as fbdBox, fbdNetwork, operand } from '#lib/fbd/fbd.js';
 import { device, DEVICES, type Circuit, type Device, type DeviceType } from '#lib/circuit/model.js';
@@ -33,7 +34,7 @@ import type {
 	TankState
 } from '#lib/processes/types.js';
 import { plantInfo } from '#lib/processes/plants.js';
-import type { Check, Lesson, LessonStep } from './types.js';
+import type { Check, Lesson, LessonStep, TestContext } from './types.js';
 
 /* ---------- helpers to build lesson projects ---------- */
 
@@ -878,6 +879,109 @@ const press = (label: string): LessonStep[] => [
 	{ label: `${label}`, actuate: { [label]: true }, wait: 100 },
 	{ label: `puść ${label}`, actuate: { [label]: false }, wait: 100 }
 ];
+
+/* ---------- alarm management: the MX2 panel floods the operator ---------- */
+
+const ALARM_PROGRAM = `${CAPSTONE_SOLUTION}
+// sygnały dla panelu (dopisane przy rozruchu)
+LevelHigh := Level > 22118;
+StirrerOff := NOT Stirrer;
+ValveBClosed := NOT ValveB;
+NotMixing := NOT (run AND (step = 30 OR step = 40));
+`;
+
+function alarmPanel(good: boolean): Hmi {
+	const a = (id: string, tag: string, text: string, extra: Partial<AlarmDef> = {}): AlarmDef => ({
+		id,
+		tag,
+		text,
+		kind: 'alarm',
+		...(good ? extra : { priority: 1 })
+	});
+	const all = [
+		a('a1', 'LevelHigh', 'Poziom powyżej 80 %', {
+			kind: 'warning',
+			priority: 4,
+			onDelayMs: 5000,
+			offDelayMs: 2000,
+			action: 'Sprawdź, czy zawór B się zamknął'
+		}),
+		a('a2', 'StirrerOff', 'Mieszadło nie pracuje', {
+			priority: 3,
+			suppressTag: 'NotMixing',
+			action: 'Sprawdź zabezpieczenie silnika mieszadła -Q1'
+		}),
+		a('a3', 'ValveBClosed', 'Zawór B zamknięty'),
+		a('a4', 'AlmLevel', 'Przetwornik poziomu: zerwany przewód', {
+			priority: 1,
+			action: 'Partia wstrzymana — sprawdź przewód -B1, potem ACK'
+		}),
+		a('a5', 'AlmOverfill', 'Zbiornik przepełniony (wyłącznik HH)', {
+			priority: 1,
+			action: 'Nie otwieraj zaworów; sprawdź zawory A i B'
+		}),
+		a('a6', 'AlmHeating', 'Grzanie trwa ponad 120 s', {
+			priority: 2,
+			action: 'Sprawdź grzałkę -K2 i bezpieczniki -F3'
+		}),
+		a('a7', 'AlmRecipe', 'Zły numer receptury', {
+			kind: 'warning',
+			priority: 4,
+			action: 'Wybierz recepturę 1 albo 2'
+		})
+	];
+	return {
+		widgets: [
+			widget('input', 20, 20, { tag: 'RecipeNo', text: 'Receptura' }),
+			widget('bar', 220, 20, { tag: 'Level', text: 'Poziom', min: 0, max: 27648 }),
+			widget('alarms', 20, 200)
+		],
+		alarms: good ? all.filter((x) => x.tag !== 'ValveBClosed') : all,
+		ackTag: ''
+	};
+}
+
+const alarmsOf = (c: TestContext, tag: string) => {
+	const def = c.alarmDefs.find((d) => d.tag.toUpperCase() === tag.toUpperCase());
+	return def ? c.alarms.entries.filter((e) => e.defId === def.id) : [];
+};
+
+/** No alarm at all in a normal batch — every alarm on the panel must mean "act now". */
+const noAlarms: Check = (c) => {
+	const n = c.alarms.entries.length;
+	if (!n) return null;
+	const stats = alarmStats(c.alarms, c.plc.timeMs);
+	const top = stats.top
+		.slice(0, 3)
+		.map((t) => `${c.alarmDefs.find((d) => d.id === t.defId)?.text ?? t.defId} ×${t.count}`)
+		.join(', ');
+	return `w normalnej partii przyszło ${n} alarmów (${top}) — operator przestanie je czytać`;
+};
+
+const alarmCame =
+	(tag: string, maxPriority: number): Check =>
+	(c) => {
+		const e = alarmsOf(c, tag)[0];
+		if (!e) return `nie ma alarmu dla ${tag}`;
+		if (e.priority > maxPriority)
+			return `alarm „${e.text}” ma priorytet ${e.priority}, a powinien mieć co najmniej ${maxPriority}`;
+		return e.action ? null : `alarm „${e.text}” nie mówi operatorowi, co robić`;
+	};
+
+const rationalized: Check = (c) => {
+	const defs = c.alarmDefs;
+	const missing = defs.filter((d) => !d.action?.trim());
+	if (missing.length) return `bez reakcji operatora: ${missing.map((d) => d.text).join(', ')}`;
+	const p1 = defs.filter((d) => priorityOf(d) === 1);
+	if (p1.length > 2)
+		return `${p1.length} alarmy z priorytetem 1 — gdy wszystko jest pilne, nic nie jest`;
+	const overfill = defs.find((d) => d.tag.toUpperCase() === 'ALMOVERFILL');
+	if (!overfill || priorityOf(overfill) !== 1)
+		return 'przepełnienie zbiornika musi mieć priorytet 1';
+	if (defs.some((d) => d.tag.toUpperCase() === 'VALVEBCLOSED'))
+		return '„Zawór B zamknięty” to stan, nie alarm — operator nie ma nic do zrobienia';
+	return null;
+};
 
 /** The filtered value in MW20 is close to the real temperature. */
 const avgNear =
@@ -4397,6 +4501,109 @@ export const LESSONS: Lesson[] = [
 					{ label: 'po 1 s', wait: 1000, expect: { 'Q8.0': false } },
 					...press('Start'),
 					{ label: 'Start', wait: 300, expect: { 'Q8.0': false } }
+				]
+			}
+		]
+	},
+	{
+		slug: 'alarm-flood',
+		title: 'Zarządzanie alarmami: powódź alarmów na panelu MX2',
+		level: 'process',
+		scenario: 'mixer',
+		realism: true,
+		summary:
+			'Operator dostaje kilkadziesiąt alarmów na partię i przestał je czytać. Zracjonalizuj listę według ISA-18.2: priorytety, reakcje, opóźnienia, tłumienie — tak, żeby normalna partia nie dała żadnego alarmu.',
+		instructions: [
+			'Program mieszalnika działa (to Twój projekt końcowy), ale przy rozruchu ktoś dopisał „na wszelki wypadek” kilka alarmów i dał wszystkim **priorytet 1**. Uruchom partię (receptura 1 w polu na panelu, Start) i popatrz w widoku **HMI** na listę i **wskaźniki alarmów**: alarmy migają, stoją godzinami, a prawdziwy alarm ginie w tłumie.',
+			'**Zasada ISA-18.2:** alarm to sytuacja, w której operator **musi coś zrobić**. Stan maszyny („zawór zamknięty”) to nie alarm — usuń go. Każdy alarm ma **reakcję operatora** (pole „co ma zrobić operator”).',
+			'**Migający alarm** (szum na granicy progu): opóźnienie przyjścia i odejścia (kilka sekund). **Stojący alarm** (prawdziwy, ale nieistotny w danym stanie — mieszadło stoi, bo nie ma mieszać): **tłumienie projektowe** bitem stanu `NotMixing`.',
+			'**Priorytety:** najwyżej 2 alarmy z P1 (natychmiast) — przepełnienie zbiornika musi być P1. Zerwany przewód poziomu P1, grzanie za długo co najmniej P2, ostrzeżenia P3–P4. Program sterownika zostaw bez zmian — zmieniasz tylko alarmy na panelu.'
+		],
+		hints: [
+			'„Poziom powyżej 80 %”: opóźnienie przyjścia 5 s, odejścia 2 s, priorytet P4. „Zawór B zamknięty”: usuń.',
+			'„Mieszadło nie pracuje”: tłumienie `NotMixing`, priorytet P3. Wpisz reakcję przy każdym alarmie, np. „Sprawdź przewód -B1, potem ACK”.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'alarm-flood',
+			scenario: 'mixer',
+			language: 'st',
+			st: ALARM_PROGRAM,
+			ladder: { version: 1, rungs: [] },
+			hmi: alarmPanel(false),
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I1.1', { color: 'red', nc: true }],
+				['pushbutton', 'Ack', 'I1.2'],
+				['lamp', 'Alarm', 'Q1.0', { color: 'red' }]
+			]),
+			symbols: [
+				...(plantInfo('mixer')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+				symbol('RecipeNo', 'MW30', 'Numer receptury z panelu (1, 2)'),
+				symbol('BatchCount', 'MW40', 'Liczba partii (RETAIN)'),
+				symbol('AlmLevel', 'M20.0', 'Alarm: przetwornik poziomu'),
+				symbol('AlmOverfill', 'M20.1', 'Alarm: przepełnienie (LevelOk)'),
+				symbol('AlmHeating', 'M20.2', 'Alarm: grzanie > 120 s'),
+				symbol('AlmRecipe', 'M20.3', 'Alarm: zła receptura'),
+				symbol('LevelHigh', 'M21.0', 'Poziom > 80 %'),
+				symbol('StirrerOff', 'M21.1', 'Mieszadło wyłączone'),
+				symbol('ValveBClosed', 'M21.2', 'Zawór B zamknięty'),
+				symbol('NotMixing', 'M21.3', '1 = sekwencja nie jest w kroku grzania / mieszania')
+			],
+			watch: [
+				watchEntry('Level', 'DEC', true),
+				watchEntry('LevelHigh', undefined, true),
+				watchEntry('NotMixing', undefined, true)
+			]
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: ALARM_PROGRAM,
+		solutionHmi: () => alarmPanel(true),
+		tests: [
+			{
+				name: 'Racjonalizacja: reakcje, priorytety, żadnych stanów jako alarmów',
+				steps: [{ label: 'lista alarmów', wait: 10, check: rationalized }]
+			},
+			{
+				name: 'Normalna partia: ani jednego alarmu',
+				steps: [
+					{ label: 'receptura 1', set: { 'I1.1': true }, hmi: { MW30: 1 }, wait: 200 },
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'puść, 110 s', set: { 'I1.0': false }, wait: 110_000, check: mixerOk(1) },
+					{ label: 'alarmy', wait: 0, check: noAlarms }
+				]
+			},
+			{
+				name: 'Zerwany przewód poziomu: alarm P1 z reakcją w ciągu 2 s',
+				steps: [
+					{ label: 'receptura 1', set: { 'I1.1': true }, hmi: { MW30: 1 }, wait: 200 },
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'dozowanie, 12 s', set: { 'I1.0': false }, wait: 12_000 },
+					{
+						label: 'przewód -B1 zerwany, 2 s',
+						fieldFaults: { IW4: 'wireBreak' },
+						wait: 2000,
+						check: alarmCame('AlmLevel', 1)
+					}
+				]
+			},
+			{
+				name: 'Uszkodzona grzałka: alarm co najmniej P2',
+				steps: [
+					{
+						label: 'grzałka uszkodzona, receptura 1',
+						set: { 'I1.1': true },
+						hmi: { MW30: 1 },
+						plantFaults: { heaterDead: true },
+						wait: 200
+					},
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{
+						label: 'po 160 s',
+						set: { 'I1.0': false },
+						wait: 160_000,
+						check: alarmCame('AlmHeating', 2)
+					}
 				]
 			}
 		]

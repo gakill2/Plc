@@ -40,7 +40,7 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
   pusher, each with simple physics; connect one to any project.
-- **37 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
+- **38 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
   to a crane with an encoder, a PID-tuned oven, a remote I/O station and two-hand control. Your
   program runs against test cases in a headless PLC (or through the wired circuit); every lesson
   ships a reference solution that the test suite proves passes, plus a live step-by-step guide.
@@ -54,6 +54,11 @@ it and watch the controller execute your program scan by scan — or let it driv
   and the cabinet's I/O list. The rack sits between the plant and the PLC, so a wrong address or
   a 4–20 mA transmitter on a 0–10 V channel shows the same symptoms as on a real commissioning
   (32767, an offset zero, a dead output). Lesson: get a finished program running in a new cabinet.
+- **Alarm management (ISA-18.2)** — panel alarms with priorities 1–4, the operator's response,
+  on / off delays, suppression by design (a state bit) and shelving; the list sorts by priority
+  and the panel shows the KPIs: alarms per 10 minutes and floods, chattering, standing and
+  shelved alarms, the bad actors. A chapter on ISA-18.2 and ISA-101 screens; lesson: rationalize
+  a flooded panel so a normal batch raises no alarm while real faults come with P1 and a response.
 - **Safety PLC (F-CPU)** — a separate safety program in restricted ST (no loops, CASE, arrays,
   REAL) that runs first in every cycle, two-channel fail-safe inputs with a discrepancy time,
   passivation and reintegration, the F-instructions `ESTOP1` and `FDBACK`, fail-safe outputs the

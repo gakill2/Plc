@@ -186,6 +186,16 @@ export const EN_TITLES: Record<string, { title: string; summary: string }> = {
 		summary:
 			'Operators want to run the motor from the panel — without breaking the cabinet buttons.'
 	},
+	'chapter:alarmy-hmi': {
+		title: 'Alarms and screens that help: ISA-18.2 and ISA-101',
+		summary:
+			'Why 200 alarms a shift is no alarm at all: priorities, rationalization, chattering and standing alarms, suppression — and how to design HMI screens.'
+	},
+	'lesson:alarm-flood': {
+		title: 'Alarm management: an alarm flood on the MX2 panel',
+		summary:
+			'The operator gets dozens of alarms per batch and stopped reading them. Rationalize the list per ISA-18.2 — priorities, responses, delays, suppression — so a normal batch raises none.'
+	},
 	'chapter:uruchomienie': {
 		title: 'Commissioning a machine',
 		summary: 'Signal tests, typical wiring faults and how to find them before the machine moves.'

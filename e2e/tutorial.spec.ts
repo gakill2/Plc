@@ -19,7 +19,7 @@ test('tutorial: simulator, quiz and progress', async ({ page }) => {
 	await expect(page.getByText('Dobrze!')).toBeVisible();
 
 	await page.goto('/learn/basics', { waitUntil: 'networkidle' });
-	await expect(page.getByText(/done:\s*1 \/ 32/)).toBeVisible();
+	await expect(page.getByText(/done:\s*1 \/ 33/)).toBeVisible();
 });
 
 test('glossary search', async ({ page }) => {

@@ -1744,6 +1744,80 @@ Alarm znika z listy dopiero, gdy ustąpił **i** został pokwitowany — dzięki
 		]
 	},
 
+	/* ------------------------------------------------------------------ alarmy ISA-18.2 */
+	{
+		slug: 'alarmy-hmi',
+		title: 'Alarmy i ekrany, które pomagają: ISA-18.2 i ISA-101',
+		summary:
+			'Dlaczego 200 alarmów na zmianę to żaden alarm: priorytety, racjonalizacja, migające i stojące alarmy, tłumienie — i jak projektować ekrany HMI.',
+		minutes: 12,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Po wielu awariach w przemyśle procesowym (np. rafineria w Milford Haven, 1994: 275 alarmów w ostatnich 11 minutach przed wybuchem) powstały zasady **zarządzania alarmami** — **ISA-18.2** (IEC 62682) i **EEMUA 191**. Najważniejsza: **alarm to sygnał, że operator musi coś zrobić teraz.** Wszystko inne to informacja albo zdarzenie.
+
+**Racjonalizacja** — dla każdego alarmu zapisuje się w bazie alarmów: przyczynę, skutek, czas na reakcję, **reakcję operatora** i **priorytet**. Jeśli nie ma reakcji, to nie jest alarm.
+
+**Priorytety** wynikają ze skutku i czasu na reakcję, a nie z „ważności” sygnału. Typowy rozkład w zakładzie: ok. **5 % wysokich, 15 % średnich, 80 % niskich**. Gdy wszystko ma priorytet 1, operator i tak sam zgaduje kolejność.
+
+**Wskaźniki** (zalecenia ISA-18.2 / EEMUA):
+- średnio **ok. 1 alarm na 10 minut** na operatora jest do opanowania, **ponad 10 w 10 minut to powódź alarmów**,
+- **alarmy migające** (*chattering*) — przychodzą i odchodzą co chwilę, zwykle szum na granicy progu,
+- **alarmy stojące** (*standing / stale*) — aktywne godzinami, bo w danym stanie maszyny są „normalne”,
+- **najczęstsze alarmy** (*bad actors*) — zwykle 10 alarmów robi większość całego ruchu.`
+			},
+			{
+				kind: 'text',
+				text: `**Narzędzia przeciw alarmom-szkodnikom:**
+- **opóźnienie przyjścia / odejścia** (*on/off delay*) i **histereza** na progu analogowym — przeciw miganiu,
+- **tłumienie projektowe** (*state-based suppression*) — „brak przepływu” nie jest alarmem, gdy pompa ma stać; warunek bierze się ze stanu sekwencji,
+- **odkładanie** (*shelving*) — operator odkłada alarm na określony czas (np. czujnik w naprawie). Odłożenie jest logowane i samo wygasa,
+- **first-out** — przy kaskadzie wyłączeń pokazuje się, który alarm był pierwszy (przyczyna), a reszta to skutki.
+
+**Ekrany według ISA-101** (*High Performance HMI*):
+- tło i urządzenia **szare**, kolor tylko dla **stanu nienormalnego** — czerwony jest zarezerwowany dla alarmów, więc pompa w ruchu nie świeci na czerwono ani na zielono,
+- **hierarchia ekranów**: poziom 1 — przegląd całego obszaru, 2 — sterowanie jednostką, 3 — szczegóły urządzenia, 4 — diagnostyka,
+- wartości analogowe jako **wskaźnik z zakresem i granicami alarmowymi**, nie gołe liczby — od razu widać, czy 73 °C to dobrze,
+- bez animacji 3D, ruchomych pomp i ozdobników. Operator ma zauważyć anomalię w kilka sekund.
+
+W PLC Sim każdy alarm panelu ma **priorytet, reakcję operatora, opóźnienia i bit tłumienia**, lista sortuje się według priorytetu, a widok HMI liczy wskaźniki: alarmy na 10 minut, migające, stojące, odłożone i najczęstsze.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Alarm „Brak przepływu w pompie P2” jest aktywny przez całą noc, bo linia stoi. Co z nim zrobić?',
+				options: [
+					'Dać mu niższy priorytet',
+					'Tłumić go projektowo, gdy pompa nie ma pracować (stan linii), zostawiając alarm, gdy pompa powinna tłoczyć',
+					'Usunąć — skoro zawsze jest aktywny, to nie jest ważny',
+					'Kazać operatorowi go kwitować co godzinę'
+				],
+				correct: 1,
+				explanation:
+					'To alarm stojący: prawdziwy warunek, ale nieistotny w tym stanie. Tłumienie zależne od stanu usuwa go z listy tylko wtedy, gdy nie wymaga reakcji.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Na nowym ekranie wszystkie pracujące silniki są zielone, zatrzymane czerwone. Co mówi ISA-101?',
+				options: [
+					'To dobra praktyka — kolory są czytelne',
+					'Czerwony jest zarezerwowany dla alarmów; stany normalne pokazuje się szarościami, żeby nienormalne były widoczne',
+					'Silniki powinny migać, gdy pracują',
+					'Kolory dobiera klient według uznania'
+				],
+				correct: 1,
+				explanation:
+					'Gdy pół ekranu jest czerwone w normalnej pracy, prawdziwy alarm nie wyróżnia się. Kolor ma oznaczać „zwróć uwagę”.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'alarm-flood',
+				text: 'Zracjonalizuj alarmy mieszalnika: normalna partia bez jednego alarmu, a awarie z P1 i instrukcją.'
+			}
+		]
+	},
+
 	/* ------------------------------------------------------------------ uruchomienie */
 	{
 		slug: 'uruchomienie',

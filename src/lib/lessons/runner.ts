@@ -17,6 +17,9 @@ import {
 import { createProcess } from '#lib/processes/models.js';
 import { FieldLayer } from '#lib/processes/field.js';
 import { HwLayer, type Hardware } from '#lib/hw/hw.js';
+import { newAlarmLog, updateAlarms } from '#lib/hmi/alarms.js';
+import type { Hmi } from '#lib/hmi/model.js';
+import { resolveSymbol, type SymbolMap } from '#lib/symbols/symbols.js';
 import { plantInfo } from '#lib/processes/plants.js';
 import type { Lesson, TestContext, TestResult } from './types.js';
 
@@ -32,7 +35,9 @@ export function runLessonTests(
 	circuit?: Circuit,
 	faults: Fault[] = [],
 	load?: LoadOptions,
-	hw?: Hardware
+	hw?: Hardware,
+	/** the panel: its alarms are evaluated like on the HMI; tags resolve through `symbols` */
+	panel?: { hmi: Hmi; symbols: SymbolMap }
 ): TestResult[] {
 	const field = (lesson.kind === 'commissioning' || lesson.fieldTests) && circuit ? circuit : null;
 	return lesson.tests.map((test) => {
@@ -69,11 +74,22 @@ export function runLessonTests(
 		process?.step(0, io); // initial sensor values
 		const devices = field ? new FieldSim(field, plc) : null;
 		if (devices) devices.faults = faults;
+		const defs = panel?.hmi.alarms ?? [];
+		const alarmBit = (tag: string): boolean | null => {
+			try {
+				const a = parseAddress(resolveSymbol(panel!.symbols, tag.trim()));
+				return a.area !== 'T' && a.area !== 'C' && a.size === 'X' ? plc.memory.readBit(a) : null;
+			} catch {
+				return null;
+			}
+		};
 		const ctx: TestContext = {
 			plc,
 			process,
 			out: (t) => plc.getOutput(t),
-			device: (label) => devices?.device(label) ?? null
+			device: (label) => devices?.device(label) ?? null,
+			alarms: newAlarmLog(),
+			alarmDefs: defs
 		};
 		const fail = (message: string): TestResult => ({
 			name: test.name,
@@ -107,6 +123,7 @@ export function runLessonTests(
 				if (plc.mode === 'FAULT') return fail(`Błąd PLC: ${plc.fault?.message}`);
 				sensors.tick(dt);
 				process?.step(dt, io);
+				if (defs.length) ctx.alarms = updateAlarms(ctx.alarms, defs, alarmBit, plc.timeMs);
 				const problem = test.always?.(ctx);
 				if (problem) return fail(problem);
 			}

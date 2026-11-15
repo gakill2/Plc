@@ -130,7 +130,8 @@
 				$state.snapshot(circuit) as Circuit,
 				[],
 				$state.snapshot(compiled.load),
-				hw ? ($state.snapshot(hw) as Hardware) : undefined
+				hw ? ($state.snapshot(hw) as Hardware) : undefined,
+				{ hmi: $state.snapshot(hmi) as Hmi, symbols }
 			);
 			checking = false;
 			if (results.every((r) => r.passed)) {

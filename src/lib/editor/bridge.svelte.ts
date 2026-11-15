@@ -3,7 +3,7 @@ import { inputDrive } from '#lib/circuit/model.js';
 import { terminalBit } from '#lib/circuit/context.js';
 import type { CircuitSim } from '#lib/circuit/sim.svelte.js';
 import { parseAddress } from '#lib/engine/index.js';
-import { ackAlarms, newAlarmLog, unacked, updateAlarms } from '#lib/hmi/alarms.js';
+import { ackAlarms, newAlarmLog, shelveAlarm, unacked, updateAlarms } from '#lib/hmi/alarms.js';
 import type { ProjectState } from '#lib/project/state.svelte.js';
 import { readBit, readNumber } from '#lib/runtime/read.js';
 import type { PlcRuntime } from '#lib/runtime/runtime.svelte.js';
@@ -99,6 +99,11 @@ export class AlarmLog {
 		} catch {
 			// an invalid tag is reported in the panel editor
 		}
+	}
+
+	/** Shelving: the alarm is taken off the list for 10 minutes of simulated time. */
+	shelve(defId: string) {
+		this.log = shelveAlarm(this.log, defId, this.runtime.snapshot?.timeMs ?? 0, 600_000);
 	}
 
 	ack(seqs?: number[]) {

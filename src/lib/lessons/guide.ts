@@ -966,6 +966,43 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		checkIt
 	],
 
+	'alarm-flood': [
+		{
+			text: 'Usuń „Zawór B zamknięty” — to stan, nie alarm.',
+			done: (c) =>
+				!!c.hmi?.alarms.length && !c.hmi.alarms.some((a) => a.tag.toUpperCase() === 'VALVEBCLOSED')
+		},
+		{
+			text: '„Poziom powyżej 80 %”: opóźnienie przyjścia (≥ 2 s) przeciw miganiu.',
+			done: (c) => {
+				const a = c.hmi?.alarms.find((x) => x.tag.toUpperCase() === 'LEVELHIGH');
+				return !!c.hmi?.alarms.length && (!a || (a.onDelayMs ?? 0) >= 2000);
+			}
+		},
+		{
+			text: '„Mieszadło nie pracuje”: tłumienie bitem `NotMixing`.',
+			done: (c) => {
+				const a = c.hmi?.alarms.find((x) => x.tag.toUpperCase() === 'STIRREROFF');
+				return (
+					!!c.hmi?.alarms.length && (!a || a.suppressTag?.trim().toUpperCase() === 'NOTMIXING')
+				);
+			}
+		},
+		{
+			text: 'Każdy alarm ma reakcję operatora; najwyżej dwa P1, przepełnienie P1.',
+			done: (c) => {
+				const al = c.hmi?.alarms ?? [];
+				return (
+					al.length > 0 &&
+					al.every((a) => a.action?.trim()) &&
+					al.filter((a) => (a.priority ?? (a.kind === 'alarm' ? 2 : 3)) === 1).length <= 2 &&
+					al.some((a) => a.tag.toUpperCase() === 'ALMOVERFILL' && a.priority === 1)
+				);
+			}
+		},
+		checkIt
+	],
+
 	'std-motor': [
 		{
 			text: '`Ready := Permit AND NOT Interlock AND NOT Fault;` i kasowanie alarmu: `IF Ack AND NOT Run THEN Fault := FALSE; END_IF;`',

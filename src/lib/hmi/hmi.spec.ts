@@ -6,9 +6,17 @@ import {
 	formatTime,
 	newAlarmLog,
 	unacked,
-	updateAlarms
+	updateAlarms,
+	shelveAlarm,
+	alarmStats,
+	type AlarmLog
 } from './alarms.js';
-import { alarm, demoHmi, isHmi, toEng, toRaw, widget } from './model.js';
+import { alarm, demoHmi, isHmi, toEng, toRaw, widget, type Hmi } from './model.js';
+import { deviceSymbols } from '#lib/circuit/model.js';
+import { getLesson } from '#lib/lessons/lessons.js';
+import { runLessonTests } from '#lib/lessons/runner.js';
+import { compileSt } from '#lib/st/compiler.js';
+import { checkSymbols } from '#lib/symbols/symbols.js';
 
 describe('alarms', () => {
 	const overheat = alarm('M1.0', 'Przegrzanie silnika');
@@ -50,8 +58,79 @@ describe('alarms', () => {
 			'Przegrzanie silnika'
 		]);
 		log = ackAlarms(log, 600, [log.entries[1].seq]);
-		expect(activeAlarms(log).map((e) => alarmState(e))).toEqual(['C', 'CA']);
+		// most urgent first: the alarm (priority 2) before the warning (priority 3)
+		expect(activeAlarms(log).map((e) => [e.text, alarmState(e)])).toEqual([
+			['Przegrzanie silnika', 'CA'],
+			['Niski poziom', 'C']
+		]);
 		expect(unacked(log)).toBe(1);
+	});
+
+	it('delays, suppression by design and shelving (ISA-18.2)', () => {
+		const bits: Record<string, boolean> = {};
+		const level = { ...alarm('M2.0', 'Poziom wysoki'), onDelayMs: 2000, offDelayMs: 1000 };
+		const flow = { ...alarm('M2.1', 'Brak przepływu'), suppressTag: 'M2.2' };
+		const step = (log: AlarmLog, now: number) =>
+			updateAlarms(log, [level, flow], (t) => bits[t] ?? false, now);
+		let log = newAlarmLog();
+		// a short blip does not come
+		bits['M2.0'] = true;
+		log = step(log, 0);
+		log = step(log, 1500);
+		bits['M2.0'] = false;
+		log = step(log, 1600);
+		expect(log.entries).toEqual([]);
+		// a steady condition comes after the on-delay
+		bits['M2.0'] = true;
+		log = step(log, 2000);
+		log = step(log, 4100);
+		expect(log.entries).toHaveLength(1);
+		// a short drop does not make it go
+		bits['M2.0'] = false;
+		log = step(log, 4200);
+		bits['M2.0'] = true;
+		log = step(log, 4800);
+		expect(log.entries[0].gone).toBeNull();
+
+		// no flow while the pump is stopped is no alarm
+		bits['M2.1'] = true;
+		bits['M2.2'] = true;
+		log = step(log, 5000);
+		expect(log.entries).toHaveLength(1);
+		bits['M2.2'] = false;
+		log = step(log, 5100);
+		expect(log.entries[0].text).toBe('Brak przepływu');
+
+		// shelved: gone at once, does not come back until the time runs out
+		log = shelveAlarm(log, flow.id, 5200, 10_000);
+		expect(activeAlarms(log).map((e) => e.text)).toEqual(['Poziom wysoki']);
+		log = step(log, 6000);
+		expect(alarmStats(log, 6000).shelved).toEqual([flow.id]);
+		log = step(log, 15_300);
+		expect(log.entries[0].text).toBe('Brak przepływu');
+	});
+
+	it('finds chattering and standing alarms and floods', () => {
+		const bits: Record<string, boolean> = {};
+		const a = alarm('M3.0', 'Drga');
+		const many = Array.from({ length: 12 }, (_, i) => alarm(`M4.${i % 8}`, `A${i}`));
+		let log = newAlarmLog();
+		for (let i = 0; i < 4; i++) {
+			bits['M3.0'] = true;
+			log = updateAlarms(log, [a], (t) => bits[t] ?? false, i * 10_000);
+			bits['M3.0'] = false;
+			log = updateAlarms(log, [a], (t) => bits[t] ?? false, i * 10_000 + 5000);
+		}
+		expect(alarmStats(log, 40_000).chattering).toEqual([a.id]);
+		expect(alarmStats(log, 40_000).top[0]).toEqual({ defId: a.id, count: 4 });
+		bits['M3.0'] = true;
+		log = updateAlarms(log, [a], (t) => bits[t] ?? false, 50_000);
+		expect(alarmStats(log, 50_000 + 300_000).standing).toEqual([a.id]);
+		let flood = newAlarmLog();
+		for (let i = 0; i < 12; i++) {
+			flood = updateAlarms(flood, many.slice(0, i + 1), () => true, i * 1000);
+		}
+		expect(alarmStats(flood, 12_000).flood).toBe(true);
 	});
 
 	it('formats simulated time', () => {
@@ -68,5 +147,29 @@ describe('hmi model', () => {
 		expect(toEng({ scale: 0 }, 7)).toBe(7);
 		expect(isHmi(demoHmi())).toBe(true);
 		expect(isHmi({ widgets: 1 })).toBe(false);
+	});
+});
+
+describe('the alarm-flood lesson', () => {
+	const lesson = getLesson('alarm-flood')!;
+	const project = lesson.starter();
+	const { map } = checkSymbols([...deviceSymbols(project.circuit), ...project.symbols]);
+	const r = compileSt(lesson.solutionSt!, { symbols: map });
+	const failing = (change: (hmi: Hmi) => void) => {
+		const hmi = lesson.solutionHmi!();
+		change(hmi);
+		return runLessonTests(lesson, r.program, project.circuit, [], r.load, undefined, {
+			hmi,
+			symbols: map
+		})
+			.filter((t) => !t.passed)
+			.map((t) => t.name);
+	};
+	const normal = 'Normalna partia: ani jednego alarmu';
+
+	it('fails a chattering alarm and a standing one, each on its own', () => {
+		expect(failing(() => {})).toEqual([]);
+		expect(failing((h) => (h.alarms[0].onDelayMs = 0))).toContain(normal);
+		expect(failing((h) => delete h.alarms[1].suppressTag)).toContain(normal);
 	});
 });

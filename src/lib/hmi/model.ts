@@ -37,13 +37,29 @@ export interface HmiWidget {
 
 export type AlarmClass = 'alarm' | 'warning';
 
+/** ISA-18.2 priority: 1 = critical (immediate action) … 4 = low. */
+export type AlarmPriority = 1 | 2 | 3 | 4;
+
 export interface AlarmDef {
 	id: string;
 	/** bit that raises the alarm while it is 1 */
 	tag: string;
 	text: string;
 	kind: AlarmClass;
+	/** default: alarm → 2, warning → 3 */
+	priority?: AlarmPriority;
+	/** the condition must hold this long before the alarm comes (against chattering) */
+	onDelayMs?: number;
+	/** the condition must be gone this long before the alarm goes */
+	offDelayMs?: number;
+	/** suppression by design: while this bit is 1 the alarm is not raised (e.g. machine stopped) */
+	suppressTag?: string;
+	/** rationalization: what the operator must do */
+	action?: string;
 }
+
+export const priorityOf = (d: Pick<AlarmDef, 'priority' | 'kind'>): AlarmPriority =>
+	d.priority ?? (d.kind === 'alarm' ? 2 : 3);
 
 export interface Hmi {
 	widgets: HmiWidget[];

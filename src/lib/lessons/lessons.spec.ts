@@ -40,6 +40,15 @@ function compileStlLesson(lesson: (typeof LESSONS)[number], src: string) {
 	return compileStLesson(lesson, gen.source);
 }
 
+/** The lesson's panel with the symbols of the starter, as the editor passes it. */
+function panel(lesson: (typeof LESSONS)[number], which: 'solution' | 'starter') {
+	const project = lesson.starter();
+	const hmi = (which === 'solution' ? lesson.solutionHmi?.() : undefined) ?? project.hmi;
+	if (!hmi) return undefined;
+	const { map } = checkSymbols([...deviceSymbols(project.circuit), ...project.symbols]);
+	return { hmi, symbols: map };
+}
+
 describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, lesson) => {
 	it('the reference solution passes every test', () => {
 		const { program, diagnostics, load } = lesson.solutionSfc
@@ -54,7 +63,15 @@ describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, les
 		expect(diagnostics).toEqual([]);
 		const circuit = lesson.solutionCircuit?.() ?? lesson.starter().circuit;
 		const hw = lesson.solutionHw?.() ?? lesson.starter().hw;
-		const results = runLessonTests(lesson, program, circuit, [], load, hw);
+		const results = runLessonTests(
+			lesson,
+			program,
+			circuit,
+			[],
+			load,
+			hw,
+			panel(lesson, 'solution')
+		);
 		expect(results.filter((r) => !r.passed)).toEqual([]);
 	});
 
@@ -71,9 +88,15 @@ describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, les
 							? compileStLesson(lesson, start.st ?? '')
 							: compile(lesson, start.ladder);
 		expect(
-			runLessonTests(lesson, program, lesson.starter().circuit, [], load, start.hw).some(
-				(r) => !r.passed
-			)
+			runLessonTests(
+				lesson,
+				program,
+				lesson.starter().circuit,
+				[],
+				load,
+				start.hw,
+				panel(lesson, 'starter')
+			).some((r) => !r.passed)
 		).toBe(true);
 	});
 });

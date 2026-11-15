@@ -559,6 +559,7 @@
 						log={alarms.log}
 						onWrite={hmiWrite}
 						onAck={ackAlarm}
+						onShelve={(id) => alarms.shelve(id)}
 					/>
 				{:else if view === 'diag'}
 					<DiagView snapshot={runtime.snapshot} />
