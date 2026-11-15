@@ -120,6 +120,7 @@ export const pl: Record<keyof typeof en, string> = {
 	'io.title': 'Zaciski I/O',
 	'ladder.empty': 'Nie ma jeszcze networków — dodaj pierwszy przyciskiem „+ Network”.',
 	'lesson.at': '(w {s} s)',
+	'lesson.brownfield': '🏚 Przejęty program',
 	'lesson.capstone': '🏁 Projekt końcowy',
 	'lesson.check': 'Sprawdź rozwiązanie',
 	'lesson.checking': 'Sprawdzam…',
@@ -254,6 +255,15 @@ export const pl: Record<keyof typeof en, string> = {
 		'Cały projekt jest w linku — nic nie trafia na serwer. Kto go otworzy, dostaje własną kopię.',
 	'share.link': 'Link do udostępnienia',
 	'share.title': 'Udostępnij projekt',
+	'stl.generated': 'Wygenerowany Structured Text',
+	'stl.hint':
+		'Lista instrukcji (STL/AWL) jak w STEP 7 — stare programy S7-300/400. Działa przez tłumaczenie na ST.',
+	'stl.legend':
+		'STA — stan operandu, RLO — wynik operacji logicznej po linii, ACCU1 — wartość przesłana przez T.',
+	'stl.showSt': 'Pokaż ST',
+	'stl.status': 'Status programu',
+	'stl.statusOffline':
+		'Przejdź online (RUN), żeby zobaczyć STA, RLO i ACCU1 każdej linii — jak monitor STL w STEP 7.',
 	'stv.block': '.',
 	'stv.declare': 'Zadeklaruj zmienne w bloku',
 	'stv.title': 'Zmienne',

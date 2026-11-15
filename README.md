@@ -27,6 +27,11 @@ it and watch the controller execute your program scan by scan — or let it driv
   `VAR` allocation, standard functions (`ABS`, `MIN`, `MAX`, `LIMIT`, `TRUNC`, `SHL`, `SHR`,
   `*_TO_*` conversions) and bitwise `AND / OR / XOR / NOT` on integers; CodeMirror editor with
   highlighting, completions and inline errors.
+- **Statement List (STL / AWL)** — the language of legacy S7-300/400 programs: bit logic with
+  S7 precedence and brackets, edges, S5 timers (`SD / SE / SP / SF`), accumulators with `L / T`,
+  integer and real math and compares, forward jumps (`JC / JCN / JU`, `BEC`), quoted symbols.
+  Translated to ST and run on the same engine; online status columns **STA / RLO / ACCU1** per
+  line like the STEP 7 monitor; exported as `.awl`.
 - **Circuit editor** — field devices wired to the PLC's terminals (Svelte Flow); devices are
   operated by hand while the program runs. Wired devices become symbols automatically. Includes
   an e-stop that latches, a HAND / 0 / AUTO selector and a contactor with a feedback contact
@@ -35,7 +40,7 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
   pusher, each with simple physics; connect one to any project.
-- **33 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
+- **35 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
   to a crane with an encoder, a PID-tuned oven, a remote I/O station and two-hand control. Your
   program runs against test cases in a headless PLC (or through the wired circuit); every lesson
   ships a reference solution that the test suite proves passes, plus a live step-by-step guide.
@@ -44,6 +49,9 @@ it and watch the controller execute your program scan by scan — or let it driv
   (eight requirements: recipes, hold/resume, alarms on the HMI, RETAIN counter) and accepted
   against a seven-item FAT protocol with injected faults, followed by an advisory code review
   (absolute addresses, comments, magic numbers, step comments, HMI alarms).
+- **Brownfield** — a chapter on reading STL and modernising someone else's program: an STL bug
+  hunt (AND binds before OR) and a change order on a 2009 press program in AWL — add automatic
+  mode and a part counter, find the hidden assumption, and keep the regression tests green.
 - **Program organisation like in TIA Portal / CODESYS** — own `FUNCTION_BLOCK`s with
   multi-instances, `FUNCTION`s and `STRUCT` types in a project library (usable from every
   language, also as boxes in ladder), standard `SCALE` and `PID` blocks, one-dimensional `ARRAY`s

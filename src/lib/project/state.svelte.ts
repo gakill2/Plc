@@ -28,6 +28,7 @@ import { plantInfo } from '#lib/processes/plants.js';
 import { newId } from '#lib/ladder/model.js';
 import type { CompiledLadder } from '#lib/ladder/compiler.js';
 import { compileSt, type StCompileResult } from '#lib/st/compiler.js';
+import { stlToSt, type GeneratedStl } from '#lib/stl/stl.js';
 import type { Project, ProgramLanguage } from './project.js';
 
 export type ProblemSource = 'program' | 'circuit' | 'symbols';
@@ -67,6 +68,12 @@ export class ProjectState {
 	readonly fbdSt: GeneratedFbd | null = $derived(
 		this.language === 'fbd' ? fbdToSt(this.fbd, this.boxTypes) : null
 	);
+	/** Statement List source. */
+	stl: string = $state('');
+	/** The STL program translated to ST, while STL is the active language. */
+	readonly stlSt: GeneratedStl | null = $derived(
+		this.language === 'stl' ? stlToSt(this.stl) : null
+	);
 	/** The chart translated to ST, while SFC is the active language. */
 	readonly sfcSt: GeneratedSt | null = $derived(this.language === 'sfc' ? sfcToSt(this.sfc) : null);
 
@@ -78,7 +85,9 @@ export class ProjectState {
 				? compileSt(this.sfcSt.source, { symbols: this.symbols.map, prelude: this.prelude })
 				: this.fbdSt
 					? compileSt(this.fbdSt.source, { symbols: this.symbols.map, prelude: this.prelude })
-					: null
+					: this.stlSt
+						? compileSt(this.stlSt.source, { symbols: this.symbols.map, prelude: this.prelude })
+						: null
 	);
 	/** The active program in a common shape — this is what gets downloaded and graded. */
 	readonly compiled: CompiledLadder;
@@ -106,15 +115,18 @@ export class ProjectState {
 		this.st = project.st ?? '';
 		this.sfc = project.sfc ?? emptySfc();
 		this.fbd = project.fbd ?? emptyFbd();
+		this.stl = project.stl ?? '';
 		this.hmi = project.hmi ?? emptyHmi();
 		this.compiled = $derived(
 			this.sfcSt && this.stResult
 				? fromSfc(this.sfc, this.stResult, this.sfcSt)
 				: this.fbdSt && this.stResult
 					? fromFbd(this.fbd, this.boxTypes, this.stResult, this.fbdSt)
-					: this.stResult
-						? fromSt(this.stResult, this.st)
-						: this.ladder.compiled
+					: this.stlSt && this.stResult
+						? fromStl(this.stResult, this.stlSt)
+						: this.stResult
+							? fromSt(this.stResult, this.st)
+							: this.ladder.compiled
 		);
 		this.problems = $derived([
 			...this.compiled.diagnostics.map((d) => ({ ...d, source: 'program' as const })),
@@ -210,6 +222,7 @@ export class ProjectState {
 		this.hmi = p.hmi ?? emptyHmi();
 		this.sfc = p.sfc ?? emptySfc();
 		this.fbd = p.fbd ?? emptyFbd();
+		this.stl = p.stl ?? '';
 		this.library = p.library ?? '';
 	}
 
@@ -234,6 +247,7 @@ export class ProjectState {
 				this.language === 'fbd' || this.fbd.networks.length > 1
 					? $state.snapshot(this.fbd)
 					: undefined,
+			stl: this.language === 'stl' || this.stl.trim() ? this.stl : undefined,
 			hmi: $state.snapshot(this.hmi)
 		};
 	}
@@ -286,6 +300,25 @@ function fromFbd(
 						message: d.library ? d.message : `${label(lineOf(d.from))}: ${d.message}`
 					})))
 		]
+	};
+}
+
+/** STL compiled through ST: problems and live lines point back at the STL source. */
+function fromStl(result: StCompileResult, gen: GeneratedStl): CompiledLadder {
+	const lineOf = (offset: number) => gen.source.slice(0, offset).split('\n').length;
+	return {
+		program: gen.issues.length ? [] : result.program,
+		taps: new Map(),
+		sourceMap: result.lines.map((l) => (l === null || !gen.origin[l] ? null : `L${gen.origin[l]}`)),
+		diagnostics: gen.issues.length
+			? gen.issues.map((i) => ({ id: `stl:${i.line}`, message: `Line ${i.line}: ${i.message}` }))
+			: result.diagnostics.map((d) => {
+					const line = gen.origin[lineOf(d.from)];
+					return {
+						id: `stl:${line ?? 'st'}`,
+						message: d.library ? d.message : line ? `Line ${line}: ${d.message}` : d.message
+					};
+				})
 	};
 }
 

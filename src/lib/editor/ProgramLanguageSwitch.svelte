@@ -13,7 +13,8 @@
 		{ id: 'ladder', label: 'Ladder (LAD)' },
 		{ id: 'fbd', label: 'FBD' },
 		{ id: 'st', label: 'Structured Text' },
-		{ id: 'sfc', label: 'SFC' }
+		{ id: 'sfc', label: 'SFC' },
+		{ id: 'stl', label: 'STL' }
 	];
 </script>
 

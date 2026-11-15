@@ -116,6 +116,7 @@ export const en = {
 	'io.title': 'I/O terminals',
 	'ladder.empty': 'No networks yet — add one with “+ Network”.',
 	'lesson.at': '(at {s} s)',
+	'lesson.brownfield': '🏚 Legacy program',
 	'lesson.capstone': '🏁 Final project',
 	'lesson.check': 'Check solution',
 	'lesson.checking': 'Checking…',
@@ -250,6 +251,15 @@ export const en = {
 		'The whole project is inside the link — nothing is uploaded. Whoever opens it gets their own copy.',
 	'share.link': 'Share link',
 	'share.title': 'Share this project',
+	'stl.generated': 'Generated Structured Text',
+	'stl.hint':
+		'Statement List (STL/AWL) as in STEP 7 — legacy S7-300/400 programs. Runs translated to ST.',
+	'stl.legend':
+		'STA — value of the operand, RLO — result of logic after the line, ACCU1 — value transferred with T.',
+	'stl.showSt': 'Show ST',
+	'stl.status': 'Program status',
+	'stl.statusOffline':
+		'Go online (RUN) to see STA, RLO and ACCU1 for every line — like the STL monitor in STEP 7.',
 	'stv.block': 'block.',
 	'stv.declare': 'Declare variables in a',
 	'stv.title': 'Variables',

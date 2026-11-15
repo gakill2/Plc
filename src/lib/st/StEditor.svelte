@@ -8,6 +8,7 @@
 	import { onMount } from 'svelte';
 	import type { StDiagnostic } from './compiler.js';
 	import { stCompletions, stLanguage, type CompletionNames } from './language.js';
+	import { stlLanguage } from '#lib/stl/language.js';
 
 	type Props = {
 		value: string;
@@ -15,8 +16,10 @@
 		diagnostics: StDiagnostic[];
 		readOnly: boolean;
 		names: () => CompletionNames;
+		/** Statement List instead of Structured Text: other highlighting, no ST completions */
+		mode?: 'st' | 'stl';
 	};
-	let { value, onChange, diagnostics, readOnly, names }: Props = $props();
+	let { value, onChange, diagnostics, readOnly, names, mode = 'st' }: Props = $props();
 
 	let host: HTMLDivElement;
 	let view = $state.raw<EditorView | null>(null);
@@ -29,10 +32,12 @@
 				doc: value,
 				extensions: [
 					basicSetup,
-					stLanguage,
+					mode === 'stl' ? stlLanguage : stLanguage,
 					oneDark,
 					lintGutter(),
-					autocompletion({ override: [stCompletions(() => names())] }),
+					autocompletion({
+						override: mode === 'stl' ? [] : [stCompletions(() => names())]
+					}),
 					readOnlyConf.of(EditorState.readOnly.of(readOnly)),
 					EditorView.updateListener.of((u) => {
 						if (u.docChanged) onChange(u.state.doc.toString());

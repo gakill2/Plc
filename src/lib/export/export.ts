@@ -11,6 +11,7 @@
  */
 import { formatAddress, parseAddress } from '#lib/engine/index.js';
 import { boxTypes, fbdToSt, type Fbd } from '#lib/fbd/fbd.js';
+import { stlToSt } from '#lib/stl/stl.js';
 import { EVENT_OBS, type ErrorOb } from '#lib/st/ast.js';
 import type { BlockBox, Element, LadderProgram, Series } from '#lib/ladder/model.js';
 import type { Expr, Pou, Stmt, StructType, VarDecl } from '#lib/st/ast.js';
@@ -183,11 +184,13 @@ export function ladderToSt(
 
 export interface ExportInput {
 	name: string;
-	language: 'ladder' | 'st' | 'sfc' | 'fbd';
+	language: 'ladder' | 'st' | 'sfc' | 'fbd' | 'stl';
 	ladder: LadderProgram;
 	st: string;
 	sfc: Sfc;
 	fbd?: Fbd;
+	/** Statement List source (STL programs) */
+	stl?: string;
 	library: string;
 	/** symbol table (user + wired devices) */
 	symbols: { name: string; address: string; comment: string }[];
@@ -217,7 +220,9 @@ export function programSource(p: ExportInput, symbols = symbolMap(p)): string {
 			? sfcToSt(p.sfc).source
 			: p.language === 'fbd' && p.fbd
 				? fbdToSt(p.fbd, boxTypes(blockCatalog(p.library))).source
-				: p.st;
+				: p.language === 'stl'
+					? stlToSt(p.stl ?? '').source
+					: p.st;
 }
 
 /** Library, the standard blocks the program actually uses, and the program — parsed. */

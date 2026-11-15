@@ -11,7 +11,12 @@ import { exportPlcOpen, exportScl, iecAddress, ladderToSt, type ExportInput } fr
 /** Ladder lessons whose tests run on the plain PLC (no wiring) — their solutions are translated to ST. */
 const ladderLessons = LESSONS.filter(
 	(l) =>
-		!l.solutionSt && !l.solutionSfc && !l.solutionFbd && l.kind !== 'commissioning' && !l.fieldTests
+		!l.solutionSt &&
+		!l.solutionSfc &&
+		!l.solutionFbd &&
+		!l.solutionStl &&
+		l.kind !== 'commissioning' &&
+		!l.fieldTests
 );
 
 describe('ladder → Structured Text', () => {

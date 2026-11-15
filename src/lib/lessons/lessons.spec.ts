@@ -9,6 +9,7 @@ import { LESSONS } from './lessons.js';
 import { runLessonTests } from './runner.js';
 import { boxTypes, fbdToSt } from '#lib/fbd/fbd.js';
 import { blockCatalog } from '#lib/st/stdlib.js';
+import { stlToSt } from '#lib/stl/stl.js';
 
 const FBD_TYPES = boxTypes(blockCatalog(''));
 
@@ -29,15 +30,24 @@ function compileStLesson(lesson: (typeof LESSONS)[number], src: string) {
 	return { program: r.program, diagnostics: r.diagnostics, load: r.load };
 }
 
+/** Statement List lessons: translated to ST first, every line must translate. */
+function compileStlLesson(lesson: (typeof LESSONS)[number], src: string) {
+	const gen = stlToSt(src);
+	expect(gen.issues).toEqual([]);
+	return compileStLesson(lesson, gen.source);
+}
+
 describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, lesson) => {
 	it('the reference solution passes every test', () => {
 		const { program, diagnostics, load } = lesson.solutionSfc
 			? compileStLesson(lesson, sfcToSt(lesson.solutionSfc()).source)
 			: lesson.solutionFbd
 				? compileStLesson(lesson, fbdToSt(lesson.solutionFbd(), FBD_TYPES).source)
-				: lesson.solutionSt
-					? compileStLesson(lesson, lesson.solutionSt)
-					: compile(lesson, lesson.solution());
+				: lesson.solutionStl
+					? compileStlLesson(lesson, lesson.solutionStl)
+					: lesson.solutionSt
+						? compileStLesson(lesson, lesson.solutionSt)
+						: compile(lesson, lesson.solution());
 		expect(diagnostics).toEqual([]);
 		const circuit = lesson.solutionCircuit?.() ?? lesson.starter().circuit;
 		const results = runLessonTests(lesson, program, circuit, [], load);
@@ -51,9 +61,11 @@ describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, les
 				? compileStLesson(lesson, sfcToSt(start.sfc).source)
 				: start.language === 'fbd' && start.fbd
 					? compileStLesson(lesson, fbdToSt(start.fbd, FBD_TYPES).source)
-					: start.language === 'st'
-						? compileStLesson(lesson, start.st ?? '')
-						: compile(lesson, start.ladder);
+					: start.language === 'stl'
+						? compileStlLesson(lesson, start.stl ?? '')
+						: start.language === 'st'
+							? compileStLesson(lesson, start.st ?? '')
+							: compile(lesson, start.ladder);
 		expect(
 			runLessonTests(lesson, program, lesson.starter().circuit, [], load).some((r) => !r.passed)
 		).toBe(true);

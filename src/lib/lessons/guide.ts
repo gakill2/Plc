@@ -29,6 +29,8 @@ export interface GuideContext {
 	sfc?: Sfc;
 	/** Function block diagram (FBD lessons) */
 	fbd?: Fbd;
+	/** Statement List source (STL lessons) */
+	stl?: string;
 	/** the project's operator panel (HMI lessons) */
 	hmi?: Hmi;
 	/** the project's circuit (commissioning lessons check the wiring) */
@@ -877,6 +879,36 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		{
 			text: 'Panel HMI: pole receptury i alarmy z opisem dla operatora (widok HMI).',
 			done: (c) => (c.hmi?.alarms.length ?? 0) >= 2
+		},
+		checkIt
+	],
+
+	'stl-pump': [
+		{
+			text: 'Nawias `A(` … `)` wokół Startu i podtrzymania, Stop za nawiasem.',
+			done: (c) => {
+				const code = (c.stl ?? '').replace(/\/\/.*$/gm, '');
+				return /A\s*\(/i.test(code) && /\)\s*\n\s*A\s+"?Stop/i.test(code);
+			}
+		},
+		checkIt
+	],
+	'brownfield-press': [
+		{
+			text: 'ZM-17/1: `Auto` (`I1.1`) uruchamia cykl obok Startu (nawias `A(` … `O I 1.1` … `)`).',
+			done: (c) => /O\s+(I\s*1\.1|"?Auto"?)\b/i.test(c.stl ?? '')
+		},
+		{
+			text: 'Warunek startu sprawdza detal `I 0.4` (PartPresent).',
+			done: (c) => /A\s+(I\s*0\.4|"?PartPresent"?)\b/i.test(c.stl ?? '')
+		},
+		{
+			text: 'ZM-17/2: licznik — `L MW 50`, `+I`, `T MW 50` raz na koniec cyklu.',
+			done: (c) => /T\s+(MW\s*50|"?PartsGood"?)\b/i.test(c.stl ?? '') && /\+I/i.test(c.stl ?? '')
+		},
+		{
+			text: 'Każda zmiana oznaczona komentarzem `ZM-17`.',
+			done: (c) => ((c.stl ?? '').match(/ZM-17/g) ?? []).length >= 2
 		},
 		checkIt
 	],

@@ -161,7 +161,9 @@
 						? 'Sequential Function Chart (SFC)'
 						: project.language === 'fbd'
 							? 'Function Block Diagram (FBD)'
-							: 'Ladder diagram (LAD)'}
+							: project.language === 'stl'
+								? 'Statement List (STL / AWL)'
+								: 'Ladder diagram (LAD)'}
 				{#if plant}· plant: {plant.name}{/if} · {project.compiled.program.length} IL instructions · made
 				with PLC Sim
 			</p>
@@ -196,6 +198,8 @@
 						>
 							{#snippet header()}{/snippet}
 						</FbdView>
+					{:else if project.language === 'stl'}
+						<pre class="code text-xs leading-5">{project.stl}</pre>
 					{:else if project.language === 'st'}
 						<pre class="code text-xs leading-5">{#each stLines as line, i (i)}<span class="ln"
 									>{String(i + 1).padStart(3)}</span

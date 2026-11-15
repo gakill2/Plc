@@ -561,6 +561,164 @@ const counted =
 		return c === n ? null : `BatchCount (MW40) = ${c}, a powinno być ${n}`;
 	};
 
+/* ---------- STL / AWL: legacy S7-300 programs ---------- */
+
+const STL_PUMP_HEAD = `// FC1 Pompa P1 — program z 2004 r., CPU 314
+// autor: nieznany, ostatnia zmiana: 2011
+`;
+
+const STL_PUMP_STARTER = `${STL_PUMP_HEAD}
+NETWORK 1 // pompa: start, podtrzymanie, stop
+      A     "Start"
+      O     "Pump"
+      A     "Stop"
+      =     "Pump"
+
+NETWORK 2 // lampka pracy po 3 s
+      A     "Pump"
+      L     S5T#3S
+      SD    T 1
+      A     T 1
+      =     "RunLamp"
+`;
+
+const STL_PUMP_SOLUTION = `${STL_PUMP_HEAD}
+NETWORK 1 // pompa: start, podtrzymanie, stop
+      A(                  // nawias: najpierw LUB (start albo podtrzymanie) …
+      O     "Start"
+      O     "Pump"
+      )
+      A     "Stop"        // … i dopiero potem I ze Stopem — Stop wygrywa zawsze
+      =     "Pump"
+
+NETWORK 2 // lampka pracy po 3 s
+      A     "Pump"
+      L     S5T#3S
+      SD    T 1
+      A     T 1
+      =     "RunLamp"
+`;
+
+const STL_PRESS_HEAD = `// FC10 Prasa PR1 — Zakład Mechaniczny, 2009, CPU 315-2DP
+// kroki: M10.1 A+, M10.2 B+, M10.3 B-, M10.4 A-
+`;
+
+const STL_PRESS_STARTER = `${STL_PRESS_HEAD}
+NETWORK 1 // start cyklu
+      A     I 1.0
+      FP    M 0.0
+      A     I 0.5
+      A     I 0.0
+      A     I 0.2
+      AN    M 10.1
+      AN    M 10.2
+      AN    M 10.3
+      AN    M 10.4
+      S     M 10.1
+
+NETWORK 2
+      A     M 10.1
+      A     I 0.1
+      S     M 10.2
+      R     M 10.1
+
+NETWORK 3
+      A     M 10.2
+      A     I 0.3
+      S     M 10.3
+      R     M 10.2
+
+NETWORK 4
+      A     M 10.3
+      A     I 0.2
+      S     M 10.4
+      R     M 10.3
+
+NETWORK 5
+      A     M 10.4
+      A     I 0.0
+      R     M 10.4
+
+NETWORK 6 // zawory
+      O     M 10.1
+      O     M 10.2
+      O     M 10.3
+      =     Q 0.0
+      A     M 10.2
+      =     Q 0.1
+`;
+
+const STL_PRESS_SOLUTION = `${STL_PRESS_HEAD}
+// ZM-17 (2026): praca ciągła z przełącznika Auto, licznik dobrych detali MW50
+
+NETWORK 1 // zbocze przycisku Start
+      A     I 1.0
+      FP    M 0.0
+      =     M 0.1
+
+NETWORK 2 // start cyklu: Start albo Auto (ZM-17/1)
+      A(
+      O     M 0.1
+      O     I 1.1          // ZM-17/1: Auto
+      )
+      A     I 0.4          // ZM-17/1: detal leży — dotąd pilnował tego operator
+      A     I 0.5
+      A     I 0.0
+      A     I 0.2
+      AN    M 10.1
+      AN    M 10.2
+      AN    M 10.3
+      AN    M 10.4
+      S     M 10.1
+
+NETWORK 3
+      A     M 10.1
+      A     I 0.1
+      S     M 10.2
+      R     M 10.1
+
+NETWORK 4
+      A     M 10.2
+      A     I 0.3
+      S     M 10.3
+      R     M 10.2
+
+NETWORK 5
+      A     M 10.3
+      A     I 0.2
+      S     M 10.4
+      R     M 10.3
+
+NETWORK 6 // koniec cyklu
+      A     M 10.4
+      A     I 0.0
+      =     M 0.2          // ZM-17/2: impuls „detal gotowy”
+      R     M 10.4
+
+NETWORK 7 // ZM-17/2: licznik dobrych detali
+      A     M 0.2
+      JCN   m007
+      L     MW 50
+      L     1
+      +I
+      T     MW 50
+m007: NOP   0
+
+NETWORK 8 // zawory
+      O     M 10.1
+      O     M 10.2
+      O     M 10.3
+      =     Q 0.0
+      A     M 10.2
+      =     Q 0.1
+`;
+
+const partsCounted: Check = ({ plc, process }) => {
+	const s = process?.state() as PneumaticState;
+	const c = plc.memory.readNumber(parseAddress('MW50'));
+	return c === s.good && c > 0 ? null : `MW50 = ${c}, a dobrych detali jest ${s.good}`;
+};
+
 /** The filtered value in MW20 is close to the real temperature. */
 const avgNear =
 	(tol: number): Check =>
@@ -3741,6 +3899,158 @@ export const LESSONS: Lesson[] = [
 					{ label: 'puść, 90 s', set: { 'I1.0': false }, wait: 90_000, check: counted(1) },
 					{ label: 'Stop → Run', restart: true, wait: 500, check: counted(1) }
 				]
+			}
+		]
+	},
+	{
+		slug: 'stl-pump',
+		kind: 'debug',
+		title: 'Znajdź błąd w STL: pompa, której Stop nie zawsze zatrzymuje',
+		level: 'logic',
+		summary:
+			'Pierwszy kontakt z AWL ze starego S7-300: przeczytaj program, znajdź, dlaczego trzymany Start wygrywa ze Stopem, i popraw jedną linią nawiasu.',
+		instructions: [
+			'Serwis zgłasza: „Jak operator trzyma Start, Stop nie wyłącza pompy”. Program jest w **STL** (po niemiecku **AWL**) — każda linia to jedna instrukcja, wynik logiki (**RLO**) płynie z linii do linii.',
+			'`A` to I (AND), `O` to LUB (OR), `=` przypisuje RLO. Uwaga: w STL **I wiąże mocniej niż LUB** — `A a / O b / A c` znaczy `a + (b·c)`, a nie `(a + b)·c`.',
+			'Popraw sieć 1 tak, żeby **Stop wygrywał zawsze**. Sieć 2 (lampka po 3 s, timer S7 `SD`) działa — nie ruszaj. Online zobaczysz po prawej status każdej linii: STA, RLO, ACCU1 — jak w STEP 7.'
+		],
+		hints: [
+			'Rozpisz sieć 1 jak wyrażenie: `Start + (Pump · Stop)`. Gdy Start jest wciśnięty, Stop w ogóle nie bierze udziału.',
+			'Nawias: `A(` / `O "Start"` / `O "Pump"` / `)` / `A "Stop"` / `= "Pump"`.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'stl-pump',
+			language: 'stl',
+			st: '',
+			stl: STL_PUMP_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I0.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I0.1', { color: 'red', nc: true }],
+				['lamp', 'Pump', 'Q0.0', { color: 'green' }],
+				['lamp', 'RunLamp', 'Q0.1', { color: 'amber' }]
+			]),
+			symbols: [],
+			watch: [watchEntry('Pump', undefined, true), watchEntry('RunLamp', undefined, true)]
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionStl: STL_PUMP_SOLUTION,
+		tests: [
+			{
+				name: 'Start i podtrzymanie',
+				steps: [
+					{ label: 'Stop puszczony', set: { 'I0.1': true }, wait: 100, expect: { 'Q0.0': false } },
+					{ label: 'Start', set: { 'I0.0': true }, wait: 100, expect: { 'Q0.0': true } },
+					{ label: 'puść Start', set: { 'I0.0': false }, wait: 100, expect: { 'Q0.0': true } }
+				]
+			},
+			{
+				name: 'Stop wygrywa — także przy trzymanym Starcie',
+				steps: [
+					{ label: 'Stop puszczony, Start', set: { 'I0.1': true, 'I0.0': true }, wait: 100 },
+					{
+						label: 'Stop przy trzymanym Starcie',
+						set: { 'I0.1': false },
+						wait: 100,
+						expect: { 'Q0.0': false }
+					},
+					{
+						label: 'puść oba',
+						set: { 'I0.0': false, 'I0.1': true },
+						wait: 100,
+						expect: { 'Q0.0': false }
+					}
+				]
+			},
+			{
+				name: 'Lampka pracy po 3 s (bez zmian)',
+				steps: [
+					{ label: 'Start', set: { 'I0.1': true, 'I0.0': true }, wait: 100 },
+					{ label: 'puść, 2 s', set: { 'I0.0': false }, wait: 2000, expect: { 'Q0.1': false } },
+					{ label: 'po 3,2 s', wait: 1100, expect: { 'Q0.1': true } }
+				]
+			}
+		]
+	},
+	{
+		slug: 'brownfield-press',
+		kind: 'brownfield',
+		title: 'Przejęty program: zlecenie zmiany w prasie z 2009 roku',
+		level: 'process',
+		scenario: 'pneumatic',
+		summary:
+			'Cudzy program w AWL, bez symboli i komentarzy, działa od lat. Dodaj pracę ciągłą i licznik — i nie zepsuj tego, co działa.',
+		instructions: [
+			'**Sytuacja.** Prasa PR1 (ta sama co w lekcji o pneumatyce) chodzi od 2009 roku na programie w STL. Autora nie ma, dokumentacji też — jest tylko kod z adresami bezwzględnymi i kroki na markerach `M10.1` … `M10.4` (ustaw / kasuj). Tablica symboli pomoże: najedź na adres albo sprawdź listę I/O obiektu.',
+			'**Zlecenie zmiany ZM-17** od technologa: (1) przełącznik `Auto` (`I1.1`) — praca ciągła, detal za detalem; (2) licznik dobrych detali w `MW50` dla panelu.',
+			'**Zasady modernizacji:** zmieniaj jak najmniej, oznacz każdą zmianę komentarzem z numerem ZM, nie „sprzątaj” działającego kodu przy okazji. Pozycje „Regresja” w testach sprawdzają, że stare działanie zostało.',
+			'Uważaj na **ukryte założenia** starego programu: przy ręcznym starcie coś pilnował operator, a nie sterownik.'
+		],
+		hints: [
+			'Start i Auto to LUB, a reszta warunków startu to I — potrzebny nawias: `A(` / `O M 0.1` / `O I 1.1` / `)`. Zbocze Startu najlepiej wyciągnij do osobnej sieci (`FP M 0.0` → `= M 0.1`).',
+			'Przy Auto prasa uderza na pusto: w warunku startu brakuje czujnika detalu `I 0.4` (PartPresent).',
+			'Licznik: koniec cyklu (sieć 5) zapisz impulsem do markera, np. `= M 0.2`, a w nowej sieci `A M 0.2` / `JCN m007` / `L MW 50` / `L 1` / `+I` / `T MW 50` / `m007: NOP 0`.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'brownfield-press',
+			scenario: 'pneumatic',
+			language: 'stl',
+			st: '',
+			stl: STL_PRESS_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+				['switch', 'Auto', 'I1.1']
+			]),
+			symbols: [
+				...(plantInfo('pneumatic')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+				symbol('PartsGood', 'MW50', 'ZM-17: licznik dobrych detali')
+			],
+			watch: [
+				watchEntry('Clamp', undefined, true),
+				watchEntry('Press', undefined, true),
+				watchEntry('PartPresent', undefined, true),
+				watchEntry('PartsGood', 'DEC', true)
+			]
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionStl: STL_PRESS_SOLUTION,
+		tests: [
+			{
+				name: 'Regresja: Start — jeden cykl, detal dobry',
+				steps: [
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'puść, 4 s', set: { 'I1.0': false }, wait: 4000, check: pressCounts(1) }
+				]
+			},
+			{
+				name: 'Regresja: trzymany Start nie robi drugiego cyklu',
+				steps: [
+					{
+						label: 'Start trzymany 10 s',
+						set: { 'I1.0': true },
+						wait: 10_000,
+						check: pressCounts(1)
+					}
+				]
+			},
+			{
+				name: 'ZM-17/1: Auto — detal za detalem, bez pustych skoków',
+				steps: [
+					{ label: 'Auto, 15 s', set: { 'I1.1': true }, wait: 15_000, check: pressCounts(4, true) },
+					{
+						label: 'Auto wyłączone, 5 s',
+						set: { 'I1.1': false },
+						wait: 5000,
+						expect: { 'Q0.0': false, 'Q0.1': false }
+					}
+				]
+			},
+			{
+				name: 'ZM-17/2: licznik dobrych detali w MW50',
+				steps: [{ label: 'Auto, 15 s', set: { 'I1.1': true }, wait: 15_000, check: partsCounted }]
 			}
 		]
 	},

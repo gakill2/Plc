@@ -10,7 +10,7 @@
 	type Props = {
 		doc: LadderDocument;
 		monitor: Monitor | null;
-		language: 'ladder' | 'st' | 'sfc' | 'fbd';
+		language: 'ladder' | 'st' | 'sfc' | 'fbd' | 'stl';
 		/** the FBD diagram, its box types and its live values (null offline) */
 		fbd?: { fbd: Fbd; types: BoxType[]; live: ((v: FbdValue) => boolean | number | null) | null };
 	};

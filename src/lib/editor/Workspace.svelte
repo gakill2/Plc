@@ -1,4 +1,6 @@
 <script lang="ts">
+	import StlView from '#lib/stl/StlView.svelte';
+	import { DEMO_STL } from '#lib/stl/examples.js';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import CircuitEditor from '#lib/circuit/CircuitEditor.svelte';
 	import { portOf } from '#lib/circuit/model.js';
@@ -328,6 +330,7 @@
 			(n) => n.value.kind === 'operand' && !n.value.text.trim()
 		);
 		if (language === 'fbd' && blank && !lesson) project.fbd = demoFbd();
+		if (language === 'stl' && !project.stl.trim() && !lesson) project.stl = DEMO_STL;
 		project.language = language;
 	}
 
@@ -339,6 +342,7 @@
 			if (lesson.solutionSt) project.st = lesson.solutionSt;
 			if (lesson.solutionSfc) project.sfc = lesson.solutionSfc();
 			if (lesson.solutionFbd) project.fbd = lesson.solutionFbd();
+			if (lesson.solutionStl) project.stl = lesson.solutionStl;
 			project.ladder.select(null);
 			view = 'program';
 		}
@@ -443,6 +447,17 @@
 					>
 						{#snippet header()}{@render languageSwitch()}{/snippet}
 					</SfcView>
+				{:else if view === 'program' && project.language === 'stl'}
+					<StlView
+						value={project.stl}
+						onChange={(text) => (project.stl = text)}
+						gen={project.stlSt}
+						problems={project.compiled.diagnostics}
+						online={runtime.online}
+						valueOf={liveValue}
+					>
+						{#snippet header()}{@render languageSwitch()}{/snippet}
+					</StlView>
 				{:else if view === 'program' && project.language === 'st'}
 					<div class="flex h-full flex-col">
 						<div class="flex items-center gap-3 border-b border-slate-800 px-4 py-2">
@@ -580,6 +595,7 @@
 					st={project.st}
 					sfc={project.sfc}
 					fbd={project.fbd}
+					stl={project.stl}
 				/>
 			{:else if machine}
 				<OnCallPanel

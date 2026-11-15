@@ -12,6 +12,7 @@ export function exportInput(project: ProjectState): ExportInput {
 		st: project.st,
 		sfc: $state.snapshot(project.sfc),
 		fbd: $state.snapshot(project.fbd),
+		stl: project.stl,
 		library: project.library,
 		symbols: [...project.deviceSymbols, ...project.userSymbols].map((s) => ({
 			name: s.name,
@@ -45,7 +46,13 @@ export function exportFiles(
 	}
 	if (format === 'xml')
 		return [{ name: `${base}.xml`, text: exportPlcOpen(input).xml, type: 'application/xml' }];
-	return [{ name: `${base}.st`, text: programSource(input), type: 'text/plain' }];
+	return [
+		{ name: `${base}.st`, text: programSource(input), type: 'text/plain' },
+		// the original Statement List too: that is what goes back into STEP 7
+		...(input.language === 'stl'
+			? [{ name: `${base}.awl`, text: input.stl ?? '', type: 'text/plain' }]
+			: [])
+	];
 }
 
 /** Downloads the files in the browser. */

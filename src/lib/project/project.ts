@@ -37,9 +37,11 @@ export interface Project {
 	library?: string;
 	/** Function block diagram (when the FBD language is active). */
 	fbd?: Fbd;
+	/** Statement List source (when the STL language is active). */
+	stl?: string;
 }
 
-export type ProgramLanguage = 'ladder' | 'st' | 'sfc' | 'fbd';
+export type ProgramLanguage = 'ladder' | 'st' | 'sfc' | 'fbd' | 'stl';
 
 export const demoProject = (): Project => ({
 	version: 2,
@@ -81,14 +83,18 @@ export function parseProject(raw: unknown): Project | null {
 			scenario: isProcessKind(raw.scenario) ? raw.scenario : undefined,
 			lesson: typeof raw.lesson === 'string' ? raw.lesson : undefined,
 			language:
-				raw.language === 'st' || raw.language === 'sfc' || raw.language === 'fbd'
+				raw.language === 'st' ||
+				raw.language === 'sfc' ||
+				raw.language === 'fbd' ||
+				raw.language === 'stl'
 					? raw.language
 					: 'ladder',
 			st: typeof raw.st === 'string' ? raw.st : '',
 			hmi: isHmi(raw.hmi) ? raw.hmi : undefined,
 			sfc: isSfc(raw.sfc) ? raw.sfc : undefined,
 			library: typeof raw.library === 'string' ? raw.library : undefined,
-			fbd: isFbd(raw.fbd) ? raw.fbd : undefined
+			fbd: isFbd(raw.fbd) ? raw.fbd : undefined,
+			stl: typeof raw.stl === 'string' ? raw.stl : undefined
 		};
 	}
 	// stage 2 saved the bare ladder program

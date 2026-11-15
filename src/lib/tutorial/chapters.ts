@@ -2599,6 +2599,79 @@ Część mocy i część sygnałowa są **rozdzielone**: kable silnikowe i sygna
 			}
 		]
 	},
+	/* ------------------------------------------------------------------ cudzy kod */
+	{
+		slug: 'cudzy-kod',
+		title: 'Cudzy program: STL/AWL i modernizacje',
+		summary: 'Jak czytać stary program z S7-300 i zmieniać go, nie psując tego, co działa od lat.',
+		minutes: 12,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Większość pracy automatyka to nie nowe maszyny, tylko **istniejące** — tzw. *brownfield*. Linie z S7-300/400 chodzą po 20 lat, a ich programy są często w **STL** (*Statement List*, po niemiecku **AWL** — *Anweisungsliste*). W TIA Portal na S7-1500 STL nadal istnieje, choć nowych programów już się w nim nie pisze. Trzeba go umieć **czytać**.
+
+STL to tekstowy odpowiednik drabinki: jedna linia = jedna instrukcja, a wynik logiki (**RLO**, *Result of Logic Operation*) płynie z linii do linii.
+
+- \`A\` — I (AND, niem. \`U\`), \`AN\` — I z negacją, \`O\` / \`ON\` — LUB, \`X\` — XOR,
+- \`=\` przypisanie, \`S\` / \`R\` ustaw / kasuj, \`FP\` zbocze narastające (z bitem pamięci zbocza),
+- **I wiąże mocniej niż LUB**: \`A a / A b / O c / A d\` to \`a·b + c·d\`. Gdy trzeba inaczej — nawiasy \`A(\` … \`)\`,
+- **pierwsze sprawdzenie** po \`=\`, \`S\` czy \`R\` zaczyna nowy łańcuch logiki (bit /FC),
+- \`L\` ładuje wartość do akumulatora, \`T\` przesyła ją do pamięci — **niezależnie od RLO**. \`+I\`, \`==I\`, \`>I\` liczą i porównują dwa akumulatory,
+- \`JC m001\` skacze do etykiety, gdy RLO = 1 (\`JCN\` gdy 0, \`JU\` zawsze) — tak w STL robi się „IF”,
+- timery S7: \`L S5T#5S\` i \`SD T1\` (opóźnione załączenie ≈ TON), \`SE\` impuls przedłużony, \`SF\` opóźnione wyłączenie (≈ TOF), \`A T1\` czyta bit timera.
+
+W PLC Sim wybierz język **STL**. Online po prawej zobaczysz kolumny **STA** (stan operandu), **RLO** i **ACCU1** dla każdej linii — tak wygląda monitor STL w STEP 7.`
+			},
+			{
+				kind: 'quiz',
+				question: 'Co robi ten kod? A I0.0 / O I0.1 / A I0.2 / = Q0.0',
+				options: [
+					'Q0.0 = (I0.0 LUB I0.1) I I0.2',
+					'Q0.0 = I0.0 LUB (I0.1 I I0.2)',
+					'Q0.0 = I0.0 I I0.1 I I0.2',
+					'Błąd składni — brakuje nawiasu'
+				],
+				correct: 1,
+				explanation:
+					'I wiąże mocniej niż LUB. O rozpoczyna nową grupę I. Żeby dostać (I0.0 + I0.1)·I0.2, trzeba nawiasu A( O I0.0 O I0.1 ) A I0.2.'
+			},
+			{
+				kind: 'text',
+				text: `**Zasady modernizacji cudzego programu** — tego nie uczą na studiach, a to podstawa pracy serwisu:
+
+1. **Kopia zapasowa przed czymkolwiek** — pobierz program ze sterownika (*upload*), nie ufaj wersji „z dysku”. Program w CPU bywa nowszy niż archiwum.
+2. **Najpierw zrozum** — lista odwołań (*cross-reference*): gdzie bit jest zapisywany, gdzie czytany. Podwójne cewki i „ręczne” poprawki sprzed lat są normą.
+3. **Zmieniaj minimalnie** i oznaczaj zmiany komentarzem z numerem zlecenia i datą. Nie przepisuj działającego kodu „na ładniejszy” przy okazji — każda linia to ryzyko.
+4. **Szukaj ukrytych założeń**: stary program mógł polegać na tym, że operator czegoś pilnuje (położył detal, zamknął osłonę). Automatyzacja usuwa operatora — założenie znika.
+5. **Test regresji**: sprawdź nie tylko nową funkcję, ale i stare działanie — protokół przed i po zmianie.
+6. **Zmiany online** (*download in RUN*) tylko gdy wiesz, co robisz, i z kimś przy maszynie.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Masz dodać nową funkcję do 15-letniego programu bez dokumentacji. Co robisz najpierw?',
+				options: [
+					'Przepisuję wszystko w SCL — tak będzie czytelniej',
+					'Pobieram program ze sterownika jako kopię, potem czytam listę odwołań dla adresów, które zmienię',
+					'Wgrywam od razu poprawkę i patrzę, co się stanie',
+					'Kasuję nieużywane sieci, żeby było przejrzyście'
+				],
+				correct: 1,
+				explanation:
+					'Kopia z CPU (archiwum bywa nieaktualne) i zrozumienie, gdzie bity są używane. Przepisywanie i „sprzątanie” to ryzyko bez korzyści dla klienta.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'stl-pump',
+				text: 'Pierwszy program w AWL: pompa, której Stop przegrywa ze Startem — kolejność I i LUB.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'brownfield-press',
+				text: 'Prasa z 2009 roku: zlecenie zmiany w cudzym kodzie, ukryte założenie i testy regresji.'
+			}
+		]
+	},
 	/* ------------------------------------------------------------------ projekt końcowy */
 	{
 		slug: 'projekt-koncowy',

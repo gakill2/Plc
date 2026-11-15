@@ -28,12 +28,13 @@
 		ladder: LadderProgram;
 		symbols: SymbolMap;
 		online: boolean;
-		language: 'ladder' | 'st' | 'sfc' | 'fbd';
+		language: 'ladder' | 'st' | 'sfc' | 'fbd' | 'stl';
 		circuit: Circuit;
 		hmi: Hmi;
 		st: string;
 		sfc: Sfc;
 		fbd: Fbd;
+		stl: string;
 	};
 	let {
 		lesson,
@@ -49,7 +50,8 @@
 		hmi,
 		st,
 		sfc,
-		fbd
+		fbd,
+		stl
 	}: Props = $props();
 
 	let results = $state.raw<TestResult[] | null>(null);
@@ -95,6 +97,7 @@
 			st,
 			sfc,
 			fbd,
+			stl,
 			addr: addressResolver(symbols),
 			online,
 			passed: passed || completedBefore
@@ -145,9 +148,11 @@
 				? t('lesson.debug')
 				: lesson.kind === 'capstone'
 					? t('lesson.capstone')
-					: lesson.kind === 'commissioning'
-						? t('lesson.commissioning')
-						: t('lesson.exercise')} · {t(LEVELS[lesson.level])}
+					: lesson.kind === 'brownfield'
+						? t('lesson.brownfield')
+						: lesson.kind === 'commissioning'
+							? t('lesson.commissioning')
+							: t('lesson.exercise')} · {t(LEVELS[lesson.level])}
 		</p>
 		<h2 id="lesson-title" class="text-sm font-semibold text-white">{lesson.title}</h2>
 	</div>
@@ -156,7 +161,7 @@
 		{#each lesson.instructions as p, i (i)}<p><RichText text={p} /></p>{/each}
 	</div>
 
-	{#if guide.length && (language === 'ladder' || lesson.kind === 'commissioning' || lesson.solutionSt || lesson.solutionSfc || lesson.solutionFbd)}
+	{#if guide.length && (language === 'ladder' || lesson.kind === 'commissioning' || lesson.solutionSt || lesson.solutionSfc || lesson.solutionFbd || lesson.solutionStl)}
 		<div lang="pl">
 			<p class="mb-1 text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
 				{t('lesson.steps')} · {ticks.filter(Boolean).length}/{guide.length}

@@ -59,7 +59,7 @@ export interface LessonTest {
 export interface Lesson {
 	slug: string;
 	/** build = write the program, debug = find and fix the bug in a given program */
-	kind?: 'build' | 'debug' | 'commissioning' | 'capstone';
+	kind?: 'build' | 'debug' | 'commissioning' | 'capstone' | 'brownfield';
 	/** Run the tests through the project's circuit (like commissioning lessons do). */
 	fieldTests?: boolean;
 	/** Commissioning: the correctly wired circuit (the program is right from the start). */
@@ -82,6 +82,8 @@ export interface Lesson {
 	/** Analog noise and range limits on the plant's sensors. */
 	realism?: boolean;
 	/** FBD lessons: the reference diagram */
+	/** reference solution in Statement List (STL lessons) */
+	solutionStl?: string;
 	solutionFbd?: () => Fbd;
 	tests: LessonTest[];
 }

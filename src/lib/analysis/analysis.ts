@@ -109,7 +109,7 @@ export function crossReference(
 
 export interface AnalysisInput {
 	xref: XrefEntry[];
-	language: 'ladder' | 'st' | 'sfc' | 'fbd';
+	language: 'ladder' | 'st' | 'sfc' | 'fbd' | 'stl';
 	/** address → symbol name, for readable messages */
 	names: ReadonlyMap<string, string>;
 	/** Terminals that have a device wired in the circuit. */

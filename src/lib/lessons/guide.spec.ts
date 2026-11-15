@@ -18,6 +18,7 @@ function context(
 	const st = which === 'solution' ? (lesson.solutionSt ?? project.st) : project.st;
 	const sfc = which === 'solution' ? (lesson.solutionSfc?.() ?? project.sfc) : project.sfc;
 	const fbd = which === 'solution' ? (lesson.solutionFbd?.() ?? project.fbd) : project.fbd;
+	const stl = which === 'solution' ? (lesson.solutionStl ?? project.stl) : project.stl;
 	return {
 		ladder,
 		circuit,
@@ -25,6 +26,7 @@ function context(
 		st,
 		sfc,
 		fbd,
+		stl,
 		addr: addressResolver(map),
 		online: false,
 		passed: false
