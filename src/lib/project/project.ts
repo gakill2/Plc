@@ -1,5 +1,6 @@
 import { isSfc, type Sfc } from '#lib/sfc/sfc.js';
 import { isFbd, type Fbd } from '#lib/fbd/fbd.js';
+import { isHardware, type Hardware } from '#lib/hw/hw.js';
 import { demoHmi, isHmi, type Hmi } from '#lib/hmi/model.js';
 import { demoCircuit, type Circuit } from '#lib/circuit/model.js';
 import { demoProgram } from '#lib/ladder/defaults.js';
@@ -39,6 +40,8 @@ export interface Project {
 	fbd?: Fbd;
 	/** Statement List source (when the STL language is active). */
 	stl?: string;
+	/** The rack: I/O modules, their addresses and measuring types, and the field wiring. */
+	hw?: Hardware;
 }
 
 export type ProgramLanguage = 'ladder' | 'st' | 'sfc' | 'fbd' | 'stl';
@@ -94,7 +97,8 @@ export function parseProject(raw: unknown): Project | null {
 			sfc: isSfc(raw.sfc) ? raw.sfc : undefined,
 			library: typeof raw.library === 'string' ? raw.library : undefined,
 			fbd: isFbd(raw.fbd) ? raw.fbd : undefined,
-			stl: typeof raw.stl === 'string' ? raw.stl : undefined
+			stl: typeof raw.stl === 'string' ? raw.stl : undefined,
+			hw: isHardware(raw.hw) ? raw.hw : undefined
 		};
 	}
 	// stage 2 saved the bare ladder program

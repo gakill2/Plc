@@ -2599,6 +2599,68 @@ Część mocy i część sygnałowa są **rozdzielone**: kable silnikowe i sygna
 			}
 		]
 	},
+	/* ------------------------------------------------------------------ sprzęt */
+	{
+		slug: 'sprzet',
+		title: 'Konfiguracja sprzętowa: moduły, adresy i karty analogowe',
+		summary:
+			'Skąd program wie, że zawór jest pod Q0.0, a poziom pod IW64 — i co się dzieje, gdy karta mierzy nie to, co trzeba.',
+		minutes: 10,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Zanim program ruszy, w TIA Portal (STEP 7, CODESYS …) budujesz **konfigurację sprzętową**: CPU i moduły w kolejnych **slotach** szyny, dokładnie tak, jak stoją w szafie. Każdy moduł dostaje **adres początkowy** w obrazie procesu:
+
+- moduł **DI 16** od \`I0\` zajmuje bajty \`I0\` i \`I1\` — kanał 0 to \`I0.0\`, kanał 9 to \`I1.1\`,
+- moduł **AI 4** zajmuje 4 słowa: od \`IW64\` kanały są w \`IW64\`, \`IW66\`, \`IW68\`, \`IW70\` (S7-1200 domyślnie zaczyna analogi od 64),
+- adresy można zmieniać — i tak się robi przy **wymianie sterownika**, żeby stary program dalej pasował do szafy. Dwa moduły nie mogą zajmować tych samych bajtów.
+
+Program nie wie nic o slotach — widzi tylko adresy. Jeśli moduł wyjść stoi pod \`Q4\`, a program pisze do \`Q0.0\`, zawór nigdy się nie otworzy, a w programie wszystko „świeci” poprawnie.`
+			},
+			{
+				kind: 'text',
+				text: `Karta analogowa ma dla **każdego kanału** ustawiony **rodzaj pomiaru** — i musi on pasować do czujnika:
+
+- **4–20 mA** — standard w przemyśle. „Żywe zero”: 4 mA to 0 %, a **0 mA to zerwany przewód**. Z włączoną **diagnostyką przerwy** karta daje wtedy 32767 (i alarm diagnostyczny, OB82). Bez diagnostyki dostajesz wartość poniżej zakresu i nikt się nie dowie.
+- **0–10 V** — prostsze, ale przerwany przewód to 0 V, czyli „pusty zbiornik”. Nie da się odróżnić awarii od pomiaru.
+- **RTD (Pt100)** — czujnik rezystancyjny, karta sama przelicza na temperaturę w 0,1 °C (235 = 23,5 °C).
+
+Typowe objawy złej konfiguracji na rozruchu: stałe **32767** (pętla prądowa na wejściu napięciowym), **5530 przy pustym zbiorniku** (0–20 mA zamiast 4–20 mA), **0** z czujnika Pt100 ustawionego jako napięcie.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Przetwornik 4–20 mA przy pustym zbiorniku daje na karcie 5530 zamiast 0. Co jest najpewniej źle?',
+				options: [
+					'Przetwornik jest uszkodzony',
+					'Kanał ustawiony na 0–20 mA zamiast 4–20 mA — 4 mA to 1/5 zakresu',
+					'Zła skala w programie (SCALE)',
+					'Za długi przewód'
+				],
+				correct: 1,
+				explanation:
+					'Przy 0–20 mA wartość 27648 odpowiada 20 mA, więc 4 mA = 27648 / 5 ≈ 5530. Przy 4–20 mA 4 mA to dokładnie 0.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Dlaczego dla przetwornika poziomu wybiera się 4–20 mA, a nie 0–10 V?',
+				options: [
+					'Bo jest tańszy',
+					'Bo zerwany przewód (0 mA) da się odróżnić od zerowego pomiaru, a prąd nie zależy od długości kabla',
+					'Bo daje większą rozdzielczość',
+					'Bo nie wymaga zasilania'
+				],
+				correct: 1,
+				explanation:
+					'Żywe zero pozwala wykryć przerwę, a pętla prądowa jest odporna na spadki napięcia i zakłócenia na długich kablach.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'hw-config',
+				text: 'Nowa szafa mieszalnika: ustaw adresy modułów i rodzaje pomiaru, żeby gotowy program ruszył.'
+			}
+		]
+	},
 	/* ------------------------------------------------------------------ cudzy kod */
 	{
 		slug: 'cudzy-kod',

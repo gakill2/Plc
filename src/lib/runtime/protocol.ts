@@ -1,3 +1,4 @@
+import type { Hardware } from '#lib/hw/hw.js';
 import type { Instr, LoadOptions, NumType, PlcSnapshot, ProgramIssue } from '#lib/engine/index.js';
 import type { ProcessKind, ProcessState } from '#lib/processes/types.js';
 import type { FieldSettings } from '#lib/processes/field.js';
@@ -24,6 +25,8 @@ export type RuntimeCommand =
 	| { type: 'stop' }
 	| { type: 'reset' }
 	| { type: 'setInput'; address: string; value: boolean }
+	/** the configured rack between the field and the PLC (null: terminals = addresses) */
+	| { type: 'setHardware'; hw: Hardware | null }
 	| { type: 'setInputNumber'; address: string; value: number }
 	| { type: 'setSpeed'; speed: number }
 	| { type: 'force'; address: string; value: boolean | null }

@@ -1,3 +1,4 @@
+import type { Hardware } from '#lib/hw/hw.js';
 import type { Plc } from '#lib/engine/index.js';
 import type { LadderProgram } from '#lib/ladder/model.js';
 import type { Project } from '#lib/project/project.js';
@@ -82,6 +83,8 @@ export interface Lesson {
 	/** Analog noise and range limits on the plant's sensors. */
 	realism?: boolean;
 	/** FBD lessons: the reference diagram */
+	/** reference hardware configuration (hardware lessons) */
+	solutionHw?: () => Hardware;
 	/** reference solution in Statement List (STL lessons) */
 	solutionStl?: string;
 	solutionFbd?: () => Fbd;

@@ -1,3 +1,4 @@
+import type { Hardware } from '#lib/hw/hw.js';
 import type { Sfc } from '#lib/sfc/sfc.js';
 import type { FbdBox, FbdValue, Fbd } from '#lib/fbd/fbd.js';
 import { formatAddress, parseAddress } from '#lib/engine/index.js';
@@ -31,6 +32,8 @@ export interface GuideContext {
 	fbd?: Fbd;
 	/** Statement List source (STL lessons) */
 	stl?: string;
+	/** the rack (hardware lessons) */
+	hw?: Hardware;
 	/** the project's operator panel (HMI lessons) */
 	hmi?: Hmi;
 	/** the project's circuit (commissioning lessons check the wiring) */
@@ -909,6 +912,28 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		{
 			text: 'Każda zmiana oznaczona komentarzem `ZM-17`.',
 			done: (c) => ((c.stl ?? '').match(/ZM-17/g) ?? []).length >= 2
+		},
+		checkIt
+	],
+
+	'hw-config': [
+		{
+			text: 'Slot 3 (DQ 16) od adresu 0 — zawory pod `Q0.0` … `Q0.4`, jak w programie.',
+			done: (c) => c.hw?.modules.find((m) => m.slot === 3)?.start === 0
+		},
+		{
+			text: 'Karta AI od `IW64`; kanał 0 „4–20 mA” z diagnostyką przerwy.',
+			done: (c) => {
+				const m = c.hw?.modules.find((x) => x.slot === 4);
+				return m?.start === 64 && m.ai?.[0]?.mode === 'I_4_20' && m.ai[0].diag;
+			}
+		},
+		{
+			text: 'Kanał 1 „RTD Pt100”, kanały 2 i 3 wyłączone.',
+			done: (c) => {
+				const ai = c.hw?.modules.find((x) => x.slot === 4)?.ai;
+				return ai?.[1]?.mode === 'RTD' && ai[2]?.mode === 'off' && ai[3]?.mode === 'off';
+			}
 		},
 		checkIt
 	],

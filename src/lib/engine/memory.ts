@@ -10,8 +10,8 @@ export interface MemoryConfig {
 }
 
 export const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
-	inputBytes: 8,
-	outputBytes: 8,
+	inputBytes: 128,
+	outputBytes: 128,
 	markerBytes: 1024,
 	timers: 64,
 	counters: 64

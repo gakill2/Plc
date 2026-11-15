@@ -29,9 +29,10 @@ import { newId } from '#lib/ladder/model.js';
 import type { CompiledLadder } from '#lib/ladder/compiler.js';
 import { compileSt, type StCompileResult } from '#lib/st/compiler.js';
 import { stlToSt, type GeneratedStl } from '#lib/stl/stl.js';
+import { checkHardware, type Hardware } from '#lib/hw/hw.js';
 import type { Project, ProgramLanguage } from './project.js';
 
-export type ProblemSource = 'program' | 'circuit' | 'symbols';
+export type ProblemSource = 'program' | 'circuit' | 'symbols' | 'hardware';
 
 export interface Problem {
 	id: string;
@@ -68,6 +69,8 @@ export class ProjectState {
 	readonly fbdSt: GeneratedFbd | null = $derived(
 		this.language === 'fbd' ? fbdToSt(this.fbd, this.boxTypes) : null
 	);
+	/** The rack (hardware-configuration lessons); null: terminals are addresses. */
+	hw: Hardware | null = $state(null);
 	/** Statement List source. */
 	stl: string = $state('');
 	/** The STL program translated to ST, while STL is the active language. */
@@ -116,6 +119,7 @@ export class ProjectState {
 		this.sfc = project.sfc ?? emptySfc();
 		this.fbd = project.fbd ?? emptyFbd();
 		this.stl = project.stl ?? '';
+		this.hw = project.hw ?? null;
 		this.hmi = project.hmi ?? emptyHmi();
 		this.compiled = $derived(
 			this.sfcSt && this.stResult
@@ -131,6 +135,10 @@ export class ProjectState {
 		this.problems = $derived([
 			...this.compiled.diagnostics.map((d) => ({ ...d, source: 'program' as const })),
 			...this.symbols.issues.map((d) => ({ ...d, source: 'symbols' as const })),
+			...(this.hw ? checkHardware(this.hw) : []).map((d) => ({
+				...d,
+				source: 'hardware' as const
+			})),
 			...checkCircuit(this.circuit, DEFAULT_MEMORY_CONFIG).map((d) => ({
 				...d,
 				source: 'circuit' as const
@@ -223,6 +231,7 @@ export class ProjectState {
 		this.sfc = p.sfc ?? emptySfc();
 		this.fbd = p.fbd ?? emptyFbd();
 		this.stl = p.stl ?? '';
+		this.hw = p.hw ?? null;
 		this.library = p.library ?? '';
 	}
 
@@ -248,6 +257,7 @@ export class ProjectState {
 					? $state.snapshot(this.fbd)
 					: undefined,
 			stl: this.language === 'stl' || this.stl.trim() ? this.stl : undefined,
+			hw: this.hw ? $state.snapshot(this.hw) : undefined,
 			hmi: $state.snapshot(this.hmi)
 		};
 	}

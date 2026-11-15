@@ -18,7 +18,8 @@
 	const SOURCES = {
 		program: 'problems.program',
 		circuit: 'problems.circuit',
-		symbols: 'problems.symbols'
+		symbols: 'problems.symbols',
+		hardware: 'problems.hardware'
 	} as const;
 </script>
 

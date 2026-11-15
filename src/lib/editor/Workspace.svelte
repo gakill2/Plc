@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HardwareView from '#lib/hw/HardwareView.svelte';
 	import StlView from '#lib/stl/StlView.svelte';
 	import { DEMO_STL } from '#lib/stl/examples.js';
 	import { onDestroy, onMount, untrack } from 'svelte';
@@ -97,6 +98,7 @@
 		'program',
 		'library',
 		...(project.scenario ? (['process'] as const) : []),
+		...(project.hw ? (['hardware'] as const) : []),
 		'circuit',
 		...(lesson?.kind === 'commissioning' || machine ? (['iocheck'] as const) : []),
 		'hmi',
@@ -108,6 +110,8 @@
 
 	// The simulated plant runs in the worker next to the PLC.
 	$effect(() => runtime.setProcess(project.scenario ?? null));
+	// the configured rack sits between the plant / buttons and the PLC
+	$effect(() => runtime.setHardware(project.hw ? $state.snapshot(project.hw) : null));
 	// lessons about noisy signals switch the realistic sensors on
 	$effect(() => {
 		if (lesson?.realism) runtime.processCommand('field:realism', true);
@@ -343,6 +347,7 @@
 			if (lesson.solutionSfc) project.sfc = lesson.solutionSfc();
 			if (lesson.solutionFbd) project.fbd = lesson.solutionFbd();
 			if (lesson.solutionStl) project.stl = lesson.solutionStl;
+			if (lesson.solutionHw) project.hw = lesson.solutionHw();
 			project.ladder.select(null);
 			view = 'program';
 		}
@@ -524,6 +529,8 @@
 					<div class="h-full overflow-auto">
 						<SymbolTable {project} locked={runtime.online} />
 					</div>
+				{:else if view === 'hardware' && project.hw}
+					<HardwareView hw={project.hw} locked={runtime.online} problems={project.problems} />
 				{:else if view === 'iocheck'}
 					<IoCheck
 						symbols={project.userSymbols}
@@ -596,6 +603,7 @@
 					sfc={project.sfc}
 					fbd={project.fbd}
 					stl={project.stl}
+					hw={project.hw}
 				/>
 			{:else if machine}
 				<OnCallPanel

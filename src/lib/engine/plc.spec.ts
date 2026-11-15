@@ -149,7 +149,7 @@ describe('Plc scan cycle', () => {
 		const plc = new Plc();
 		expect(() => plc.setInput('Q0.0', true)).toThrow(/input terminal/);
 		expect(() => plc.getOutput('MW0')).toThrow(/output terminal/);
-		expect(() => plc.setInput('I99.0', true)).toThrow(/out of range/);
+		expect(() => plc.setInput('I199.0', true)).toThrow(/out of range/);
 		expect(() => plc.scan(-1)).toThrow(RangeError);
 	});
 

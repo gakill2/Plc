@@ -16,6 +16,7 @@ import {
 } from '#lib/circuit/model.js';
 import { createProcess } from '#lib/processes/models.js';
 import { FieldLayer } from '#lib/processes/field.js';
+import { HwLayer, type Hardware } from '#lib/hw/hw.js';
 import { plantInfo } from '#lib/processes/plants.js';
 import type { Lesson, TestContext, TestResult } from './types.js';
 
@@ -30,7 +31,8 @@ export function runLessonTests(
 	program: Instr[],
 	circuit?: Circuit,
 	faults: Fault[] = [],
-	load?: LoadOptions
+	load?: LoadOptions,
+	hw?: Hardware
 ): TestResult[] {
 	const field = (lesson.kind === 'commissioning' || lesson.fieldTests) && circuit ? circuit : null;
 	return lesson.tests.map((test) => {
@@ -51,12 +53,19 @@ export function runLessonTests(
 				.filter((x) => x.noise)
 				.map((x) => [x.address, x.noise!])
 		);
-		const io = sensors.wrap({
+		const plcIo = {
 			output: (t: string) => plc.getOutput(t),
 			input: (t: string, v: boolean) => plc.setInput(t, v),
 			word: (a: string) => plc.memory.readNumber(parseAddress(a)),
 			setWord: (a: string, v: number) => plc.setInputNumber(a, v)
-		});
+		};
+		const rack = hw ? new HwLayer(hw, (t) => sensors.faults.get(t) === 'wireBreak') : null;
+		const io = sensors.wrap(rack ? rack.wrap(plcIo) : plcIo);
+		/** buttons in the tests are field terminals too: through the input module */
+		const press = (terminal: string, value: boolean) => {
+			const a = rack ? rack.inputAddress(terminal) : terminal;
+			if (a) plc.setInput(a, value);
+		};
 		process?.step(0, io); // initial sensor values
 		const devices = field ? new FieldSim(field, plc) : null;
 		if (devices) devices.faults = faults;
@@ -78,7 +87,7 @@ export function runLessonTests(
 				plc.load(program, load);
 				plc.run();
 			}
-			for (const [terminal, value] of Object.entries(step.set ?? {})) plc.setInput(terminal, value);
+			for (const [terminal, value] of Object.entries(step.set ?? {})) press(terminal, value);
 			for (const [name, value] of step.commands ?? []) process?.command(name, value);
 			for (const [address, fault] of Object.entries(step.fieldFaults ?? {}))
 				sensors.setFault(address, fault);

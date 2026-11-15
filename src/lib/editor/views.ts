@@ -9,4 +9,5 @@ export type View =
 	| 'debug'
 	| 'diag'
 	| 'hmi'
-	| 'iocheck';
+	| 'iocheck'
+	| 'hardware';

@@ -1,3 +1,4 @@
+import type { Hardware } from '#lib/hw/hw.js';
 import type { Instr, LoadOptions, NumType, ProgramIssue } from '#lib/engine/index.js';
 import type {
 	RuntimeCommand,
@@ -82,6 +83,10 @@ export class PlcRuntime {
 
 	setInputNumber(address: string, value: number) {
 		this.#send({ type: 'setInputNumber', address, value });
+	}
+
+	setHardware(hw: Hardware | null) {
+		this.#send({ type: 'setHardware', hw });
 	}
 
 	setInput(address: string, value: boolean) {

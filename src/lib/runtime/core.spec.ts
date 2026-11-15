@@ -42,6 +42,25 @@ describe('RuntimeCore', () => {
 		expect(core.status).toBe('PAUSED');
 	});
 
+	it('routes a wired button through the configured input module', () => {
+		const core = loaded();
+		core.handle({
+			type: 'setHardware',
+			hw: {
+				cpu: 'CPU',
+				imageBytes: 128,
+				modules: [{ slot: 2, kind: 'DI16', start: 4 }],
+				wiring: [{ terminal: 'I0.0', device: 'S1', slot: 2, channel: 0 }]
+			}
+		});
+		core.handle({ type: 'setInput', address: 'I0.0', value: true });
+		expect(core.plc.getInput('I4.0')).toBe(true);
+		expect(core.plc.getInput('I0.0')).toBe(false);
+		core.handle({ type: 'setHardware', hw: null });
+		core.handle({ type: 'setInput', address: 'I0.0', value: true });
+		expect(core.plc.getInput('I0.0')).toBe(true);
+	});
+
 	it('caps the work per tick', () => {
 		const core = loaded();
 		core.handle({ type: 'run' });

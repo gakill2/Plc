@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { reviewSt } from './review.js';
+	import type { Hardware } from '#lib/hw/hw.js';
 	import { t } from '#lib/i18n/i18n.svelte.js';
 	import { resolve } from '$app/paths';
 	import type { CompiledLadder } from '#lib/ladder/compiler.js';
@@ -35,6 +36,7 @@
 		sfc: Sfc;
 		fbd: Fbd;
 		stl: string;
+		hw: Hardware | null;
 	};
 	let {
 		lesson,
@@ -51,7 +53,8 @@
 		st,
 		sfc,
 		fbd,
-		stl
+		stl,
+		hw
 	}: Props = $props();
 
 	let results = $state.raw<TestResult[] | null>(null);
@@ -98,6 +101,7 @@
 			sfc,
 			fbd,
 			stl,
+			hw: hw ?? undefined,
 			addr: addressResolver(symbols),
 			online,
 			passed: passed || completedBefore
@@ -121,7 +125,8 @@
 				compiled.program,
 				$state.snapshot(circuit) as Circuit,
 				[],
-				$state.snapshot(compiled.load)
+				$state.snapshot(compiled.load),
+				hw ? ($state.snapshot(hw) as Hardware) : undefined
 			);
 			checking = false;
 			if (results.every((r) => r.passed)) {
@@ -161,7 +166,7 @@
 		{#each lesson.instructions as p, i (i)}<p><RichText text={p} /></p>{/each}
 	</div>
 
-	{#if guide.length && (language === 'ladder' || lesson.kind === 'commissioning' || lesson.solutionSt || lesson.solutionSfc || lesson.solutionFbd || lesson.solutionStl)}
+	{#if guide.length && (language === 'ladder' || lesson.kind === 'commissioning' || lesson.solutionSt || lesson.solutionSfc || lesson.solutionFbd || lesson.solutionStl || lesson.solutionHw)}
 		<div lang="pl">
 			<p class="mb-1 text-[10px] font-semibold tracking-wider text-sky-300 uppercase">
 				{t('lesson.steps')} · {ticks.filter(Boolean).length}/{guide.length}

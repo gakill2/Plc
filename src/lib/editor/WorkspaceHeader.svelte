@@ -55,7 +55,8 @@
 		debug: 'view.debug',
 		diag: 'view.diag',
 		hmi: 'view.hmi',
-		iocheck: 'view.iocheck'
+		iocheck: 'view.iocheck',
+		hardware: 'view.hardware'
 	};
 	const tool = 'rounded px-2 py-1 text-xs text-slate-300 hover:bg-slate-800';
 </script>

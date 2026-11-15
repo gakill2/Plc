@@ -1,3 +1,4 @@
+import type { AiMode, Hardware } from '#lib/hw/hw.js';
 import { sfcStep, sfcTransition, type Sfc } from '#lib/sfc/sfc.js';
 import { widget } from '#lib/hmi/model.js';
 import { parseAddress } from '#lib/engine/index.js';
@@ -718,6 +719,42 @@ const partsCounted: Check = ({ plc, process }) => {
 	const c = plc.memory.readNumber(parseAddress('MW50'));
 	return c === s.good && c > 0 ? null : `MW50 = ${c}, a dobrych detali jest ${s.good}`;
 };
+
+/* ---------- hardware configuration: the MX2 cabinet ---------- */
+
+function mixerHardware(good: boolean): Hardware {
+	const ai = (mode: AiMode, diag = false) => ({ mode, diag });
+	return {
+		cpu: 'CPU 1215C',
+		imageBytes: 128,
+		modules: [
+			{ slot: 2, kind: 'DI16', start: 0 },
+			{ slot: 3, kind: 'DQ16', start: good ? 0 : 4 },
+			{
+				slot: 4,
+				kind: 'AI4',
+				start: 64,
+				ai: good
+					? [ai('I_4_20', true), ai('RTD', true), ai('off'), ai('off')]
+					: [ai('U_0_10'), ai('U_0_10'), ai('U_0_10'), ai('U_0_10')]
+			}
+		],
+		wiring: [
+			{ terminal: 'I0.0', device: '-B3 wyłącznik poziomu HH (NC)', slot: 2, channel: 0 },
+			{ terminal: 'I1.0', device: '-S1 Start', slot: 2, channel: 8 },
+			{ terminal: 'I1.1', device: '-S2 Stop (NC)', slot: 2, channel: 9 },
+			{ terminal: 'I1.2', device: '-S3 Kwitowanie', slot: 2, channel: 10 },
+			{ terminal: 'Q0.0', device: '-Y1 zawór A', slot: 3, channel: 0 },
+			{ terminal: 'Q0.1', device: '-Y2 zawór B', slot: 3, channel: 1 },
+			{ terminal: 'Q0.2', device: '-K1 mieszadło', slot: 3, channel: 2 },
+			{ terminal: 'Q0.3', device: '-K2 grzałka', slot: 3, channel: 3 },
+			{ terminal: 'Q0.4', device: '-Y3 zawór spustowy', slot: 3, channel: 4 },
+			{ terminal: 'Q1.0', device: '-H1 lampka alarmu', slot: 3, channel: 8 },
+			{ terminal: 'IW4', device: '-B1 przetwornik poziomu', slot: 4, channel: 0, signal: 'I_4_20' },
+			{ terminal: 'IW6', device: '-B2 czujnik temperatury', slot: 4, channel: 1, signal: 'RTD' }
+		]
+	};
+}
 
 /** The filtered value in MW20 is close to the real temperature. */
 const avgNear =
@@ -4051,6 +4088,96 @@ export const LESSONS: Lesson[] = [
 			{
 				name: 'ZM-17/2: licznik dobrych detali w MW50',
 				steps: [{ label: 'Auto, 15 s', set: { 'I1.1': true }, wait: 15_000, check: partsCounted }]
+			}
+		]
+	},
+	{
+		slug: 'hw-config',
+		title: 'Konfiguracja sprzętowa: nowa szafa mieszalnika MX2',
+		level: 'process',
+		scenario: 'mixer',
+		realism: true,
+		summary:
+			'Program jest gotowy, szafa okablowana, ale maszyna nie rusza. Ustaw adresy modułów i rodzaj pomiaru kanałów analogowych tak, jak wymaga lista I/O.',
+		instructions: [
+			'Mieszalnik MX2 dostał nową szafę z **CPU 1215C** i modułami: **DI 16** (slot 2), **DQ 16** (slot 3), **AI 4** (slot 4). Program (Twój z projektu końcowego) i okablowanie są sprawdzone — **nie zmieniaj ich**. Zajrzyj do widoku **Sprzęt**.',
+			'Program czyta wejścia od `I0.0`, steruje zaworami od `Q0.0`, poziom ma w `IW64`, a temperaturę w `IW66` (tablica symboli). Moduły muszą stać pod tymi adresami.',
+			'**Kanał 0** karty AI: przetwornik poziomu **4–20 mA** — z **diagnostyką przerwy przewodu**, bo program wykrywa zerwany przewód po wartości 32767. **Kanał 1**: czujnik **Pt100** — pomiar rezystancyjny (RTD), wartość w 0,1 °C. Nieużywane kanały wyłącz.',
+			'Nowa karta AI przychodzi z ustawieniem **napięcie** na wszystkich kanałach. Zanim poprawisz, uruchom i popatrz w tablicy obserwacji, co program dostaje: 32767, 0, −4864 — to typowe objawy złej konfiguracji na rozruchu.',
+			'Test: receptura 1 przez `MW30` i Start — jak w projekcie końcowym.'
+		],
+		hints: [
+			'Slot 3: adres początkowy **0** — wtedy kanał 0 to `Q0.0`. Przy 4 zawory są pod `Q4.0`, a program pisze do `Q0.0`.',
+			'Kanał 0: „4–20 mA” + diagnostyka. Kanał 1: „RTD Pt100”. Kanały 2 i 3: „wyłączony”.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'hw-config',
+			scenario: 'mixer',
+			language: 'st',
+			st: CAPSTONE_SOLUTION,
+			ladder: { version: 1, rungs: [] },
+			hw: mixerHardware(false),
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I1.1', { color: 'red', nc: true }],
+				['pushbutton', 'Ack', 'I1.2']
+			]),
+			symbols: [
+				symbol('LevelOk', 'I0.0', '-B3 wyłącznik poziomu HH, NC'),
+				symbol('Level', 'IW64', '-B1 poziom 4–20 mA, 0 … 27648'),
+				symbol('Temperature', 'IW66', '-B2 Pt100, °C × 10'),
+				symbol('ValveA', 'Q0.0', '-Y1'),
+				symbol('ValveB', 'Q0.1', '-Y2'),
+				symbol('Stirrer', 'Q0.2', '-K1'),
+				symbol('Heater', 'Q0.3', '-K2'),
+				symbol('Outlet', 'Q0.4', '-Y3'),
+				symbol('Alarm', 'Q1.0', '-H1'),
+				symbol('RecipeNo', 'MW30', 'Numer receptury z panelu (1, 2)'),
+				symbol('BatchCount', 'MW40', 'Liczba partii (RETAIN)'),
+				symbol('AlmLevel', 'M20.0', 'Alarm: przetwornik poziomu'),
+				symbol('AlmOverfill', 'M20.1', 'Alarm: przepełnienie (LevelOk)'),
+				symbol('AlmHeating', 'M20.2', 'Alarm: grzanie > 120 s'),
+				symbol('AlmRecipe', 'M20.3', 'Alarm: zła receptura')
+			],
+			watch: [
+				watchEntry('Level', 'DEC', true),
+				watchEntry('Temperature', 'DEC', true),
+				watchEntry('ValveA', undefined, true),
+				watchEntry('Alarm', undefined, true)
+			]
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: CAPSTONE_SOLUTION,
+		solutionHw: () => mixerHardware(true),
+		tests: [
+			{
+				name: 'Rozruch: receptura 1 — dobra partia',
+				steps: [
+					{
+						label: 'Stop puszczony, receptura 1',
+						set: { 'I1.1': true },
+						hmi: { MW30: 1 },
+						wait: 200
+					},
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'puść, 110 s', set: { 'I1.0': false }, wait: 110_000, check: mixerOk(1) }
+				]
+			},
+			{
+				name: 'Diagnostyka: zerwany przewód poziomu — alarm od razu, nie dopiero od wyłącznika HH',
+				steps: [
+					{ label: 'receptura 1', set: { 'I1.1': true }, hmi: { MW30: 1 }, wait: 200 },
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'dozowanie, 12 s', set: { 'I1.0': false }, wait: 12_000 },
+					{
+						label: 'przewód -B1 zerwany, 2 s',
+						fieldFaults: { IW4: 'wireBreak' },
+						wait: 2000,
+						expect: { 'Q1.0': true, 'Q0.0': false, 'Q0.1': false, 'Q0.3': false }
+					},
+					{ label: 'po 20 s', wait: 18_000, check: mixerOk(0) }
+				]
 			}
 		]
 	},

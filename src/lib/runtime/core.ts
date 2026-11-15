@@ -2,6 +2,7 @@ import { parseAddress, Plc, ProgramError, type Address, type NumType } from '#li
 import { createProcess } from '#lib/processes/models.js';
 import { FieldLayer, type SignalFault } from '#lib/processes/field.js';
 import { plantInfo } from '#lib/processes/plants.js';
+import { HwLayer } from '#lib/hw/hw.js';
 import type { ProcessIO, ProcessKind, ProcessModel } from '#lib/processes/types.js';
 import type {
 	RuntimeCommand,
@@ -38,11 +39,19 @@ export class RuntimeCore {
 	#process: ProcessModel | null = null;
 	/** sensors between the plant and the PLC: noise and injected faults */
 	#field = new FieldLayer(1);
-	readonly #io: ProcessIO = this.#field.wrap({
+	/** the configured rack: field terminals → logical addresses, analog measuring types */
+	#hw: HwLayer | null = null;
+	readonly #plcIo: ProcessIO = {
 		output: (t) => this.plc.getOutput(t),
 		input: (t, v) => this.plc.setInput(t, v),
 		word: (a) => this.plc.memory.readNumber(parseAddress(a)),
 		setWord: (a, v) => this.plc.setInputNumber(a, v)
+	};
+	readonly #io: ProcessIO = this.#field.wrap({
+		output: (t) => (this.#hw ? this.#hw.wrap(this.#plcIo) : this.#plcIo).output(t),
+		input: (t, v) => (this.#hw ? this.#hw.wrap(this.#plcIo) : this.#plcIo).input(t, v),
+		word: (a) => (this.#hw ? this.#hw.wrap(this.#plcIo) : this.#plcIo).word(a),
+		setWord: (a, v) => (this.#hw ? this.#hw.wrap(this.#plcIo) : this.#plcIo).setWord(a, v)
 	});
 
 	get status(): RuntimeStatus {
@@ -104,8 +113,17 @@ export class RuntimeCore {
 			case 'setInputNumber':
 				this.plc.setInputNumber(cmd.address, cmd.value);
 				return null;
-			case 'setInput':
-				this.plc.setInput(cmd.address, cmd.value);
+			case 'setInput': {
+				// a wired button goes through its input module, like the plant's sensors
+				const address = this.#hw ? this.#hw.inputAddress(cmd.address) : cmd.address;
+				if (address) this.plc.setInput(address, cmd.value);
+				return null;
+			}
+			case 'setHardware':
+				this.#hw = cmd.hw
+					? new HwLayer(cmd.hw, (t) => this.#field.faults.get(t) === 'wireBreak')
+					: null;
+				this.#process?.step(0, this.#io);
 				return null;
 			case 'setSpeed':
 				if (cmd.speed > 0 && Number.isFinite(cmd.speed)) this.#speed = cmd.speed;

@@ -50,7 +50,8 @@ describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, les
 						: compile(lesson, lesson.solution());
 		expect(diagnostics).toEqual([]);
 		const circuit = lesson.solutionCircuit?.() ?? lesson.starter().circuit;
-		const results = runLessonTests(lesson, program, circuit, [], load);
+		const hw = lesson.solutionHw?.() ?? lesson.starter().hw;
+		const results = runLessonTests(lesson, program, circuit, [], load, hw);
 		expect(results.filter((r) => !r.passed)).toEqual([]);
 	});
 
@@ -67,7 +68,9 @@ describe.each(LESSONS.map((l) => [l.slug, l] as const))('lesson %s', (_slug, les
 							? compileStLesson(lesson, start.st ?? '')
 							: compile(lesson, start.ladder);
 		expect(
-			runLessonTests(lesson, program, lesson.starter().circuit, [], load).some((r) => !r.passed)
+			runLessonTests(lesson, program, lesson.starter().circuit, [], load, start.hw).some(
+				(r) => !r.passed
+			)
 		).toBe(true);
 	});
 });
