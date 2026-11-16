@@ -40,7 +40,7 @@ it and watch the controller execute your program scan by scan — or let it driv
 - **Online monitoring** — watch table with _modify_ and _force_, and a per-scan **timing diagram**.
 - **Simulated plants** — traffic light, water tank with level sensors, sorting conveyor with a
   pusher, each with simple physics; connect one to any project.
-- **42 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
+- **43 auto-graded lessons** — build, find-the-bug and commissioning exercises, from a first rung
   to a crane with an encoder, a PID-tuned oven, a remote I/O station and two-hand control. Your
   program runs against test cases in a headless PLC (or through the wired circuit); every lesson
   ships a reference solution that the test suite proves passes, plus a live step-by-step guide.
@@ -48,6 +48,10 @@ it and watch the controller execute your program scan by scan — or let it driv
   Idle, Execute, Stopping, Aborted, Clearing), production and manual unit modes with hold-to-run
   jog, interlocks that hold in every state, and tests that press Stop at every 0.2 s of the cycle
   and cut the power mid-stroke (valves spring back, then a cold start with only RETAIN data).
+- **Operator diagnostics** — the press that only says “Error”: start permissives on HMI lamps,
+  an alarm with a cause and an action for every step’s time supervision, first-out so a cascade
+  shows only the root cause, and six “night shift calls” as tests that check the panel names
+  exactly the right fault.
 - **Device standard and a final project** — a reusable motor block with modes, permissives,
   interlocks and feedback supervision; then the MX2 mixer built from a functional description
   (eight requirements: recipes, hold/resume, alarms on the HMI, RETAIN counter) and accepted

@@ -2039,6 +2039,92 @@ W PLC Sim każdy alarm panelu ma **priorytet, reakcję operatora, opóźnienia i
 		]
 	},
 
+	/* ------------------------------------------------------------------ diagnostyka */
+	{
+		slug: 'diagnostyka',
+		title: 'Dlaczego nie rusza? Diagnostyka projektowana przez programistę',
+		summary:
+			'Warunki startu na panelu, alarm z przyczyną zamiast „Błąd 17”, nadzór czasu kroków i pierwsza przyczyna (first-out) — maszyna sama mówi, czego jej brakuje.',
+		minutes: 9,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Jest trzecia w nocy, maszyna stoi, a operator dzwoni: „nie rusza”. Albo „świeci czerwona lampka”. Jeśli jedyną odpowiedzią programu jest bit Alarm, ktoś musi przyjechać z laptopem, podłączyć się i czytać kod. Godzina postoju linii kosztuje więcej niż tydzień pracy programisty.
+
+Szukanie usterek to umiejętność serwisanta. **Diagnostyka** to umiejętność programisty: program ma być tak napisany, żeby usterkę znalazł operator albo elektryk utrzymania ruchu, **bez otwierania kodu**. Po tym senior ocenia program juniora.`
+			},
+			{
+				kind: 'text',
+				text: `**Trzy narzędzia, które powinna mieć każda maszyna:**
+
+1. **Warunki startu (permisywy) na ekranie.** Każdy warunek ze startu sekwencji na osobnej lampce: powietrze, detal, pozycja wyjściowa, osłony, brak alarmów, tryb Auto. Lampka „Gotowa do startu” to iloczyn wszystkich. Operator od razu widzi, która jest czerwona.
+2. **Nadzór czasu każdego kroku** z osobnym komunikatem. Nie „Błąd ruchu”, tylko „Krok 20: prasa B nie zjechała w 2 s — sprawdź kontaktron 2B2 i szczelność siłownika B”. Tekst mówi **co się stało, gdzie i co sprawdzić** (zgodnie z ISA-18.2: każdy alarm ma przyczynę i działanie).
+3. **Pierwsza przyczyna (first-out).** Jedna usterka wywołuje kaskadę: zanika powietrze, więc żaden siłownik nie dojeżdża, więc wszystkie nadzory czasu wołają naraz. Panel z pięcioma alarmami wysyła mechanika do złego siłownika. First-out zapamiętuje tylko **pierwszy** alarm z grupy, a przyczynę nadrzędną (powietrze, zasilanie, e-stop) sprawdza **przed** jej skutkami.`
+			},
+			{
+				kind: 'code',
+				title: 'First-out w ST: nowy alarm tylko, gdy żaden nie jest aktywny',
+				code: `anyAlarm := AlmAir OR AlmStep10 OR AlmStep20;
+IF step >= 10 AND step <= 40 AND NOT anyAlarm THEN
+  IF NOT AirOk THEN
+    AlmAir := TRUE;              // przyczyna nadrzędna — najpierw
+  ELSIF moveTime.Q THEN
+    AlmStep10 := step = 10;      // skutek — tylko gdy powietrze jest
+    AlmStep20 := step = 20;
+  END_IF;
+END_IF;`
+			},
+			{
+				kind: 'callout',
+				tone: 'tip',
+				title: 'Uszkodzony czujnik też trzeba umieć „powiedzieć”',
+				text: 'Gdy kontaktron 2B1 pada w kroku 30, prasa fizycznie wróciła, ale program tego nie wie. Dobry alarm nie mówi „prasa nie wróciła”, tylko „prasa nie wróciła **w ciągu 2 s** — sprawdź kontaktron 2B1”. Elektryk spojrzy na siłownik, zobaczy, że jest w górze, i od razu wie, że winny jest czujnik. Do tego blokada trzyma docisk — maszyna stoi bezpiecznie, nawet gdy kłamie jej czujnik.'
+			},
+			{
+				kind: 'text',
+				text: `**W TIA Portal** podobne funkcje daje **ProDiag** (S7-1500): nadzory operandów, blokad, akcji i pozycji, z tekstem alarmu i kryteriami, które pokazują na panelu, który warunek nie jest spełniony. Sekwencje w **S7-GRAPH** mają wbudowany nadzór kroków i analizę kryteriów. Warto wiedzieć, że to istnieje — ale zasada jest ta sama co w Twoim ST: każdy warunek ma nazwę, każdy nadzór ma tekst, który prowadzi do przyczyny.
+
+**Dobre teksty alarmów:**
+
+- mów językiem obiektu i oznaczeń ze schematu: „-B12 czujnik detalu”, a nie „I 4.3” ani „Błąd 17”,
+- jedna przyczyna = jeden alarm; jeśli możesz dodać „sprawdź …”, dodaj,
+- alarm kasuje się Ack dopiero po usunięciu przyczyny, a maszyna nie rusza sama po kwitowaniu.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'W kroku 20 zanika powietrze. Po 2 s panel pokazuje dwa alarmy: „Brak powietrza” i „Prasa nie zjechała — sprawdź szczelność B”. Co jest nie tak?',
+				options: [
+					'Nic — lepiej mieć więcej informacji',
+					'Brakuje first-out: drugi alarm jest skutkiem pierwszego i wyśle mechanika do zdrowego siłownika',
+					'Czas nadzoru jest za krótki',
+					'Alarm powietrza powinien mieć niższy priorytet'
+				],
+				correct: 1,
+				explanation:
+					'Skutek przyczyny nadrzędnej nie powinien pojawić się jako osobny alarm. First-out zapamiętuje pierwszą przyczynę, a przyczyny nadrzędne sprawdza się przed nadzorem ruchu.'
+			},
+			{
+				kind: 'quiz',
+				question: 'Który tekst alarmu jest najlepszy?',
+				options: [
+					'„Błąd 17”',
+					'„Błąd siłownika”',
+					'„Krok 10: docisk A nie dojechał w 2 s — sprawdź kontaktron 1B2 i siłownik A”',
+					'„I0.1 = 0”'
+				],
+				correct: 2,
+				explanation:
+					'Dobry alarm mówi, co się stało, gdzie (krok, oznaczenie ze schematu) i co sprawdzić. Operator albo elektryk wie, od czego zacząć, bez laptopa.'
+			},
+			{
+				kind: 'lesson',
+				slug: 'press-diagnostics',
+				text: 'Prasa mówi tylko „Błąd”. Dodaj warunki startu, alarmy z przyczyną i first-out — i odbierz sześć telefonów z nocnej zmiany.'
+			}
+		]
+	},
+
 	/* ------------------------------------------------------------------ uruchomienie */
 	{
 		slug: 'uruchomienie',

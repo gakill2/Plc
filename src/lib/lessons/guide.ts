@@ -1152,6 +1152,30 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		checkIt
 	],
 
+	'press-diagnostics': [
+		{
+			text: 'Warunki startu: `P_Air`, `P_Part`, `P_AHome`, `P_BHome`, `P_NoAlarm` i `Ready` przed `CASE`; krok 0 startuje przy `Ready`.',
+			done: (c) =>
+				/P_Air\s*:=\s*AirOk/i.test(c.st ?? '') &&
+				/P_BHome\s*:=/i.test(c.st ?? '') &&
+				/Ready\s*:=[^;]*P_NoAlarm/i.test(c.st ?? '')
+		},
+		{
+			text: 'Alarm z przyczyną dla każdego kroku: `AlmStep10` … `AlmStep40` z nadzoru czasu.',
+			done: (c) => /AlmStep10\s*:=/i.test(c.st ?? '') && /AlmStep40\s*:=/i.test(c.st ?? '')
+		},
+		{
+			text: 'First-out: `AlmAir` sprawdzany przed nadzorem ruchu, nowy alarm tylko przy `NOT anyAlarm`.',
+			done: (c) => /AlmAir\s*:=\s*TRUE/i.test(c.st ?? '') && /NOT\s+anyAlarm/i.test(c.st ?? '')
+		},
+		{
+			text: 'Kwitowanie w kroku 99: `Ack`, powietrze i pozycja wyjściowa kasują alarmy.',
+			done: (c) =>
+				/99\s*:\s*IF\s+Ack/i.test(c.st ?? '') && /AlmStep20\s*:=\s*FALSE/i.test(c.st ?? '')
+		},
+		checkIt
+	],
+
 	'press-packml': [
 		{
 			text: 'Stop (NC) po `CASE`: ze stanów 15, 4 i 6 do `PackState := 7`, a w Stopping `7: IF home THEN PackState := 2;`.',

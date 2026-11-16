@@ -470,6 +470,207 @@ const packStart: LessonStep[] = [
 ];
 const sec = (ms: number) => `${(ms / 1000).toLocaleString('pl-PL')} s`;
 
+/* ---------- operator diagnostics: permissives, alarms with a cause, first-out (press PR1) ---------- */
+
+const DIAG_HEAD = `(* Prasa PR1 — diagnostyka dla operatora.
+   Kroki: 0 czeka, 10 A+, 20 B+, 30 B−, 40 A−, 99 błąd.
+   Panel HMI jest gotowy: lampki warunków startu (P_…) i alarmy (Alm…) z tekstami. *)
+`;
+
+const DIAG_STARTER = `${DIAG_HEAD}VAR
+  step : INT;
+  lastStep : INT;
+  moveTime : TON;
+  startEdge : R_TRIG;
+END_VAR
+startEdge(CLK := Start);
+moveTime(IN := step >= 10 AND step <= 40 AND step = lastStep, PT := T#2s);
+lastStep := step;
+
+// TODO: warunki startu P_Air, P_Part, P_AHome, P_BHome, P_NoAlarm — każdy na lampce panelu
+// TODO: alarmy z przyczyną AlmAir, AlmStep10 … AlmStep40 — tylko pierwsza przyczyna
+IF step >= 10 AND step <= 40 AND (moveTime.Q OR NOT AirOk) THEN
+  step := 99;
+END_IF;
+
+CASE step OF
+  0:  IF startEdge.Q AND PartPresent AND AirOk AND A_Retracted AND B_Retracted THEN
+        step := 10;
+      END_IF;
+  10: IF A_Extended THEN step := 20; END_IF;
+  20: IF B_Extended THEN step := 30; END_IF;
+  30: IF B_Retracted THEN step := 40; END_IF;
+  40: IF A_Retracted THEN step := 0; END_IF;
+  99: IF Ack AND AirOk AND A_Retracted AND B_Retracted THEN step := 0; END_IF;
+END_CASE;
+
+Clamp := step = 10 OR step = 20 OR step = 30;
+Press := step = 20;
+IF NOT A_Extended THEN Press := FALSE; END_IF;   // blokada: nie tłocz niedociśniętego detalu
+IF NOT B_Retracted THEN Clamp := TRUE; END_IF;   // blokada: docisk trzyma pod prasą
+
+Alarm := step = 99;                              // „Błąd prasy” — tylko jaki?
+Ready := FALSE;                                  // TODO
+`;
+
+const DIAG_SOLUTION = `${DIAG_HEAD}VAR
+  step : INT;
+  lastStep : INT;
+  moveTime : TON;
+  startEdge : R_TRIG;
+  anyAlarm : BOOL;
+END_VAR
+startEdge(CLK := Start);
+moveTime(IN := step >= 10 AND step <= 40 AND step = lastStep, PT := T#2s);
+lastStep := step;
+
+// warunki startu — każdy osobno na panelu, operator widzi, którego brakuje
+P_Air := AirOk;
+P_Part := PartPresent;
+P_AHome := A_Retracted;
+P_BHome := B_Retracted;
+
+// alarmy z przyczyną. First-out: nowy alarm tylko, gdy żaden inny nie jest aktywny,
+// a przyczyna nadrzędna (powietrze) sprawdzana PRZED nadzorem ruchu, który jest jej skutkiem
+anyAlarm := AlmAir OR AlmStep10 OR AlmStep20 OR AlmStep30 OR AlmStep40;
+IF step >= 10 AND step <= 40 AND NOT anyAlarm THEN
+  IF NOT AirOk THEN
+    AlmAir := TRUE;
+  ELSIF moveTime.Q THEN
+    AlmStep10 := step = 10;   // docisk A nie dojechał: 1B2, siłownik A
+    AlmStep20 := step = 20;   // prasa B nie zjechała: 2B2, szczelność B
+    AlmStep30 := step = 30;   // prasa B nie wróciła: 2B1
+    AlmStep40 := step = 40;   // docisk A nie wrócił: 1B1
+  END_IF;
+END_IF;
+anyAlarm := AlmAir OR AlmStep10 OR AlmStep20 OR AlmStep30 OR AlmStep40;
+IF anyAlarm AND step >= 10 AND step <= 40 THEN
+  step := 99;
+END_IF;
+P_NoAlarm := NOT anyAlarm;
+Ready := step = 0 AND P_Air AND P_Part AND P_AHome AND P_BHome AND P_NoAlarm;
+
+CASE step OF
+  0:  IF startEdge.Q AND Ready THEN step := 10; END_IF;
+  10: IF A_Extended THEN step := 20; END_IF;
+  20: IF B_Extended THEN step := 30; END_IF;
+  30: IF B_Retracted THEN step := 40; END_IF;
+  40: IF A_Retracted THEN step := 0; END_IF;
+  99: IF Ack AND AirOk AND A_Retracted AND B_Retracted THEN   // kwitowanie, gdy przyczyna usunięta
+        AlmAir := FALSE;
+        AlmStep10 := FALSE;
+        AlmStep20 := FALSE;
+        AlmStep30 := FALSE;
+        AlmStep40 := FALSE;
+        step := 0;
+      END_IF;
+END_CASE;
+
+Clamp := step = 10 OR step = 20 OR step = 30;
+Press := step = 20;
+IF NOT A_Extended THEN Press := FALSE; END_IF;   // blokada: nie tłocz niedociśniętego detalu
+IF NOT B_Retracted THEN Clamp := TRUE; END_IF;   // blokada: docisk trzyma pod prasą
+
+Alarm := AlmAir OR AlmStep10 OR AlmStep20 OR AlmStep30 OR AlmStep40;
+Ready := Ready AND step = 0;                     // po Starcie gaśnie od razu
+`;
+
+const DIAG_PERMISSIVES: [name: string, address: string, comment: string][] = [
+	['P_Air', 'M40.0', 'Warunek startu: jest sprężone powietrze'],
+	['P_Part', 'M40.1', 'Warunek startu: detal w gnieździe'],
+	['P_AHome', 'M40.2', 'Warunek startu: docisk A schowany (1B1)'],
+	['P_BHome', 'M40.3', 'Warunek startu: prasa B w górze (2B1)'],
+	['P_NoAlarm', 'M40.4', 'Warunek startu: brak alarmów']
+];
+const DIAG_ALARMS: [name: string, address: string, text: string, action: string][] = [
+	[
+		'AlmAir',
+		'M41.0',
+		'Brak sprężonego powietrza w cyklu',
+		'Sprawdź zawór odcinający i ciśnienie sieci (≥ 4 bar), potem ACK'
+	],
+	[
+		'AlmStep10',
+		'M41.1',
+		'Krok 10: docisk A nie dojechał w 2 s',
+		'Sprawdź kontaktron 1B2 i siłownik A, potem ACK'
+	],
+	[
+		'AlmStep20',
+		'M41.2',
+		'Krok 20: prasa B nie zjechała w 2 s',
+		'Sprawdź kontaktron 2B2 i szczelność siłownika B, potem ACK'
+	],
+	[
+		'AlmStep30',
+		'M41.3',
+		'Krok 30: prasa B nie wróciła w 2 s',
+		'Sprawdź kontaktron 2B1 — docisk trzyma detal, póki prasa nie wróci'
+	],
+	[
+		'AlmStep40',
+		'M41.4',
+		'Krok 40: docisk A nie wrócił w 2 s',
+		'Sprawdź kontaktron 1B1 i siłownik A, potem ACK'
+	]
+];
+
+function diagPanel(): Hmi {
+	return {
+		widgets: [
+			widget('label', 20, 10, { text: 'Warunki startu' }),
+			...DIAG_PERMISSIVES.map(([tag, , comment], i) =>
+				widget('lamp', 20 + i * 150, 45, { tag, text: comment.replace('Warunek startu: ', '') })
+			),
+			widget('lamp', 20, 115, { tag: 'Ready', text: 'Gotowa do startu' }),
+			widget('lamp', 170, 115, { tag: 'Alarm', text: 'Alarm', color: 'red' }),
+			widget('alarms', 20, 190, { w: 760, h: 200 })
+		],
+		alarms: DIAG_ALARMS.map(([tag, , text, action], i) => ({
+			id: `d${i}`,
+			tag,
+			text,
+			kind: 'alarm',
+			priority: i === 0 ? 1 : 2,
+			action
+		})),
+		ackTag: ''
+	};
+}
+
+const bitOf = (plc: TestContext['plc'], address: string) =>
+	plc.memory.readBit(parseAddress(address));
+
+/** exactly these alarms are on — no more (a cascade), no fewer */
+const alarmsOn =
+	(...names: string[]): Check =>
+	({ plc }) => {
+		const on = DIAG_ALARMS.filter(([, a]) => bitOf(plc, a)).map(([n]) => n);
+		const want = [...names].sort().join(', ');
+		const got = [...on].sort().join(', ');
+		if (got === want) return null;
+		return names.length
+			? `panel powinien pokazać ${want}, a pokazuje ${got || 'brak alarmu'}`
+			: `bez usterki nie ma być alarmu, a jest ${got}`;
+	};
+
+/** the start permissives: all on except the named ones */
+const permissivesOff =
+	(...off: string[]): Check =>
+	({ plc }) => {
+		for (const [n, a] of DIAG_PERMISSIVES) {
+			const v = bitOf(plc, a);
+			if (v === off.includes(n))
+				return `lampka ${n} powinna ${off.includes(n) ? 'zgasnąć' : 'świecić'} — operator szuka złej przyczyny`;
+		}
+		return null;
+	};
+
+const readyIs =
+	(on: boolean): Check =>
+	({ out }) =>
+		out('Q1.1') === on ? null : `lampka Ready powinna ${on ? 'świecić' : 'być zgaszona'}`;
+
 const L40 = 11059;
 const L80 = 22118;
 
@@ -5607,6 +5808,216 @@ export const LESSONS: Lesson[] = [
 					...packReset(),
 					...packStart,
 					{ label: 'cykl, 3 s', wait: 3000, check: all(pressCounts(2), partsGoodIs(2)) }
+				]
+			}
+		]
+	},
+	{
+		slug: 'press-diagnostics',
+		title: 'Dlaczego nie rusza? Diagnostyka dla operatora',
+		level: 'process',
+		scenario: 'pneumatic',
+		solutionHmi: diagPanel,
+		summary:
+			'Prasa działa, ale przy każdej usterce mówi tylko „Błąd” i trzeba dzwonić po programistę. Dodaj warunki startu na panelu i alarmy, które wskazują przyczynę — pierwszą, nie skutek.',
+		instructions: [
+			'**Sytuacja.** Prasa PR1 chodzi poprawnie, ale druga zmiana dzwoni co noc: „nie rusza” albo „świeci Alarm”. Program ma jeden bit `Alarm` i krok 99. Twoje zadanie: maszyna ma sama powiedzieć operatorowi, **czego jej brakuje** — tak, żeby 5 typowych usterek rozwiązał bez otwierania programu.',
+			'Panel HMI jest gotowy (zakładka HMI): lampki **warunków startu** i lista alarmów z tekstami i zaleceniami. Brakuje tylko logiki, która zapala właściwe bity (tablica symboli: `M40.x`, `M41.x`).',
+			'**Warunki startu (permisywy)**: `P_Air` (jest powietrze), `P_Part` (detal w gnieździe), `P_AHome` (docisk schowany), `P_BHome` (prasa w górze), `P_NoAlarm` (brak alarmów). `Ready` (lampka `Q1.1`) = wszystkie spełnione i krok 0. Start działa tylko przy `Ready`.',
+			'**Alarm z przyczyną zamiast „Błąd 17”**: nadzór czasu każdego kroku osobno — `AlmStep10` … `AlmStep40` (krok nie skończył się w 2 s). Brak powietrza w cyklu to `AlmAir`. Alarmy trzymają się do `Ack`, który działa dopiero, gdy przyczyna usunięta i siłowniki wróciły.',
+			'**Pierwsza przyczyna (first-out).** Gdy w kroku 20 zniknie powietrze, prasa też nie zjedzie w 2 s. Alarm „prasa nie zjechała — sprawdź szczelność” wyśle mechanika do złego siłownika. Panel ma pokazać **tylko pierwszą przyczynę**: przyczynę nadrzędną sprawdzaj przed skutkiem, a nowy alarm zapamiętuj tylko, gdy żaden inny nie jest aktywny.',
+			'Testy to telefony z nocnej zmiany: brak powietrza, brak detalu, uszkodzony kontaktron 1B2, nieszczelny siłownik B, kontaktron 2B1 w trakcie cyklu i powietrze znikające w kroku 20. Każdy sprawdza, że panel wskazuje **dokładnie** właściwą przyczynę.'
+		],
+		hints: [
+			'Permisywy to zwykłe przypisania: `P_Air := AirOk; P_Part := PartPresent;` … Przed `CASE` (żeby krok 0 widział aktualną wartość): `Ready := step = 0 AND P_Air AND P_Part AND P_AHome AND P_BHome AND P_NoAlarm;`, a w kroku 0 `IF startEdge.Q AND Ready THEN`.',
+			'First-out: `IF step >= 10 AND step <= 40 AND NOT anyAlarm THEN IF NOT AirOk THEN AlmAir := TRUE; ELSIF moveTime.Q THEN AlmStep10 := step = 10; … END_IF; END_IF;` — `anyAlarm` liczony przed tym blokiem z bitów alarmów.',
+			'Kwitowanie w kroku 99: `IF Ack AND AirOk AND A_Retracted AND B_Retracted THEN` skasuj wszystkie `Alm…` i `step := 0`.',
+			'Uszkodzony 2B1 w kroku 30: prasa fizycznie wróciła, ale program tego nie wie — docisk trzyma (blokada), alarm `AlmStep30` każe sprawdzić kontaktron, a `P_BHome` zgaszone pokazuje to samo na ekranie startu.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'press-diagnostics',
+			scenario: 'pneumatic',
+			language: 'st',
+			st: DIAG_STARTER,
+			ladder: { version: 1, rungs: [] },
+			hmi: diagPanel(),
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+				['pushbutton', 'Ack', 'I1.2', { color: 'blue' }],
+				['lamp', 'Alarm', 'Q1.0', { color: 'red' }],
+				['lamp', 'Ready', 'Q1.1', { color: 'green' }]
+			]),
+			symbols: [
+				...(plantInfo('pneumatic')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+				...DIAG_PERMISSIVES.map(([n, a, c]) => symbol(n, a, c)),
+				...DIAG_ALARMS.map(([n, a, t]) => symbol(n, a, `Alarm: ${t}`))
+			],
+			watch: ['Ready', 'P_Air', 'P_Part', 'P_AHome', 'P_BHome', 'AlmAir', 'AlmStep20'].map((w) =>
+				watchEntry(w, undefined, true)
+			)
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: DIAG_SOLUTION,
+		tests: [
+			{
+				name: 'Regresja: dobry detal, żadnego alarmu, Ready świeci',
+				always: pressSafe,
+				steps: [
+					{ label: 'rozruch', wait: 200, check: all(readyIs(true), permissivesOff(), alarmsOn()) },
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100, check: readyIs(false) },
+					{
+						label: 'puść, 4 s',
+						set: { 'I1.0': false },
+						wait: 4000,
+						check: all(pressCounts(1), alarmsOn(), readyIs(true))
+					}
+				]
+			},
+			{
+				name: 'Telefon 1: „nie rusza” — brak powietrza, panel pokazuje P_Air',
+				always: pressSafe,
+				steps: [
+					{
+						label: 'zawór odcinający zamknięty',
+						plantFaults: { noAir: true },
+						wait: 300,
+						check: all(permissivesOff('P_Air'), readyIs(false), alarmsOn())
+					},
+					{
+						label: 'operator naciska Start',
+						set: { 'I1.0': true },
+						wait: 1000,
+						expect: { 'Q0.0': false },
+						check: alarmsOn()
+					},
+					{
+						label: 'powietrze otwarte',
+						set: { 'I1.0': false },
+						plantFaults: { noAir: false },
+						wait: 300,
+						check: readyIs(true)
+					}
+				]
+			},
+			{
+				name: 'Telefon 2: „nie rusza” — brak detalu, panel pokazuje P_Part',
+				always: pressSafe,
+				steps: [
+					{
+						label: 'podajnik stoi, Start',
+						commands: [['autoFeed', false]],
+						set: { 'I1.0': true },
+						wait: 100
+					},
+					{
+						label: 'po cyklu',
+						set: { 'I1.0': false },
+						wait: 4000,
+						check: all(pressCounts(1), permissivesOff('P_Part'), readyIs(false), alarmsOn())
+					}
+				]
+			},
+			{
+				name: 'Telefon 3: kontaktron 1B2 uszkodzony — alarm kroku 10, nie „Błąd”',
+				always: pressSafe,
+				steps: [
+					{
+						label: '1B2 stale 0, Start',
+						fieldFaults: { 'I0.1': 'stuck0' },
+						set: { 'I1.0': true },
+						wait: 100
+					},
+					{
+						label: 'puść, 3 s',
+						set: { 'I1.0': false },
+						wait: 3000,
+						expect: { 'Q1.0': true },
+						check: all(alarmsOn('AlmStep10'), readyIs(false))
+					},
+					{ label: 'docisk wrócił, Ack', set: { 'I1.2': true }, wait: 100 },
+					{
+						label: 'puść Ack',
+						set: { 'I1.2': false },
+						wait: 200,
+						check: all(alarmsOn(), readyIs(true))
+					},
+					{
+						label: 'serwis wymienia 1B2, Start',
+						fieldFaults: { 'I0.1': null },
+						set: { 'I1.0': true },
+						wait: 100
+					},
+					{
+						label: 'puść, 4 s',
+						set: { 'I1.0': false },
+						wait: 4000,
+						check: all(pressCounts(1), alarmsOn())
+					}
+				]
+			},
+			{
+				name: 'Telefon 4: nieszczelny siłownik B — alarm kroku 20',
+				always: pressSafe,
+				steps: [
+					{
+						label: 'nieszczelny B, Start',
+						plantFaults: { leakB: true },
+						set: { 'I1.0': true },
+						wait: 100
+					},
+					{
+						label: 'puść, 3 s',
+						set: { 'I1.0': false },
+						wait: 3000,
+						check: alarmsOn('AlmStep20')
+					},
+					{ label: 'prasa wraca, 3 s', wait: 3000, check: all(pressHome, alarmsOn('AlmStep20')) }
+				]
+			},
+			{
+				name: 'Telefon 5: kontaktron 2B1 pada w trakcie cyklu — alarm kroku 30, docisk trzyma',
+				always: pressSafe,
+				steps: [
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'prasa w dół', set: { 'I1.0': false }, wait: 1000 },
+					{
+						label: '2B1 stale 0, 3 s',
+						fieldFaults: { 'I0.2': 'stuck0' },
+						wait: 3000,
+						expect: { 'Q0.0': true, 'Q0.1': false },
+						check: all(alarmsOn('AlmStep30'), permissivesOff('P_AHome', 'P_BHome', 'P_NoAlarm'))
+					}
+				]
+			},
+			{
+				name: 'Telefon 6: powietrze znika w kroku 20 — tylko pierwsza przyczyna (first-out)',
+				always: pressSafe,
+				steps: [
+					{ label: 'Start', set: { 'I1.0': true }, wait: 100 },
+					{ label: 'prasa w drodze w dół', set: { 'I1.0': false }, wait: 800 },
+					{
+						label: 'znika powietrze, 3 s',
+						plantFaults: { noAir: true },
+						wait: 3000,
+						check: all(
+							alarmsOn('AlmAir'),
+							permissivesOff('P_Air', 'P_AHome', 'P_BHome', 'P_NoAlarm')
+						)
+					},
+					{
+						label: 'powietrze wraca, 3 s',
+						plantFaults: { noAir: false },
+						wait: 3000,
+						check: all(alarmsOn('AlmAir'), pressHome)
+					},
+					{ label: 'Ack', set: { 'I1.2': true }, wait: 100 },
+					{
+						label: 'puść Ack',
+						set: { 'I1.2': false },
+						wait: 200,
+						check: all(alarmsOn(), readyIs(true))
+					}
 				]
 			}
 		]

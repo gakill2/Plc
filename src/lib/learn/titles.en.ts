@@ -206,6 +206,16 @@ export const EN_TITLES: Record<string, { title: string; summary: string }> = {
 		summary:
 			'Operators want to run the motor from the panel — without breaking the cabinet buttons.'
 	},
+	'chapter:diagnostyka': {
+		title: 'Why won’t it start? Diagnostics designed by the programmer',
+		summary:
+			'Start permissives on the panel, an alarm with a cause instead of “Error 17”, step time supervision and first-out — the machine tells you what it is missing.'
+	},
+	'lesson:press-diagnostics': {
+		title: 'Why won’t it start? Diagnostics for the operator',
+		summary:
+			'The press works, but every fault just says “Error” and someone has to call the programmer. Add start permissives on the panel and alarms that point to the cause — the first one, not the consequence.'
+	},
 	'chapter:alarmy-hmi': {
 		title: 'Alarms and screens that help: ISA-18.2 and ISA-101',
 		summary:
