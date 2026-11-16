@@ -12,4 +12,12 @@
 	body {
 		@apply bg-slate-950 text-slate-200 antialiased;
 	}
+	@media print {
+		html {
+			color-scheme: light;
+		}
+		body {
+			@apply bg-white text-black;
+		}
+	}
 }

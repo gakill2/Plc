@@ -52,6 +52,10 @@ it and watch the controller execute your program scan by scan — or let it driv
   an alarm with a cause and an action for every step’s time supervision, first-out so a cascade
   shows only the root cause, and six “night shift calls” as tests that check the panel names
   exactly the right fault.
+- **Paths by role and a portfolio** — the whole path narrowed for a maintenance technician, a PLC
+  programmer or a commissioning engineer; a portfolio page with every passed lesson, its
+  acceptance items and the student's own program (ladder and FBD shown as ST), printable to PDF or
+  downloaded as Markdown for GitHub.
 - **Device standard and a final project** — a reusable motor block with modes, permissives,
   interlocks and feedback supervision; then the MX2 mixer built from a functional description
   (eight requirements: recipes, hold/resume, alarms on the HMI, RETAIN counter) and accepted

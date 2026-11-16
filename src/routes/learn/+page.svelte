@@ -7,12 +7,22 @@
 	import { completedLessons } from '#lib/lessons/progress.js';
 	import { solvedQuizzes } from '#lib/tutorial/progress.js';
 	import { i18n, t } from '#lib/i18n/i18n.svelte.js';
+	import { ROLES, roleOf, rolePath, savedRole, saveRole, type RoleId } from '#lib/learn/roles.js';
 
-	const stages = $derived(learningPath(i18n.locale));
+	let roleId = $state<RoleId | null>(null);
+	const role = $derived(roleOf(roleId));
+	const stages = $derived(rolePath(learningPath(i18n.locale), role));
+	function pick(id: RoleId | null) {
+		roleId = id;
+		saveRole(id);
+	}
 	const total = $derived(stages.reduce((n, s) => n + s.steps.length, 0));
 
 	let progress = $state<Progress>({ solvedQuizzes: new Set(), lessonsDone: new Set() });
-	onMount(() => (progress = { solvedQuizzes: solvedQuizzes(), lessonsDone: completedLessons() }));
+	onMount(() => {
+		progress = { solvedQuizzes: solvedQuizzes(), lessonsDone: completedLessons() };
+		roleId = savedRole();
+	});
 
 	const next = $derived(nextStep(stages, progress));
 	const doneCount = $derived(
@@ -27,6 +37,30 @@
 <section class="mx-auto max-w-4xl px-4 py-12" lang={i18n.locale}>
 	<h1 class="text-3xl font-bold text-white">{t('learn.title')}</h1>
 	<p class="mt-2 max-w-2xl text-slate-400">{t('learn.intro')}</p>
+
+	<div class="mt-6" role="group" aria-label={t('learn.roles')}>
+		<p class="text-xs font-semibold tracking-wider text-slate-400 uppercase">{t('learn.roles')}</p>
+		<div class="mt-2 flex flex-wrap gap-2">
+			<button
+				class="rounded-full border px-3 py-1 text-sm {role
+					? 'border-slate-700 text-slate-300 hover:border-slate-500'
+					: 'border-sky-500 bg-sky-500/15 text-white'}"
+				aria-pressed={!role}
+				onclick={() => pick(null)}>{t('learn.roleAll')}</button
+			>
+			{#each ROLES as r (r.id)}
+				<button
+					class="rounded-full border px-3 py-1 text-sm {role?.id === r.id
+						? 'border-sky-500 bg-sky-500/15 text-white'
+						: 'border-slate-700 text-slate-300 hover:border-slate-500'}"
+					aria-pressed={role?.id === r.id}
+					onclick={() => pick(r.id)}
+					><span aria-hidden="true">{r.icon}</span> {r.title[i18n.locale]}</button
+				>
+			{/each}
+		</div>
+		{#if role}<p class="mt-2 max-w-2xl text-sm text-slate-400">{role.who[i18n.locale]}</p>{/if}
+	</div>
 
 	<div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-slate-400">
 		<span>{t('learn.done')}: <b class="text-white">{doneCount} / {total}</b></span>
@@ -44,8 +78,18 @@
 		></div>
 	</div>
 
-	<div class="mt-6 grid gap-3 sm:grid-cols-[1fr_auto]">
-		<ContinueCard />
+	<div class="mt-6 grid gap-3 sm:grid-cols-2">
+		<div class="sm:col-span-2"><ContinueCard /></div>
+		<a
+			href={resolve('/learn/portfolio')}
+			class="flex items-center gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 transition-colors hover:border-amber-400"
+		>
+			<span class="text-2xl" aria-hidden="true">📁</span>
+			<span>
+				<span class="block font-semibold text-white">{t('learn.portfolio')}</span>
+				<span class="block text-sm text-slate-400">{t('learn.portfolioHint')}</span>
+			</span>
+		</a>
 		<a
 			href={resolve('/learn/review')}
 			class="flex items-center gap-3 rounded-xl border border-violet-500/40 bg-violet-500/10 p-4 transition-colors hover:border-violet-400"
