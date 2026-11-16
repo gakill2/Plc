@@ -52,6 +52,11 @@ export interface LessonStep {
 	fieldFaults?: Record<string, SignalFault | null>;
 	/** Switch faults of the plant itself on or off, e.g. `{ jam: true }`. */
 	plantFaults?: Record<string, boolean>;
+	/**
+	 * Power loss first, for that many ms: outputs drop (monostable valves spring back), the plant
+	 * keeps moving, then a cold start — only RETAIN data survives.
+	 */
+	powerLoss?: number;
 	/** Restart the CPU first (Stop → Run: a new download) — retentive variables must survive it. */
 	restart?: boolean;
 	/** Commands to the process model (e.g. feed boxes). */
@@ -68,6 +73,16 @@ export interface LessonTest {
 	steps: LessonStep[];
 	/** Checked after every scan of the whole test (safety conditions). */
 	always?: Check;
+	/**
+	 * Run the scenario many times, interrupting it at each of these moments (Stop, power loss …
+	 * in every step of the cycle). `steps` is then ignored; the first failing run is reported.
+	 */
+	sweep?: {
+		atMs: number[];
+		steps: (atMs: number) => LessonStep[];
+		/** names the run in the failure message, e.g. "Stop po 1,3 s" */
+		label: (atMs: number) => string;
+	};
 }
 
 export interface Lesson {

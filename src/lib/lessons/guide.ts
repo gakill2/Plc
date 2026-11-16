@@ -1152,6 +1152,35 @@ export const GUIDES: Record<string, GuideStep[]> = {
 		checkIt
 	],
 
+	'press-packml': [
+		{
+			text: 'Stop (NC) po `CASE`: ze stanów 15, 4 i 6 do `PackState := 7`, a w Stopping `7: IF home THEN PackState := 2;`.',
+			done: (c) => /PackState\s*:=\s*7/i.test(c.st ?? '') && /7\s*:\s*IF\s+home/i.test(c.st ?? '')
+		},
+		{
+			text: 'Abort: `NOT AirOk` → `PackState := 9`, z Aborted przez Reset do Clearing (1), potem Stopped.',
+			done: (c) =>
+				/PackState\s*:=\s*9/i.test(c.st ?? '') && /PackState\s*:=\s*1\s*;/i.test(c.st ?? '')
+		},
+		{
+			text: 'Blokady na końcu: `IF NOT A_Extended THEN Press := FALSE;` i `IF NOT B_Retracted THEN Clamp := TRUE;`.',
+			done: (c) =>
+				/NOT\s+A_Extended\s+THEN\s+Press\s*:=\s*FALSE/i.test(c.st ?? '') &&
+				/NOT\s+B_Retracted\s+THEN\s+Clamp\s*:=\s*TRUE/i.test(c.st ?? '')
+		},
+		{
+			text: 'Tryb ręczny: `UnitMode` zmieniany tylko w Stopped, w ręcznym Execute `Clamp := JogClamp; Press := JogPress;`.',
+			done: (c) =>
+				/UnitMode\s*:=\s*3/i.test(c.st ?? '') && /Press\s*:=\s*JogPress/i.test(c.st ?? '')
+		},
+		{
+			text: 'Zanik zasilania: `VAR RETAIN` dla `partsGood` i `PackState := 2` w OB100.',
+			done: (c) =>
+				/VAR\s+RETAIN/i.test(c.st ?? '') && /ORGANIZATION_BLOCK\s+OB100/i.test(c.st ?? '')
+		},
+		checkIt
+	],
+
 	'pneumatic-press': [
 		{
 			text: 'Dokończ kroki: `20` czeka na `B_Extended`, `30` na `B_Retracted`, `40` na `A_Retracted`.',

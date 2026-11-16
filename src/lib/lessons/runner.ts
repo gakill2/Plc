@@ -22,7 +22,7 @@ import type { Hmi } from '#lib/hmi/model.js';
 import { resolveSymbol, type SymbolMap } from '#lib/symbols/symbols.js';
 import { stringValue, type StVariable } from '#lib/st/compiler.js';
 import { plantInfo } from '#lib/processes/plants.js';
-import type { Lesson, TestContext, TestResult } from './types.js';
+import type { Lesson, LessonStep, LessonTest, TestContext, TestResult } from './types.js';
 
 const SCAN_MS = 10;
 
@@ -41,7 +41,7 @@ export function runLessonTests(
 	panel?: { hmi?: Hmi; symbols?: SymbolMap; variables?: StVariable[] }
 ): TestResult[] {
 	const field = (lesson.kind === 'commissioning' || lesson.fieldTests) && circuit ? circuit : null;
-	return lesson.tests.map((test) => {
+	const runSteps = (test: LessonTest, steps: LessonStep[]): TestResult => {
 		const plc = new Plc();
 		try {
 			plc.load(program, load);
@@ -68,9 +68,17 @@ export function runLessonTests(
 		const rack = hw ? new HwLayer(hw, (t) => sensors.faults.get(t) === 'wireBreak') : null;
 		const io = sensors.wrap(rack ? rack.wrap(plcIo) : plcIo);
 		/** buttons in the tests are field terminals too: through the input module */
+		const held = new Map<string, boolean>();
 		const press = (terminal: string, value: boolean) => {
 			const a = rack ? rack.inputAddress(terminal) : terminal;
 			if (a) plc.setInput(a, value);
+			held.set(terminal, value);
+		};
+		/** after a new start the input image is read again: buttons still held, plant sensors */
+		const rereadInputs = () => {
+			for (const [terminal, value] of held) press(terminal, value);
+			process?.step(0, io);
+			devices?.apply();
 		};
 		process?.step(0, io); // initial sensor values
 		const devices = field ? new FieldSim(field, plc) : null;
@@ -111,9 +119,24 @@ export function runLessonTests(
 			atMs: plc.timeMs
 		});
 
-		for (const step of test.steps) {
+		for (const step of steps) {
+			if (step.powerLoss) {
+				// the CPU and the valves lose power, the plant keeps moving (springs, gravity, inertia)
+				plc.stop();
+				for (let t = 0; t < step.powerLoss; t += SCAN_MS) {
+					sensors.tick(SCAN_MS);
+					process?.step(SCAN_MS, io);
+					const problem = test.always?.(ctx);
+					if (problem) return fail(`Podczas zaniku zasilania: ${problem}`);
+				}
+				// power back: a cold start — only RETAIN data survives, then OB100
+				plc.load(program, load);
+				rereadInputs();
+				plc.run();
+			}
 			if (step.restart) {
 				plc.load(program, load);
+				rereadInputs();
 				plc.run();
 			}
 			for (const [terminal, value] of Object.entries(step.set ?? {})) press(terminal, value);
@@ -165,6 +188,16 @@ export function runLessonTests(
 			}
 			const problem = step.check?.(ctx);
 			if (problem) return fail(`Po kroku „${step.label}”: ${problem}`);
+		}
+		return { name: test.name, passed: true };
+	};
+
+	return lesson.tests.map((test) => {
+		if (!test.sweep) return runSteps(test, test.steps);
+		// the same scenario, interrupted at every moment of the cycle
+		for (const at of test.sweep.atMs) {
+			const r = runSteps(test, test.sweep.steps(at));
+			if (!r.passed) return { ...r, message: `${test.sweep.label(at)}: ${r.message}` };
 		}
 		return { name: test.name, passed: true };
 	});

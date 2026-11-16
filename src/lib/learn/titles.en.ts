@@ -177,6 +177,16 @@ export const EN_TITLES: Record<string, { title: string; summary: string }> = {
 		title: 'SFC: the drilling station in steps',
 		summary: 'The same drilling station as an SFC / GRAFCET chart: steps, actions and transitions.'
 	},
+	'chapter:tryby-pracy': {
+		title: 'Operating modes and the PackML state model',
+		summary:
+			'Auto, manual and jog, homing, stopping safely in any step and restarting after a power loss — the larger half of every real machine program.'
+	},
+	'lesson:press-packml': {
+		title: 'Operating modes and PackML states: a press that stops safely in any step',
+		summary:
+			'The automatic cycle is the smaller part of a machine program. Add Stop at any moment, Abort on air loss, manual jog with interlocks and a safe restart after a power loss, following the PackML state model.'
+	},
 	'lesson:pneumatic-press': {
 		title: 'Pneumatic press: A+ B+ B− A− with motion supervision',
 		summary:

@@ -296,6 +296,180 @@ const pressCounts =
 			: `dobrych detali: ${s.good}, a powinno być ${atLeast ? 'co najmniej ' : ''}${good}`;
 	};
 
+/* ---------- operating modes and PackML states (press PR1) ---------- */
+
+const PACK_HEAD = `(* Prasa PR1 — tryby pracy i model stanów PackML (ISA-TR88.00.02).
+   PackState: 1 Clearing, 2 Stopped, 4 Idle, 6 Execute, 7 Stopping, 9 Aborted, 15 Resetting.
+   UnitMode:  1 Produkcja (cykl automatyczny), 3 Ręczny (jog).
+   Cykl w Execute: step 0 czeka na detal, 10 A+, 20 B+, 30 B−, 40 A−. *)
+`;
+
+const PACK_STARTER = `${PACK_HEAD}VAR
+  partsGood : INT;                // TODO: licznik ma przeżyć zanik zasilania
+  step : INT;
+  startEdge : R_TRIG;
+  resetEdge : R_TRIG;
+  home : BOOL;
+END_VAR
+startEdge(CLK := Start);
+resetEdge(CLK := Reset);
+home := A_Retracted AND B_Retracted;
+
+CASE PackState OF
+  2:  IF resetEdge.Q AND AirOk AND Stop THEN PackState := 15; END_IF;   // Stopped
+  15: IF home THEN PackState := 4; END_IF;                              // Resetting
+  4:  IF startEdge.Q THEN step := 0; PackState := 6; END_IF;            // Idle
+  6:  CASE step OF                                                      // Execute
+        0:  IF PartPresent AND home THEN step := 10; END_IF;
+        10: IF A_Extended THEN step := 20; END_IF;
+        20: IF B_Extended THEN partsGood := partsGood + 1; step := 30; END_IF;
+        30: IF B_Retracted THEN step := 40; END_IF;
+        40: IF A_Retracted THEN step := 0; END_IF;
+      END_CASE;
+  // TODO: 7 Stopping, 9 Aborted, 1 Clearing
+ELSE
+  PackState := 2;
+END_CASE;
+
+// TODO: Stop (NC) → Stopping, brak powietrza → Aborted
+// TODO: tryb ręczny (jog) i zmiana trybu tylko w Stopped
+
+Clamp := PackState = 6 AND (step = 10 OR step = 20 OR step = 30);
+Press := PackState = 6 AND step = 20;
+// TODO: blokady — ostatnie słowo, w każdym trybie i stanie
+
+LampRun := PackState = 6;
+LampReset := PackState = 2;
+LampAbort := FALSE;
+`;
+
+const PACK_SOLUTION = `${PACK_HEAD}VAR RETAIN
+  partsGood : INT;                // licznik dobrych detali — przeżywa zanik zasilania
+END_VAR
+VAR
+  step : INT;
+  startEdge : R_TRIG;
+  resetEdge : R_TRIG;
+  home : BOOL;                    // oba siłowniki schowane = pozycja wyjściowa
+END_VAR
+startEdge(CLK := Start);
+resetEdge(CLK := Reset);
+home := A_Retracted AND B_Retracted;
+
+// tryb pracy zmienia się tylko w stanie Stopped — nigdy w trakcie ruchu
+IF PackState = 2 THEN
+  IF Manual THEN UnitMode := 3; ELSE UnitMode := 1; END_IF;
+END_IF;
+
+CASE PackState OF
+  1:  PackState := 2;                                                   // Clearing
+  2:  IF resetEdge.Q AND AirOk AND Stop THEN PackState := 15; END_IF;   // Stopped
+  15: IF home THEN PackState := 4; END_IF;                              // Resetting: do pozycji wyjściowej
+  4:  IF startEdge.Q THEN step := 0; PackState := 6; END_IF;            // Idle
+  6:  IF UnitMode = 1 THEN                                              // Execute, produkcja
+        CASE step OF
+          0:  IF PartPresent AND home THEN step := 10; END_IF;
+          10: IF A_Extended THEN step := 20; END_IF;
+          20: IF B_Extended THEN partsGood := partsGood + 1; step := 30; END_IF;
+          30: IF B_Retracted THEN step := 40; END_IF;
+          40: IF A_Retracted THEN step := 0; END_IF;
+        END_CASE;
+      END_IF;
+  7:  IF home THEN PackState := 2; END_IF;                              // Stopping: bezpieczny powrót
+  9:  IF resetEdge.Q AND AirOk THEN PackState := 1; END_IF;             // Aborted: czeka na Clear
+ELSE
+  PackState := 2;                 // nieznany stan → Stopped
+END_CASE;
+
+// zdarzenia z każdego stanu — po CASE, więc mają ostatnie słowo
+IF NOT Stop AND (PackState = 15 OR PackState = 4 OR PackState = 6) THEN
+  PackState := 7;                 // Stop (NC: 0 = wciśnięty)
+END_IF;
+IF NOT AirOk AND PackState <> 1 AND PackState <> 2 AND PackState <> 9 THEN
+  PackState := 9;                 // brak powietrza = Abort
+END_IF;
+
+Clamp := FALSE;
+Press := FALSE;
+IF PackState = 6 AND UnitMode = 1 THEN
+  Clamp := step = 10 OR step = 20 OR step = 30;
+  Press := step = 20;
+ELSIF PackState = 6 AND UnitMode = 3 THEN
+  Clamp := JogClamp;              // ruch ręczny: tylko gdy przycisk trzymany
+  Press := JogPress;
+END_IF;
+// Stopping, Resetting, Aborted: zawory puszczone — prasa wraca, docisk trzyma (blokada niżej)
+
+// BLOKADY — ostatnie słowo, w każdym trybie i stanie
+IF NOT A_Extended THEN Press := FALSE; END_IF;   // nigdy nie tłocz niedociśniętego detalu
+IF NOT B_Retracted THEN Clamp := TRUE; END_IF;   // nigdy nie zwalniaj docisku pod prasą
+
+LampRun := PackState = 6;
+LampReset := PackState = 2 OR PackState = 9;     // maszyna czeka na Reset
+LampAbort := PackState = 9;
+
+ORGANIZATION_BLOCK OB100
+// zimny start (także po zaniku zasilania): zawsze Stopped, nigdy „od miejsca, gdzie był”
+PackState := 2;
+UnitMode := 1;
+step := 0;
+END_ORGANIZATION_BLOCK
+`;
+
+const packState =
+	(expected: number): Check =>
+	({ plc }) => {
+		const s = plc.memory.readNumber(parseAddress('MW20'));
+		return s === expected ? null : `PackState (MW20) = ${s}, a powinno być ${expected}`;
+	};
+
+/** never scrap, never an empty stroke — checked after every scan */
+const pressSafe: Check = ({ process }) => {
+	const s = process?.state() as PneumaticState;
+	if (s.scrap || s.part?.damaged) return `detal zniszczony — ${s.lastFault ?? ''}`;
+	if (s.emptyStrokes) return 'pusty skok prasy — brak detalu';
+	return null;
+};
+
+const pressHome: Check = ({ process, out }) => {
+	const s = process?.state() as PneumaticState;
+	if (!s.sensors.aIn || !s.sensors.bIn) return 'siłowniki nie wróciły do pozycji wyjściowej';
+	if (out('Q0.0') || out('Q0.1')) return 'zawory dalej załączone';
+	return null;
+};
+
+const all =
+	(...checks: Check[]): Check =>
+	(ctx) => {
+		for (const c of checks) {
+			const r = c(ctx);
+			if (r) return r;
+		}
+		return null;
+	};
+
+const partsGoodIs =
+	(n: number | 'plant'): Check =>
+	(ctx) => {
+		const v = ctx.value('partsGood');
+		const s = ctx.process?.state() as PneumaticState;
+		// the counter counts a part when it is pressed; the plant when it is taken away
+		const want = n === 'plant' ? s.good + (s.part?.pressed && !s.part.damaged ? 1 : 0) : n;
+		return v === want ? null : `partsGood = ${v ?? '?'}, a powinno być ${want}`;
+	};
+
+/** Stop released, Reset → Resetting → Idle */
+const packReset = (label = 'Reset'): LessonStep[] => [
+	{ label: 'Stop puszczony', set: { 'I1.1': true }, wait: 100 },
+	{ label, set: { 'I1.2': true }, wait: 100 },
+	{ label: `puść ${label}`, set: { 'I1.2': false }, wait: 1500, check: packState(4) }
+];
+const packStart: LessonStep[] = [
+	{ label: 'Start', set: { 'I1.0': true }, wait: 100, check: packState(6) },
+	{ label: 'puść Start', set: { 'I1.0': false }, wait: 0 }
+];
+const sec = (ms: number) => `${(ms / 1000).toLocaleString('pl-PL')} s`;
+
 const L40 = 11059;
 const L80 = 22118;
 
@@ -5238,6 +5412,201 @@ export const LESSONS: Lesson[] = [
 						wait: 100
 					},
 					{ label: 'puść, 3 s', set: { 'I1.0': false }, wait: 3000, expect: { 'Q1.0': true } }
+				]
+			}
+		]
+	},
+	{
+		slug: 'press-packml',
+		title: 'Tryby pracy i stany PackML: prasa, która bezpiecznie staje w każdym kroku',
+		level: 'process',
+		scenario: 'pneumatic',
+		summary:
+			'Cykl automatyczny to mniejsza część programu maszyny. Dodaj Stop w dowolnej chwili, Abort przy braku powietrza, tryb ręczny z blokadami i bezpieczny rozruch po zaniku zasilania — według modelu stanów PackML.',
+		instructions: [
+			'Prasa PR1 (docisk A, prasa B, zawory 5/2 monostabilne) ma już **model stanów PackML** w `PackState` (`MW20`): `Stopped` → `Reset` → `Resetting` (jazda do pozycji wyjściowej) → `Idle` → `Start` → `Execute`. Numery stanów są jak w standardzie — panel i SCADA linii czytają je tak samo z każdej maszyny.',
+			'**Stop w każdej chwili** (`Stop`, NC — 0 = wciśnięty): ze stanów `Resetting`, `Idle` i `Execute` przejdź do **7 Stopping**, a gdy oba siłowniki są schowane — do **2 Stopped**. Testy przerwą cykl **co 0,2 s przez cały cykl** i sprawdzą, że żaden detal nie zostanie zniszczony.',
+			'**Abort**: zanik powietrza (`AirOk` = 0) w każdym stanie poza `Stopped`, `Aborted`, `Clearing` → **9 Aborted** (zapal `LampAbort`). Z `Aborted` wychodzi się tylko przez `Reset` przy powrocie powietrza → **1 Clearing** → **2 Stopped**. Potem normalnie: `Reset` → `Idle`.',
+			'**Bezpieczny stan to nie zawsze „wszystko wyłączone”.** Zawory są monostabilne: wyłączony docisk A chowa się szybciej (0,5 s) niż prasa B (0,6 s) — zwolni detal pod prasą. Dwie **blokady na końcu programu**, w każdym trybie i stanie: `Press` tylko gdy `A_Extended`; `Clamp` zawsze załączony, gdy prasa nie jest w górze (`NOT B_Retracted`).',
+			'**Tryb ręczny**: przełącznik `Manual` (`UnitMode` w `MW22`: 1 produkcja, 3 ręczny). Tryb zmienia się **tylko w stanie Stopped** — przełączenie w trakcie cyklu nie ma skutku aż do zatrzymania. W ręcznym `Execute` nie ma sekwencji: `JogClamp` / `JogPress` sterują zaworami, tylko póki przycisk jest trzymany. Blokady działają także tutaj.',
+			'**Zanik zasilania**: po powrocie napięcia sterownik robi zimny start. Maszyna ma stać w `Stopped` i czekać na `Reset` — nigdy nie ruszać „od miejsca, w którym była”. Ustaw stan w **OB100**. Licznik `partsGood` ma przeżyć zanik zasilania (`VAR RETAIN`).'
+		],
+		hints: [
+			'Zdarzenia z wielu stanów (Stop, Abort) pisz **po** `CASE`: `IF NOT Stop AND (PackState = 15 OR PackState = 4 OR PackState = 6) THEN PackState := 7; END_IF;` — wtedy mają ostatnie słowo, a przejście kroku w tym samym cyklu (licznik!) zdąży się wykonać.',
+			'Stopping nie potrzebuje własnej sekwencji: wyjścia w stanie 7 są wyłączone, prasa sama wraca, a blokada `IF NOT B_Retracted THEN Clamp := TRUE; END_IF;` trzyma docisk, dopóki prasa nie wróci. `7: IF home THEN PackState := 2; END_IF;`',
+			'Tryb: `IF PackState = 2 THEN IF Manual THEN UnitMode := 3; ELSE UnitMode := 1; END_IF; END_IF;` — a sekwencja w `Execute` tylko przy `UnitMode = 1`.',
+			'Na końcu źródła: `ORGANIZATION_BLOCK OB100` / `PackState := 2; UnitMode := 1; step := 0;` / `END_ORGANIZATION_BLOCK`.'
+		],
+		starter: () => ({
+			version: 2,
+			lesson: 'press-packml',
+			scenario: 'pneumatic',
+			language: 'st',
+			st: PACK_STARTER,
+			ladder: { version: 1, rungs: [] },
+			circuit: circuitOf([
+				['pushbutton', 'Start', 'I1.0', { color: 'green' }],
+				['pushbutton', 'Stop', 'I1.1', { color: 'red', nc: true }],
+				['pushbutton', 'Reset', 'I1.2', { color: 'blue' }],
+				['switch', 'Manual', 'I1.3'],
+				['pushbutton', 'JogClamp', 'I1.4'],
+				['pushbutton', 'JogPress', 'I1.5'],
+				['lamp', 'LampRun', 'Q1.0', { color: 'green' }],
+				['lamp', 'LampReset', 'Q1.1', { color: 'blue' }],
+				['lamp', 'LampAbort', 'Q1.2', { color: 'red' }]
+			]),
+			symbols: [
+				...(plantInfo('pneumatic')?.io ?? []).map((io) => symbol(io.name, io.address, io.comment)),
+				symbol('PackState', 'MW20', 'Stan PackML (2 Stopped, 4 Idle, 6 Execute …)'),
+				symbol('UnitMode', 'MW22', 'Tryb pracy: 1 produkcja, 3 ręczny')
+			],
+			watch: [
+				watchEntry('PackState', 'DEC', true),
+				watchEntry('UnitMode', 'DEC', true),
+				...['A_Extended', 'B_Retracted', 'Clamp', 'Press'].map((w) =>
+					watchEntry(w, undefined, true)
+				)
+			]
+		}),
+		solution: () => ({ version: 1, rungs: [] }),
+		solutionSt: PACK_SOLUTION,
+		tests: [
+			{
+				name: 'Bez Reset maszyna nie rusza; Reset → Idle, Start → dobry detal',
+				always: pressSafe,
+				steps: [
+					{
+						label: 'Start bez Reset',
+						set: { 'I1.1': true, 'I1.0': true },
+						wait: 2000,
+						expect: { 'Q0.0': false, 'Q0.1': false, 'Q1.1': true },
+						check: packState(2)
+					},
+					{ label: 'puść Start', set: { 'I1.0': false }, wait: 100 },
+					...packReset(),
+					...packStart,
+					{ label: 'cykl, 3 s', wait: 3000, check: all(pressCounts(1), partsGoodIs(1)) }
+				]
+			},
+			{
+				name: 'Stop w każdym kroku cyklu: bezpieczny powrót, bez złomu, potem dalsza praca',
+				steps: [],
+				always: pressSafe,
+				sweep: {
+					atMs: Array.from({ length: 14 }, (_, i) => i * 200),
+					label: (ms) => `Stop po ${sec(ms)} cyklu`,
+					steps: (ms) => [
+						...packReset(),
+						...packStart,
+						{ label: `cykl ${sec(ms)}`, wait: ms },
+						{
+							label: 'Stop',
+							set: { 'I1.1': false },
+							wait: 2000,
+							check: all(packState(2), pressHome)
+						},
+						{ label: 'puść Stop, 1 s — stoi', set: { 'I1.1': true }, wait: 1000, check: pressHome },
+						...packReset(),
+						...packStart,
+						{
+							label: 'praca, 5 s',
+							wait: 5000,
+							check: all(pressCounts(1, true), partsGoodIs('plant'))
+						}
+					]
+				}
+			},
+			{
+				name: 'Brak powietrza: Aborted, docisk trzyma pod prasą, Clear → Stopped',
+				always: pressSafe,
+				steps: [
+					...packReset(),
+					...packStart,
+					{ label: 'prasa w drodze w dół', wait: 900 },
+					{
+						label: 'znika powietrze',
+						plantFaults: { noAir: true },
+						wait: 500,
+						expect: { 'Q0.0': true, 'Q0.1': false, 'Q1.2': true },
+						check: packState(9)
+					},
+					{ label: 'powietrze wraca', plantFaults: { noAir: false }, wait: 2000, check: pressHome },
+					{ label: 'Start nic nie robi', set: { 'I1.0': true }, wait: 300, check: packState(9) },
+					{ label: 'Reset (Clear)', set: { 'I1.0': false, 'I1.2': true }, wait: 100 },
+					{ label: 'puść Reset', set: { 'I1.2': false }, wait: 300, check: packState(2) },
+					...packReset('drugi Reset'),
+					...packStart,
+					{ label: 'cykl, 3 s', wait: 3000, check: pressCounts(1) }
+				]
+			},
+			{
+				name: 'Ręczny: jog tylko w Stopped włączony, z blokadami',
+				always: pressSafe,
+				steps: [
+					{ label: 'Manual', set: { 'I1.1': true, 'I1.3': true }, wait: 100 },
+					...packReset(),
+					...packStart,
+					{
+						label: 'JogPress bez docisku',
+						set: { 'I1.5': true },
+						wait: 1000,
+						expect: { 'Q0.1': false },
+						check: ({ process }) =>
+							(process?.state() as PneumaticState).sensors.bIn ? null : 'prasa ruszyła bez docisku'
+					},
+					{ label: 'JogClamp', set: { 'I1.5': false, 'I1.4': true }, wait: 700 },
+					{ label: '+ JogPress', set: { 'I1.5': true }, wait: 1200, expect: { 'Q0.1': true } },
+					{
+						label: 'puść JogClamp pod prasą',
+						set: { 'I1.4': false },
+						wait: 300,
+						expect: { 'Q0.0': true }
+					},
+					{
+						label: 'puść JogPress',
+						set: { 'I1.5': false },
+						wait: 2000,
+						check: all(pressHome, pressCounts(1))
+					},
+					{
+						label: 'Auto w trakcie Execute — bez skutku',
+						set: { 'I1.3': false },
+						wait: 3000,
+						check: ({ plc, out }) =>
+							plc.memory.readNumber(parseAddress('MW22')) !== 3
+								? 'tryb zmienił się w trakcie Execute (UnitMode ≠ 3)'
+								: out('Q0.0')
+									? 'ruszył cykl automatyczny'
+									: null
+					},
+					{ label: 'Stop', set: { 'I1.1': false }, wait: 300, check: packState(2) },
+					{
+						label: 'w Stopped tryb przechodzi na produkcję',
+						set: { 'I1.1': true },
+						wait: 100,
+						check: ({ plc }) =>
+							plc.memory.readNumber(parseAddress('MW22')) === 1 ? null : 'UnitMode ≠ 1 w Stopped'
+					}
+				]
+			},
+			{
+				name: 'Zanik zasilania w trakcie cyklu: zimny start w Stopped, licznik zachowany',
+				always: pressSafe,
+				steps: [
+					...packReset(),
+					...packStart,
+					{ label: 'pierwszy detal', wait: 3700, check: pressCounts(1) },
+					{ label: 'docisk w ruchu', wait: 200, expect: { 'Q0.0': true } },
+					{
+						label: 'zanik zasilania 1 s',
+						powerLoss: 1000,
+						wait: 2000,
+						expect: { 'Q0.0': false, 'Q0.1': false, 'Q1.1': true },
+						check: all(packState(2), partsGoodIs(1))
+					},
+					...packReset(),
+					...packStart,
+					{ label: 'cykl, 3 s', wait: 3000, check: all(pressCounts(2), partsGoodIs(2)) }
 				]
 			}
 		]

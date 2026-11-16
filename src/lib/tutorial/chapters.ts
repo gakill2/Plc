@@ -1724,6 +1724,158 @@ W notacji pneumatycznej sekwencję zapisuje się jako **A+ B+ B− A−** (+ wys
 			}
 		]
 	},
+	/* ------------------------------------------------------------------ tryby pracy */
+	{
+		slug: 'tryby-pracy',
+		title: 'Tryby pracy i model stanów PackML',
+		summary:
+			'Auto, ręczny i jog, powrót do pozycji wyjściowej, zatrzymanie w dowolnym kroku i rozruch po zaniku zasilania — większa połowa programu każdej maszyny.',
+		minutes: 12,
+		blocks: [
+			{
+				kind: 'text',
+				text: `Sekwencja A+ B+ B− A− to tylko **cykl automatyczny**. W programie prawdziwej maszyny to zwykle mniejsza część kodu. Resztę zajmuje wszystko, co dzieje się **poza** szczęśliwą ścieżką:
+
+- **tryby pracy**: produkcja (Auto), ręczny, ustawianie / serwis, praca krokowa,
+- **ruch ręczny (jog)**: operator albo serwisant rusza pojedynczym siłownikiem czy osią,
+- **zatrzymanie w dowolnej chwili** i bezpieczny powrót do pozycji wyjściowej (*homing* maszyny),
+- **awarie**: brak powietrza, zadziałany wyłącznik silnika, e-stop,
+- **rozruch po zaniku zasilania**: maszyna nie wie, co działo się, gdy była wyłączona.
+
+Program, który ma tylko cykl Auto, przejdzie pokaz na targach. Nie przejdzie pierwszego tygodnia na produkcji.`
+			},
+			{
+				kind: 'text',
+				text: `**Zasady trybów pracy** (Dyrektywa Maszynowa, załącznik I pkt 1.2.5, i EN 60204-1):
+
+- **Wybór trybu** przełącznikiem z kluczykiem albo hasłem na panelu. Wybrany tryb ma pierwszeństwo przed wszystkim poza zatrzymaniem awaryjnym.
+- **Zmiana trybu tylko w bezpiecznym stanie**, w praktyce w stanie zatrzymania. Przełączenie z Auto na ręczny w środku cyklu nie może niczego poruszyć ani „zgubić” sekwencji.
+- **Ruch ręczny tylko, póki przycisk jest trzymany** (*hold-to-run*). Puszczasz przycisk i ruch staje. Przy niebezpiecznych ruchach, np. przy otwartej osłonie w trybie ustawiania, dochodzi zmniejszona prędkość i **przycisk zezwolenia** (*enabling device*, trzypozycyjny).
+- **Blokady działają w każdym trybie.** Tryb ręczny pozwala operatorowi zrobić rzeczy, których sekwencja nigdy nie robi. Dlatego blokady piszesz na końcu programu, poza CASE, tak żeby miały ostatnie słowo.`
+			},
+			{
+				kind: 'text',
+				text: `**PackML** (ISA-TR88.00.02, OMAC) to standardowy **model stanów maszyny**. Każda maszyna na linii — od nalewarki po paletyzator — ma te same stany o tych samych numerach. Dzięki temu SCADA i system MES czytają stan każdej z nich tak samo (tagi PackTags, np. bieżący stan i tryb). Standard jest powszechny w branży spożywczej, farmaceutycznej i pakującej. Gotowe biblioteki PackML mają Siemens i Rockwell.
+
+Są dwa rodzaje stanów. **Stany czekające** (Stopped, Idle, Held, Aborted, Complete) trwają, dopóki nie przyjdzie komenda. **Stany przejściowe** (Resetting, Starting, Stopping, Aborting, Clearing…, czyli te z „-ing”) wykonują jakąś pracę i kończą się same, gdy ją skończą (*state complete*).`
+			},
+			{
+				kind: 'table',
+				head: ['Nr', 'Stan', 'Co robi maszyna', 'Wyjście'],
+				rows: [
+					['2', 'Stopped', 'stoi, napędy bez rozkazu', '`Reset` → Resetting'],
+					['15', 'Resetting', 'jedzie do pozycji wyjściowej', 'gotowe → Idle'],
+					['4', 'Idle', 'gotowa, czeka na start', '`Start` → Execute'],
+					[
+						'6',
+						'Execute',
+						'produkuje (albo w trybie ręcznym: jog)',
+						'`Stop` → Stopping, `Hold` → Holding'
+					],
+					[
+						'11',
+						'Held',
+						'wstrzymana przez operatora lub problem wewnętrzny',
+						'`Unhold` → Unholding → Execute'
+					],
+					[
+						'5',
+						'Suspended',
+						'czeka na materiał lub odbiór (problem na linii)',
+						'warunek ustąpił → Unsuspending → Execute'
+					],
+					[
+						'7',
+						'Stopping',
+						'kontrolowane zatrzymanie, powrót do bezpiecznej pozycji',
+						'gotowe → Stopped'
+					],
+					[
+						'9',
+						'Aborted',
+						'po awarii lub e-stopie: tylko bezpieczny stan',
+						'`Clear` → Clearing → Stopped'
+					]
+				]
+			},
+			{
+				kind: 'callout',
+				tone: 'info',
+				title: 'Tryby w PackML',
+				text: 'Oprócz stanu maszyna ma **tryb** (*Unit Mode*): 1 produkcja, 2 utrzymanie ruchu, 3 ręczny, a producent może dodać własne. Każdy tryb może używać innego podzbioru stanów i inaczej wypełniać Execute. W produkcji Execute to cykl automatyczny, w trybie ręcznym — jog. Tryb zmienia się tylko w stanach na to pozwalających, zwykle w Stopped.'
+			},
+			{
+				kind: 'text',
+				text: `**„Co się stanie, jeśli przerwę tutaj?”** To pytanie zadaje senior przy każdym kroku sekwencji. Dla każdego kroku trzeba znać odpowiedź:
+
+- **Co jest w ruchu** i co się stanie, gdy rozkaz zniknie. Zawór monostabilny cofnie siłownik sprężyną, bistabilny zostawi go tam, gdzie był. Silnik bez rampy staje gwałtownie, a hamulec osi pionowej zapada.
+- **W jakiej kolejności wracać.** W prasie najpierw narzędzie w górę, potem zwolnienie docisku. Odwrotna kolejność niszczy detal albo narzędzie.
+- **Co z detalem.** Czy jest dobry, do odrzutu, czy trzeba go zdjąć ręcznie? Licznik produkcji musi się zgadzać z rzeczywistością.
+
+**Bezpieczny stan to nie zawsze „wszystko wyłączone”.** Wyłączenie wszystkich zaworów naraz w prasie zwolni docisk szybciej, niż wróci prasa. Dlatego blokada „docisk trzyma, dopóki prasa nie wróci” obowiązuje zawsze: w Stopping, w Aborted i w trybie ręcznym.
+
+W lekcji testy przerywają cykl **co 0,2 s przez cały cykl**, a potem każą pracować dalej. To ćwiczenie warto robić na każdym FAT: naciśnij Stop w każdym kroku i sprawdź, co się dzieje.`
+			},
+			{
+				kind: 'text',
+				text: `**Zanik zasilania** to najczęstszy test, którego nikt nie zrobił przed uruchomieniem:
+
+- Po powrocie napięcia sterownik robi **start** (w S7-1200/1500 zwykle *warm restart*, a OB100 wykonuje się przed pierwszym cyklem). Zmienne bez RETAIN mają wartości początkowe, a RETAIN — ostatnie.
+- **Maszyna nie może ruszyć sama** po powrocie zasilania (EN 60204-1, pkt 7.5). Musi stać w Stopped i czekać na świadomy Reset i Start operatora. Uważaj na przełącznik Auto, który został w pozycji „1”, i na przycisk Start zablokowany zaciśniętym kablem.
+- **RETAIN dla danych, nie dla sekwencji.** Liczniki, receptury i nastawy przeżywają zanik zasilania. Krok sekwencji — nie. Gdy zasilanie wróci, siłowniki stoją gdzie indziej, niż pamięta program.
+- **Osie z enkoderem inkrementalnym** tracą pozycję: po rozruchu trzeba je bazować. Absolutny enkoder pamięta pozycję, ale ruch po zaniku zasilania i tak zaczyna się od Reset.
+
+W symulatorze wybierz **Stop** i **Run** — to restart. Test „zanik zasilania” w lekcji idzie dalej: na sekundę gasi zasilanie zaworów (siłowniki wracają na sprężynach), a potem robi zimny start sterownika.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Operator przełącza Auto → Ręczny, gdy prasa jest w połowie cyklu. Co powinien zrobić program?',
+				options: [
+					'Natychmiast wyłączyć wszystkie zawory i przejść w tryb ręczny',
+					'Zignorować przełączenie, dopóki maszyna nie przejdzie do Stopped — tryb zmienia się tylko w bezpiecznym stanie',
+					'Dokończyć bieżący krok i od razu pozwolić na jog',
+					'Zgłosić błąd PLC i przejść w STOP'
+				],
+				correct: 1,
+				explanation:
+					'Zmiana trybu w ruchu to klasyczne źródło kolizji. Tryb przyjmuje się w stanie zatrzymania, a do tego czasu maszyna pracuje w dotychczasowym trybie (albo operator zatrzymuje ją Stopem).'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Prasa ma zawory monostabilne. Przy Stop program wyłącza od razu oba zawory. Co się stanie, gdy prasa jest w dole?',
+				options: [
+					'Nic złego — wszystko wróci do pozycji wyjściowej',
+					'Docisk schowa się szybciej niż prasa i zwolni detal pod narzędziem',
+					'Prasa zostanie w dole, bo zawór monostabilny pamięta położenie',
+					'Sterownik przejdzie w FAULT'
+				],
+				correct: 1,
+				explanation:
+					'Bezpieczny stan to nie zawsze „wszystko wyłączone”. Kolejność powrotu ma znaczenie: najpierw narzędzie w górę, potem zwolnienie docisku. Pilnuje tego blokada działająca w każdym stanie.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Programista dał krok sekwencji jako RETAIN, „żeby po zaniku zasilania maszyna kontynuowała”. Co jest nie tak?',
+				options: [
+					'Nic — tak powinno się robić',
+					'RETAIN jest za wolny dla kroków',
+					'Po powrocie zasilania siłowniki są w innych położeniach niż pamięta program, a maszyna nie może ruszyć bez Reset i Start — krok zaczyna od Stopped',
+					'Kroki w RETAIN zajmują za dużo pamięci'
+				],
+				correct: 2,
+				explanation:
+					'Monostabilne zawory cofnęły siłowniki, detal mógł zostać zdjęty, oś straciła pozycję. Program kontynuujący „od kroku 30” działa na fałszywym obrazie maszyny. Do tego samoczynny rozruch po powrocie zasilania jest zabroniony (EN 60204-1).'
+			},
+			{
+				kind: 'lesson',
+				slug: 'press-packml',
+				text: 'Prasa PR1 z modelem stanów PackML: Stop w każdym kroku, Abort przy braku powietrza, jog z blokadami i rozruch po zaniku zasilania.'
+			}
+		]
+	},
 	/* ------------------------------------------------------------------ panel HMI */
 	{
 		slug: 'panel-hmi',
