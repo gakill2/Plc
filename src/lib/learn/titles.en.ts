@@ -337,6 +337,11 @@ export const EN_TITLES: Record<string, { title: string; summary: string }> = {
 		summary:
 			'The program is done, the cabinet is wired, yet the machine will not start. Set the module addresses and analog measuring types as the I/O list requires.'
 	},
+	'chapter:tia-portal': {
+		title: 'From the simulator to TIA Portal: project, PLCSIM, multi-instances and libraries',
+		summary:
+			'The interview will ask “have you worked in TIA?”. How to move a program from the simulator to TIA Portal and PLCSIM, how a TIA project is structured and how companies version blocks in libraries.'
+	},
 	'chapter:cudzy-kod': {
 		title: 'Someone else’s program: STL/AWL and modernisation',
 		summary:

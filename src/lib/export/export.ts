@@ -426,7 +426,12 @@ const SCL_TYPES: Record<string, string> = {
 	F_TRIG: 'F_TRIG'
 };
 
-export function exportScl(p: ExportInput): { scl: string; tags: string; errors: string[] } {
+export function exportScl(p: ExportInput): {
+	scl: string;
+	tags: string;
+	tagRows: string[][];
+	errors: string[];
+} {
 	const u = unit(p);
 	const userTypes = new Set([
 		...u.types.map((t) => up(t.name)),
@@ -637,7 +642,34 @@ export function exportScl(p: ExportInput): { scl: string; tags: string; errors: 
 				`${s.name};Default tag table;${type(addressType(s.address))};%${formatAddressSafe(s.address)};${s.comment.replace(/;/g, ',')}`
 		)
 	].join('\n');
-	return { scl: out.join('\n'), tags, errors: u.errors };
+	/** the columns of a TIA Portal "PLC Tags" export, so the file imports as it is */
+	const tagRows = [
+		[
+			'Name',
+			'Path',
+			'Data Type',
+			'Logical Address',
+			'Comment',
+			'Hmi Visible',
+			'Hmi Accessible',
+			'Hmi Writeable',
+			'Typeobject ID',
+			'Version ID'
+		],
+		...p.symbols.map((s) => [
+			s.name,
+			'Default tag table',
+			type(addressType(s.address)),
+			`%${formatAddressSafe(s.address)}`,
+			s.comment,
+			'True',
+			'True',
+			'True',
+			'',
+			''
+		])
+	];
+	return { scl: out.join('\n'), tags, tagRows, errors: u.errors };
 }
 
 function formatAddressSafe(text: string): string {

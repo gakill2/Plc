@@ -52,7 +52,7 @@ export const en = {
 	'explain.title': 'Explain',
 	'explain.whole': 'whole program',
 	'export.json': 'Project file (.json)',
-	'export.scl': 'TIA Portal: SCL source + tags (.scl, .csv)',
+	'export.scl': 'TIA Portal: SCL source + tags (.scl, .xlsx)',
 	'export.st': 'Structured Text (.st)',
 	'export.xml': 'CODESYS: PLCopen XML (.xml)',
 	'fault.flicker': 'dirty — drops the signal',
@@ -195,6 +195,8 @@ export const en = {
 	'lesson.polishContent': 'The lesson instructions are in Polish for now.',
 	'lesson.restart': 'Start over',
 	'lesson.review': 'Code review',
+	'lesson.tia': 'How it looks in TIA Portal',
+	'lesson.tiaMore': 'The TIA project and PLCSIM import — chapter',
 	'lesson.reviewIntro':
 		"What a senior colleague would say — the tests don't check it, the next person to read your code will.",
 	'lesson.showSolution': 'Show solution',

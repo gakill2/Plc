@@ -56,7 +56,7 @@ export const pl: Record<keyof typeof en, string> = {
 	'explain.title': 'Wyjaśnij',
 	'explain.whole': 'cały program',
 	'export.json': 'Plik projektu (.json)',
-	'export.scl': 'TIA Portal: źródło SCL + tagi (.scl, .csv)',
+	'export.scl': 'TIA Portal: źródło SCL + tagi (.scl, .xlsx)',
 	'export.st': 'Structured Text (.st)',
 	'export.xml': 'CODESYS: PLCopen XML (.xml)',
 	'fault.flicker': 'zabrudzony — gubi sygnał',
@@ -198,6 +198,8 @@ export const pl: Record<keyof typeof en, string> = {
 	'lesson.polishContent': 'Instrukcje lekcji są po polsku.',
 	'lesson.restart': 'Zacznij od nowa',
 	'lesson.review': 'Recenzja kodu',
+	'lesson.tia': 'Jak to wygląda w TIA Portal',
+	'lesson.tiaMore': 'Projekt w TIA i import do PLCSIM — rozdział',
 	'lesson.reviewIntro':
 		'Co powiedziałby starszy kolega — testy tego nie sprawdzą, ale następna osoba czytająca Twój kod tak.',
 	'lesson.showSolution': 'Pokaż rozwiązanie',

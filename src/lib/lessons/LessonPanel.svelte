@@ -17,6 +17,7 @@
 	import { onMount } from 'svelte';
 	import { completedLessons, markCompleted } from './progress.js';
 	import RichText from './RichText.svelte';
+	import { TIA_NOTES } from './tia.js';
 	import { runLessonTests } from './runner.js';
 	import type { Lesson, TestResult } from './types.js';
 	import TicketCard from '#lib/story/TicketCard.svelte';
@@ -245,6 +246,21 @@
 		<ul class="space-y-1.5 text-xs text-amber-200/90">
 			{#each lesson.hints.slice(0, hintsShown) as h, i (i)}<li>💡 <RichText text={h} /></li>{/each}
 		</ul>
+	{/if}
+
+	{#if TIA_NOTES[lesson.slug]}
+		<details class="rounded border border-slate-800 bg-slate-900/50 p-2 text-xs" lang="pl">
+			<summary class="cursor-pointer font-semibold text-teal-300">{t('lesson.tia')}</summary>
+			<div class="mt-1.5 space-y-1.5 leading-relaxed text-slate-300">
+				{#each TIA_NOTES[lesson.slug] as p, i (i)}<p><RichText text={p} /></p>{/each}
+				<p>
+					<a
+						class="text-teal-300 underline"
+						href={resolve('/learn/basics/[slug]', { slug: 'tia-portal' })}>{t('lesson.tiaMore')}</a
+					>
+				</p>
+			</div>
+		</details>
 	{/if}
 
 	{#if results && lesson.kind === 'capstone'}

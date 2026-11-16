@@ -112,8 +112,13 @@ it and watch the controller execute your program scan by scan — or let it driv
   counters, SR / RS, edges and every library block, negated inputs, `=` / `S` / `R` outputs and
   live signal flow. Translated to ST like SFC.
 - **Export to real tools** — any project (ladder, FBD, SFC or ST) as a **TIA Portal SCL** external
-  source with a tag table (CSV), as **PLCopen XML** for CODESYS, or as plain ST. A test translates
-  every ladder lesson solution to ST and proves it still passes the lesson.
+  source with a tag table as **.xlsx in the TIA “PLC Tags” import format** (and CSV), as
+  **PLCopen XML** for CODESYS, or as plain ST. A test translates every ladder lesson solution to ST
+  and proves it still passes the lesson.
+- **Bridge to TIA Portal** — a “How it looks in TIA Portal” box in 30 lessons (OB/FB/DB, watch
+  and force tables, Trace, PID_Compact, Startdrive, ProDiag, library types …) and a chapter with a
+  step-by-step import into TIA and PLCSIM, single / multi / parameter instances, library types
+  with versions (in test → release → update instances) and a comparison with Rockwell Studio 5000.
 - **SFC / GRAFCET** — another language: steps with N / S / R actions, transitions with ST
   conditions (`Step.T`, `Step.X`), alternative and parallel branches. The chart is translated to
   ST and runs on the same compiler; active steps light up online.

@@ -1,5 +1,14 @@
 import { exportPlcOpen, exportScl, programSource, type ExportInput } from '#lib/export/export.js';
+import { xlsx } from '#lib/export/xlsx.js';
 import type { ProjectState } from './state.svelte.js';
+
+/** A file to download; binary files carry `bytes`. */
+export type ExportedFile = {
+	name: string;
+	text: string;
+	bytes?: Uint8Array<ArrayBuffer>;
+	type: string;
+};
 
 export type ExportFormat = 'json' | 'scl' | 'xml' | 'st';
 
@@ -23,10 +32,7 @@ export function exportInput(project: ProjectState): ExportInput {
 }
 
 /** The files of an export: name, content and MIME type. */
-export function exportFiles(
-	project: ProjectState,
-	format: ExportFormat
-): { name: string; text: string; type: string }[] {
+export function exportFiles(project: ProjectState, format: ExportFormat): ExportedFile[] {
 	const base = (project.name || 'project').replace(/[^\w-]+/g, '_');
 	if (format === 'json')
 		return [
@@ -38,10 +44,17 @@ export function exportFiles(
 		];
 	const input = exportInput(project);
 	if (format === 'scl') {
-		const { scl, tags } = exportScl(input);
+		const { scl, tags, tagRows } = exportScl(input);
 		return [
 			{ name: `${base}.scl`, text: scl, type: 'text/plain' },
-			{ name: `${base}_tags.csv`, text: tags, type: 'text/csv' }
+			{ name: `${base}_tags.csv`, text: tags, type: 'text/csv' },
+			// the tag table in the format TIA Portal imports (PLC tags → Import)
+			{
+				name: `${base}_PLCTags.xlsx`,
+				text: '',
+				bytes: xlsx('PLC Tags', tagRows),
+				type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+			}
 		];
 	}
 	if (format === 'xml')
@@ -56,10 +69,10 @@ export function exportFiles(
 }
 
 /** Downloads the files in the browser. */
-export function download(files: { name: string; text: string; type: string }[]) {
+export function download(files: ExportedFile[]) {
 	for (const f of files) {
 		const a = document.createElement('a');
-		a.href = URL.createObjectURL(new Blob([f.text], { type: f.type }));
+		a.href = URL.createObjectURL(new Blob([f.bytes ?? f.text], { type: f.type }));
 		a.download = f.name;
 		a.click();
 		URL.revokeObjectURL(a.href);

@@ -3223,6 +3223,164 @@ Typowe objawy złej konfiguracji na rozruchu: stałe **32767** (pętla prądowa 
 			}
 		]
 	},
+	/* ------------------------------------------------------------------ TIA Portal */
+	{
+		slug: 'tia-portal',
+		title: 'Z symulatora do TIA Portal: projekt, PLCSIM, multi-instancje i biblioteki',
+		summary:
+			'Na rozmowie padnie pytanie „robiłeś w TIA?”. Jak przenieść program z symulatora do TIA Portal i PLCSIM, jak wygląda tam struktura projektu i jak firmy wersjonują bloki w bibliotekach.',
+		minutes: 14,
+		blocks: [
+			{
+				kind: 'text',
+				text: `W Polsce większość ofert pracy dla automatyka to **Siemens**: S7-1200, S7-1500 i środowisko **TIA Portal** (STEP 7, WinCC, Startdrive w jednym programie). Ten symulator uczy na neutralnym modelu IEC 61131-3 — dzięki temu zrozumiesz każdy sterownik. Ale słownictwo i układ okien TIA warto znać, zanim usiądziesz do niego na rozmowie albo pierwszego dnia w pracy.
+
+Licencja STEP 7 Basic / Professional jest płatna, ale Siemens daje **wersję próbną na 21 dni**, a uczelnie i technika mają zwykle licencje studenckie. **PLCSIM** (symulator CPU) jest w pakiecie z STEP 7. Przy wersji próbnej opłaca się mieć gotowy program — na przykład z tego symulatora.`
+			},
+			{
+				kind: 'table',
+				head: ['W symulatorze', 'W TIA Portal'],
+				rows: [
+					[
+						'Program główny (drabinka, ST …)',
+						'**OB1** „Main” (*Program cycle*), wołający FB z instancyjnym DB'
+					],
+					[
+						'Tablica symboli',
+						'**PLC tags** (*Default tag table* i własne tablice), w kodzie `"Start"`'
+					],
+					['Zmienne `VAR` programu', '*Static* w FB → **instancyjny DB**, albo globalny **DB**'],
+					[
+						'Blok funkcyjny (FB) i funkcja',
+						'**FB** (z pamięcią, DB instancji) i **FC** (bez pamięci)'
+					],
+					['Typ `TYPE … STRUCT`', '**PLC data type** (UDT)'],
+					['OB100, przerwanie cykliczne', '**Startup** OB100, **Cyclic interrupt** OB30 …'],
+					['Tablica obserwacji, modify', '**Watch table** (*Modify*), osobno **Force table**'],
+					['Diagram czasowy', '**Trace** (nagrywanie w każdym cyklu)'],
+					['Bufor diagnostyczny', '*Online & diagnostics* → **Diagnostic buffer**'],
+					['Widok Sprzęt', '**Device configuration** (moduły, adresy, parametry kanałów)'],
+					['Panel HMI', '**WinCC** (Basic / Comfort / Unified) — osobne urządzenie w projekcie'],
+					[
+						'Wersje projektu',
+						'archiwum `.zap`, *Compare*, **Multiuser** albo **Version Control Interface**'
+					]
+				]
+			},
+			{
+				kind: 'text',
+				text: `**Import programu z symulatora do TIA Portal i uruchomienie w PLCSIM:**
+
+1. W edytorze symulatora: **Eksport** → *TIA Portal: źródło SCL + tagi*. Dostajesz plik **.scl** (typy, bloki, FB „Main” z DB i OB1) i **_PLCTags.xlsx** (tablica tagów w formacie importu TIA).
+2. W TIA: nowy projekt → *Add new device* → CPU, np. **CPU 1214C DC/DC/DC** albo **CPU 1511-1 PN** (wersja firmware taka, jaką oferuje Twój TIA).
+3. Najpierw **tagi**: *PLC tags* → *Default tag table* → przycisk **Import** w pasku narzędzi tablicy → wybierz plik _PLCTags.xlsx. Jeśli TIA zgłosi konflikt adresów, usuń z tablicy tagi, których nie używasz.
+4. **Źródło**: w drzewie projektu *External source files* → *Add new external file* → plik .scl. Prawy przycisk na pliku → **Generate blocks from source**. TIA tworzy bloki w *Program blocks*; błędy kompilacji zobaczysz w oknie *Info*.
+5. Jeśli w projekcie było już puste OB1 „Main” — usuń je przed generowaniem albo pozwól TIA je nadpisać.
+6. Właściwości projektu → *Protection* → zaznacz **Support simulation during block compilation**. Bez tego PLCSIM nie przyjmie programu.
+7. Zaznacz CPU → **Start simulation** (ikona w pasku albo *Online* → *Simulation* → *Start*). Otworzy się PLCSIM i okno *Load*: **Load** → **Start module** → **Finish**.
+8. **Monitoring**: *Watch and force tables* → *Add new watch table*, wpisz tagi i włącz okulary (*Monitor all*). Wejścia zmieniasz w PLCSIM (*SIM table* w widoku projektu PLCSIM) albo z *Modify* w tablicy obserwacji. Obiekt (taśmę, prasę) symuluje dopiero **PLCSIM Advanced** albo **Factory I/O** / **NX MCD** — to już wirtualne uruchomienie.`
+			},
+			{
+				kind: 'callout',
+				tone: 'warn',
+				title: 'Gdzie import może się wyłożyć',
+				text: 'Typy i bloki biblioteczne mają w TIA inne nazwy (np. `TON_TIME`, `"PID_Compact"` zamiast prostego PID) — eksport podmienia te, które się da, i pisze komentarz przy pozostałych. S7-1200 nie ma STL ani timerów S5, a w blokach zoptymalizowanych nie ma adresowania bezwzględnego zmiennych DB (np. `DB1.DBW0`). Traktuj eksport jak dobry punkt startowy, nie gotowy projekt.'
+			},
+			{
+				kind: 'text',
+				text: `**Instancje i multi-instancje.** Każde wywołanie FB potrzebuje pamięci — swojej instancji. TIA przy wstawianiu FB pyta, gdzie ją położyć:
+
+- **Single instance** — osobny DB dla każdego wywołania (\`"Motor1_DB"\`, \`"Motor2_DB"\` …). Proste, ale przy 40 silnikach masz 40 DB.
+- **Multi instance** — instancja jako zmienna *Static* w FB, który woła. FB \`Line\` z trzema silnikami ma jeden DB \`"Line_DB"\`, a w nim \`M1\`, \`M2\`, \`M3\`. Struktura danych odpowiada maszynie, HMI czyta \`"Line_DB".M2.Fault\`, a stację skopiujesz z całą zawartością.
+- **Parameter instance** — instancja przekazana jako parametr *InOut*. Rzadziej, przy ogólnych blokach obsługujących różne obiekty.
+
+Tak samo jest z timerami IEC: TON w OB1 dostaje własny DB, a TON w FB — miejsce w *Static* (multi-instancja). Dlatego w porządnym projekcie prawie nie ma luźnych DB timerów.`
+			},
+			{
+				kind: 'code',
+				title: 'SCL w TIA: FB stacji z multi-instancjami silników',
+				code: `FUNCTION_BLOCK "Line"
+VAR_INPUT
+   Auto : Bool;
+END_VAR
+VAR
+   M1 : "Motor";          // multi-instancje: dane w "Line_DB"
+   M2 : "Motor";
+   FillTime : TON_TIME;   // timer IEC też jako multi-instancja
+END_VAR
+BEGIN
+   #M1(Start := #Auto, Stop := "Stop", Feedback := "K1_Feedback");
+   #M2(Start := #M1.Run, Stop := "Stop", Feedback := "K2_Feedback");
+   #FillTime(IN := #M2.Run, PT := T#5S);
+END_FUNCTION_BLOCK`
+			},
+			{
+				kind: 'text',
+				text: `**Biblioteki, typy i wersje** — temat, o który pytają na rozmowach, a którego nie uczy się na zajęciach. Firma ma **bibliotekę globalną** (plik .al…) ze swoimi standardowymi blokami: silnik, zawór, napęd, alarm. W bibliotece są dwa rodzaje elementów:
+
+- **Master copies** — wzorce do skopiowania. Po wstawieniu kopia żyje własnym życiem i nikt nie wie, że pochodzi z biblioteki.
+- **Types** — bloki z **wersją** (np. \`Motor\` V1.2.0). Projekt używa *instancji typu*: blok jest zablokowany do edycji i powiązany z biblioteką.
+
+Zmiana bloku typu przebiega tak: *Edit type* → TIA tworzy wersję **in test** → testujesz w projekcie → **Release version** (V1.3.0, z komentarzem) → w innych projektach *Update* → **Update instances**. Zależne typy (blok stacji używający \`Motor\`) TIA aktualizuje razem. Dzięki temu poprawka błędu w bloku silnika trafia do wszystkich maszyn w kontrolowany sposób, a nie przez kopiowanie „jakiejś wersji z pendrive'a”.
+
+Twoja lekcja „Standard urządzenia” to właśnie taki typ: jeden blok, stały interfejs, wiele instancji.`
+			},
+			{
+				kind: 'text',
+				text: `**Dla porównania: Rockwell (Allen-Bradley).** W firmach amerykańskich i w części motoryzacji spotkasz **Studio 5000 Logix Designer** i sterowniki ControlLogix / CompactLogix. Główne różnice:
+
+- **tagi zamiast adresów** — nie ma \`%I0.0\` ani obszaru M; wejścia modułów mają nazwy jak \`Local:1:I.Data.0\`, a program używa tagów z aliasami,
+- **zadania** (*Tasks*: continuous, periodic, event), w nich programy i **routines** (LAD, ST, FBD, SFC),
+- bloki to **AOI** (*Add-On Instructions*) z wersją i podpisem, odpowiednik FB z typem,
+- edycja online jest codziennością (*Edit* → *Accept* → *Test* → *Assemble*).
+
+Logika pracy jest taka sama: sekwencje, blokady, alarmy, standard bloków. Kto rozumie zasady, przesiada się w kilka tygodni.`
+			},
+			{
+				kind: 'quiz',
+				question:
+					'FB „Station” woła trzy razy FB „Motor”. Instancje silników są zadeklarowane w Static FB „Station”. Ile DB instancji powstanie przy jednym wywołaniu „Station” w OB1?',
+				options: [
+					'Cztery: jeden dla stacji i trzy dla silników',
+					'Jeden — „Station_DB” z instancjami silników w środku',
+					'Trzy',
+					'Żadnego'
+				],
+				correct: 1,
+				explanation:
+					'To multi-instancje: dane silników są częścią DB instancji stacji („Station_DB”.M1 …). Osobne DB powstałyby przy wywołaniach jako single instance.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'W bibliotece firmy jest typ „Motor” V1.2.0. Znalazłeś w nim błąd. Jaka droga jest właściwa?',
+				options: [
+					'Skopiować blok do projektu jako zwykły FB i poprawić tam',
+					'Edytować typ (wersja in test), przetestować, zwolnić nową wersję z opisem i zaktualizować instancje w projektach',
+					'Poprawić blok online w jednej maszynie',
+					'Usunąć typ i napisać blok od nowa'
+				],
+				correct: 1,
+				explanation:
+					'Typy z wersjami istnieją po to, żeby poprawka była kontrolowana i trafiała do wszystkich projektów. Kopia „obok” biblioteki to początek bałaganu: za rok nikt nie wie, która wersja jest w której maszynie.'
+			},
+			{
+				kind: 'quiz',
+				question:
+					'Wygenerowałeś bloki ze źródła SCL, ale PLCSIM nie chce przyjąć programu. Co sprawdzić najpierw?',
+				options: [
+					'Czy w adresach jest %',
+					'Czy w ustawieniach projektu (Protection) jest zaznaczone „Support simulation during block compilation”',
+					'Czy OB1 ma numer 1',
+					'Czy kabel Ethernet jest podłączony'
+				],
+				correct: 1,
+				explanation:
+					'Bez tej opcji bloki kompilują się bez danych dla symulacji i PLCSIM ich nie przyjmie. To częsty pierwszy problem przy pracy z PLCSIM.'
+			}
+		]
+	},
+
 	/* ------------------------------------------------------------------ cudzy kod */
 	{
 		slug: 'cudzy-kod',
